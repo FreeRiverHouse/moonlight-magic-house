@@ -33,7 +33,7 @@ namespace MoonlightMagicHouse
         [Range(0,100)] public float wonder    = 80f;  // curiosity / exploration drive
         [Range(0,100)] public float warmth    = 80f;  // social / care received
         [Range(0,100)] public float rest      = 80f;  // sleep / energy
-        [Range(0,100)] public float magic     = 60f;  // charged by completing mini-games
+        [Range(0,100)] public float magic     = 60f;  // charged by exploring, tricks, stories
         [Range(0,100)] public float hunger    = 80f;
 
         public MoonlightMood GetMood()
