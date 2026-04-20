@@ -272,6 +272,21 @@ namespace MoonlightMagicHouse
             sparkMat.mainTexture = MakeSoftCircleTex(32);
             psr.material   = sparkMat;
 
+            // Ground halo — pulsing disc beneath the character
+            var haloGO = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            haloGO.name = "GroundHalo";
+            Object.Destroy(haloGO.GetComponent<Collider>());
+            haloGO.transform.SetParent(mlGO.transform, false);
+            haloGO.transform.localPosition = new Vector3(0f, 0.005f, 0f);
+            haloGO.transform.localScale    = new Vector3(1.4f, 0.01f, 1.4f);
+            var haloMat = new Material(ToonShader);
+            haloMat.SetColor("_Color",            new Color(0.75f, 0.55f, 1.00f, 0.6f));
+            haloMat.SetColor("_EmissionColor",    new Color(0.75f, 0.55f, 1.00f));
+            haloMat.SetFloat("_EmissionIntensity", 1.2f);
+            haloMat.SetFloat("_OutlineWidth",      0f);
+            haloGO.GetComponent<MeshRenderer>().material = haloMat;
+            haloGO.AddComponent<GroundHalo>();
+
             // Glow light
             var glowGO = new GameObject("Glow");
             glowGO.transform.SetParent(mlGO.transform, false);
