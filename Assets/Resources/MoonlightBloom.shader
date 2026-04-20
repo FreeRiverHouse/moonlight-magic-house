@@ -75,8 +75,24 @@ Shader "MoonlightMagicHouse/Bloom"
                 float  vig   = 1.0 - dot(q, q) * _Vignette * 2.8;
                 vig          = saturate(vig);
                 float3 col   = src.rgb + bloom.rgb * _Intensity;
+
+                // ── Subtle cinematic grade (on LDR-ish range) ──
+                float3 ldr   = saturate(col);
+                float  luma  = dot(ldr, float3(0.299, 0.587, 0.114));
+                float  sMask = 1.0 - smoothstep(0.0, 0.4, luma);
+                float  hMask = smoothstep(0.6, 1.0, luma);
+                float3 shadowTint    = float3(1.04, 1.00, 0.95);
+                float3 highlightTint = float3(0.97, 1.01, 1.05);
+                col *= lerp(float3(1,1,1), shadowTint,    sMask * 0.35);
+                col *= lerp(float3(1,1,1), highlightTint, hMask * 0.35);
+
+                // Mild saturation boost
+                float3 gray = float3(luma, luma, luma);
+                col = lerp(gray, col, 1.06);
+
                 col         *= _Tint.rgb;
                 col         *= vig;
+
                 return fixed4(col, 1);
             }
             ENDCG
