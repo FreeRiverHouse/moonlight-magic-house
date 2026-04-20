@@ -35,6 +35,10 @@ namespace MoonlightMagicHouse
             moonlight.onStageUp.AddListener(OnStageUp);
             moonlight.onStageUp.AddListener(s => AchievementSystem.Instance?.OnStageUp(s));
             moonlight.onMoodChange.AddListener(ui.OnMoodChange);
+            moonlight.onMoodChange.AddListener(mood => {
+                foreach (var npc in FindObjectsByType<NPCCharacter>(FindObjectsSortMode.None))
+                    npc.ReactToMood(mood);
+            });
             moonlight.onCoinsChanged.AddListener(ui.UpdateCoins);
             moonlight.onRoomUnlocked.AddListener(OnRoomUnlocked);
             moonlight.onXPGained.AddListener(ui.UpdateXP);

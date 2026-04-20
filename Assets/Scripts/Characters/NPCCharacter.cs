@@ -47,9 +47,9 @@ namespace MoonlightMagicHouse
 
         public void SayIdle() => Say(Pick(idleLines));
 
-        public void ReactToMood(PetMood mood)
+        public void ReactToMood(MoonlightMood mood)
         {
-            var pool = mood >= PetMood.Happy ? happyLines : sadLines;
+            var pool = mood >= MoonlightMood.Happy ? happyLines : sadLines;
             Say(Pick(pool));
         }
 

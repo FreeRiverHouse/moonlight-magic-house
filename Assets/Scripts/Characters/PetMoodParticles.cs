@@ -3,17 +3,17 @@ using UnityEngine;
 
 namespace MoonlightMagicHouse
 {
-    public class PetMoodParticles : MonoBehaviour
+    public class MoonlightMoodParticles : MonoBehaviour
     {
         [System.Serializable]
-        struct MoodFX { public PetMood mood; public ParticleSystem particles; }
+        struct MoodFX { public MoonlightMood mood; public ParticleSystem particles; }
 
         [SerializeField] List<MoodFX> fxMap;
         [SerializeField] ParticleSystem evolutionBurst;
 
         ParticleSystem _active;
 
-        public void OnMoodChange(PetMood mood)
+        public void OnMoodChange(MoonlightMood mood)
         {
             if (_active != null) _active.Stop();
             var entry = fxMap.Find(f => f.mood == mood);
