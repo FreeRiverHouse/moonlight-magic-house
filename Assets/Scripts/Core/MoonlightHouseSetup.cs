@@ -153,6 +153,8 @@ namespace MoonlightMagicHouse
             var visual = BuildFallbackCharacter(mlGO.transform);
             // Face the camera (camera is at -Z; character's face is at +Z by default)
             visual.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            // Scale-punch on button presses
+            var puncher = visual.AddComponent<ScalePuncher>();
 
             // Procedural idle bob — no Animator required
             mlGO.AddComponent<MoonlightBobber>();
@@ -1048,7 +1050,17 @@ namespace MoonlightMagicHouse
             btn.onClick.AddListener(() =>
             {
                 var target = GameObject.Find("Moonlight");
-                if (target != null) burst.Configure(target.transform, color, count);
+                if (target != null)
+                {
+                    burst.Configure(target.transform, color, count);
+                    // Punch the visual child (not the root, since bobber overrides root rotation)
+                    var visual = target.transform.Find("Visual");
+                    if (visual != null)
+                    {
+                        var p = visual.GetComponent<ScalePuncher>();
+                        if (p != null) p.Punch(0.22f, 0.40f);
+                    }
+                }
             });
             // Configure once so first click works too
             var initial = GameObject.Find("Moonlight");
