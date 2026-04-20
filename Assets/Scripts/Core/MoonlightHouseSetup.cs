@@ -265,19 +265,19 @@ namespace MoonlightMagicHouse
             MakePart(visual.transform, PrimitiveType.Sphere, "FootR",
                 new Vector3( 0.16f, -0.08f, 0.10f), new Vector3(0.18f, 0.10f, 0.22f),
                 new Color(0.30f, 0.18f, 0.50f));
-            // Pink hair bow (two small cubes on right side)
+            // Pink hair bow on right side — anchored right against hair
             MakePartRotated(visual.transform, PrimitiveType.Cube, "BowL",
-                new Vector3(0.28f, 2.12f, 0f),
-                Quaternion.Euler(0f, 0f, 20f),
-                new Vector3(0.14f, 0.10f, 0.06f),
+                new Vector3(0.20f, 2.10f, 0.02f),
+                Quaternion.Euler(0f, 0f, 25f),
+                new Vector3(0.11f, 0.09f, 0.05f),
                 new Color(1.0f, 0.55f, 0.80f));
             MakePartRotated(visual.transform, PrimitiveType.Cube, "BowR",
-                new Vector3(0.38f, 2.15f, 0f),
-                Quaternion.Euler(0f, 0f, -20f),
-                new Vector3(0.14f, 0.10f, 0.06f),
+                new Vector3(0.30f, 2.10f, 0.02f),
+                Quaternion.Euler(0f, 0f, -25f),
+                new Vector3(0.11f, 0.09f, 0.05f),
                 new Color(1.0f, 0.55f, 0.80f));
             MakePart(visual.transform, PrimitiveType.Sphere, "BowKnot",
-                new Vector3(0.32f, 2.13f, 0.01f), Vector3.one * 0.045f,
+                new Vector3(0.25f, 2.10f, 0.03f), Vector3.one * 0.05f,
                 new Color(1.0f, 0.35f, 0.65f));
             // Little star hair clip
             MakePartRotated(visual.transform, PrimitiveType.Cube, "StarClip",
