@@ -8,7 +8,7 @@ namespace MoonlightMagicHouse
     {
         [Header("Follow")]
         [SerializeField] Transform target;
-        [SerializeField] Vector3 offset = new Vector3(0, 2f, -4f);
+        [SerializeField] Vector3 offset = new Vector3(0, 2.6f, -4.7f);
         [SerializeField] float followSpeed = 5f;
 
         [Header("Orbit (mouse/touch drag)")]
@@ -93,7 +93,7 @@ namespace MoonlightMagicHouse
             var rotatedOffset = Quaternion.Euler(0, _orbitX, 0) * offset;
             var desired = target.position + rotatedOffset;
             transform.position = Vector3.Lerp(transform.position, desired, Time.deltaTime * followSpeed);
-            transform.LookAt(target.position + Vector3.up * 0.5f);
+            transform.LookAt(target.position + Vector3.up * 1.2f);
         }
 
         public void SetTarget(Transform t) => target = t;
