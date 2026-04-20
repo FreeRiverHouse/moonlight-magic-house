@@ -859,6 +859,11 @@ namespace MoonlightMagicHouse
             var cuddleBtn = MakeButton("CuddleBtn", btnPanel.transform, new Vector2(   0f, 60f), "CUDDLE", new Color(0.9f, 0.4f, 0.7f));
             var sleepBtn  = MakeButton("SleepBtn",  btnPanel.transform, new Vector2( 280f, 60f), "SLEEP",  new Color(0.3f, 0.5f, 0.9f));
 
+            // Visual feedback: particle bursts on button click (finds Moonlight by name at click time)
+            AttachBurst(feedBtn,   new Color(1.0f, 0.75f, 0.35f), 14);
+            AttachBurst(cuddleBtn, new Color(1.0f, 0.45f, 0.70f), 20);
+            AttachBurst(sleepBtn,  new Color(0.55f, 0.70f, 1.0f), 12);
+
             // Feed menu overlay
             var feedMenu = Panel("FeedMenu", canvasGO.transform,
                 new Vector2(0.1f, 0.15f), new Vector2(0.9f, 0.85f),
@@ -1035,6 +1040,19 @@ namespace MoonlightMagicHouse
             rt.anchoredPosition = anchoredPos;
             rt.sizeDelta        = size;
             return t;
+        }
+
+        static void AttachBurst(Button btn, Color color, int count)
+        {
+            var burst = btn.gameObject.AddComponent<ButtonHeartBurst>();
+            btn.onClick.AddListener(() =>
+            {
+                var target = GameObject.Find("Moonlight");
+                if (target != null) burst.Configure(target.transform, color, count);
+            });
+            // Configure once so first click works too
+            var initial = GameObject.Find("Moonlight");
+            if (initial != null) burst.Configure(initial.transform, color, count);
         }
 
         static Button MakeButton(string name, Transform parent, Vector2 pos, string label, Color tint)
