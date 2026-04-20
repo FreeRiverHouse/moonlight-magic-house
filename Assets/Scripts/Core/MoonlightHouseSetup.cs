@@ -289,6 +289,35 @@ namespace MoonlightMagicHouse
             haloGO.GetComponent<MeshRenderer>().material = haloMat;
             haloGO.AddComponent<GroundHalo>();
 
+            // Orbiting fireflies around the character
+            Color[] fireCols = {
+                new Color(1.00f, 0.85f, 0.55f),
+                new Color(0.80f, 0.60f, 1.00f),
+                new Color(0.70f, 0.95f, 0.80f),
+                new Color(1.00f, 0.65f, 0.85f),
+                new Color(0.55f, 0.85f, 1.00f),
+            };
+            for (int f = 0; f < fireCols.Length; f++)
+            {
+                var fly = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                fly.name = $"Firefly{f}";
+                fly.transform.SetParent(mlGO.transform, false);
+                fly.transform.localScale = Vector3.one * Random.Range(0.05f, 0.08f);
+                Object.Destroy(fly.GetComponent<Collider>());
+                var fMat = new Material(ToonShader);
+                fMat.SetColor("_Color",             fireCols[f]);
+                fMat.SetColor("_EmissionColor",     fireCols[f]);
+                fMat.SetFloat("_EmissionIntensity", 1.2f);
+                fMat.SetFloat("_OutlineWidth",      0f);
+                fly.GetComponent<MeshRenderer>().material = fMat;
+                var orb = fly.AddComponent<OrbitingFirefly>();
+                orb.Configure(
+                    Random.Range(1.05f, 1.6f),
+                    Random.Range(0.6f, 1.1f) * (Random.value > 0.5f ? 1f : -1f),
+                    Random.Range(0f, Mathf.PI * 2f),
+                    fireCols[f]);
+            }
+
             // Glow light
             var glowGO = new GameObject("Glow");
             glowGO.transform.SetParent(mlGO.transform, false);
