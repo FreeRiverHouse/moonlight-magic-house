@@ -1,0 +1,12 @@
+{
+  "tricks": [
+    { "id": "wave",       "displayName": "Wave",           "description": "Moonlight waves hello!",              "xpRequired": 0,    "animTrigger": "Wave",      "coinReward": 2  },
+    { "id": "spin",       "displayName": "Moon Spin",      "description": "She spins gracefully",                "xpRequired": 50,   "animTrigger": "Spin",      "coinReward": 4  },
+    { "id": "sparkle",    "displayName": "Star Sparkle",   "description": "Magic sparkles fly!",                 "xpRequired": 120,  "animTrigger": "Sparkle",   "coinReward": 6  },
+    { "id": "float",      "displayName": "Moonlit Float",  "description": "She floats in the air briefly",       "xpRequired": 250,  "animTrigger": "Float",     "coinReward": 10 },
+    { "id": "conjure",    "displayName": "Star Conjure",   "description": "A star appears in her hand",          "xpRequired": 450,  "animTrigger": "Conjure",   "coinReward": 15 },
+    { "id": "moonbeam",   "displayName": "Moonbeam Shot",  "description": "She fires a beam of moonlight!",      "xpRequired": 700,  "animTrigger": "Moonbeam",  "coinReward": 22 },
+    { "id": "eclipse",    "displayName": "Moon Eclipse",   "description": "The whole room goes dark then light", "xpRequired": 1000, "animTrigger": "Eclipse",   "coinReward": 35 },
+    { "id": "ascension",  "displayName": "Star Ascension", "description": "She transforms briefly into pure light","xpRequired": 1500,"animTrigger": "Ascension","coinReward": 60 }
+  ]
+}

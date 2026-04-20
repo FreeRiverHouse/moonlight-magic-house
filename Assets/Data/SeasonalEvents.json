@@ -1,0 +1,40 @@
+{
+  "events": [
+    {
+      "id": "halloween",
+      "displayName": "Witch's Night",
+      "startMonth": 10, "startDay": 25,
+      "endMonth":   11, "endDay":    2,
+      "ambientOverride": { "r": 0.20, "g": 0.06, "b": 0.02, "a": 1 },
+      "bonusCoins": 30,
+      "exclusiveOutfitId": "witch_hat"
+    },
+    {
+      "id": "winter",
+      "displayName": "Star Winter",
+      "startMonth": 12, "startDay": 18,
+      "endMonth":    1, "endDay":    6,
+      "ambientOverride": { "r": 0.08, "g": 0.12, "b": 0.25, "a": 1 },
+      "bonusCoins": 50,
+      "exclusiveOutfitId": "snowflake_crown"
+    },
+    {
+      "id": "spring",
+      "displayName": "Moon Blossom",
+      "startMonth": 3, "startDay": 20,
+      "endMonth":   4, "endDay":   20,
+      "ambientOverride": { "r": 0.15, "g": 0.08, "b": 0.20, "a": 1 },
+      "bonusCoins": 25,
+      "exclusiveOutfitId": "flower_wreath"
+    },
+    {
+      "id": "summer",
+      "displayName": "Shooting Stars",
+      "startMonth": 7, "startDay": 10,
+      "endMonth":   8, "endDay":   20,
+      "ambientOverride": { "r": 0.05, "g": 0.05, "b": 0.22, "a": 1 },
+      "bonusCoins": 35,
+      "exclusiveOutfitId": "starfire_cape"
+    }
+  ]
+}
