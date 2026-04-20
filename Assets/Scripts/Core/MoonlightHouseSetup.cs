@@ -74,6 +74,8 @@ namespace MoonlightMagicHouse
                 cam.gameObject.AddComponent<CameraController>();
             if (!cam.GetComponent<AmbientCycle>())
                 cam.gameObject.AddComponent<AmbientCycle>();
+            if (!cam.GetComponent<BloomPostFx>())
+                cam.gameObject.AddComponent<BloomPostFx>();
         }
 
         // ── Atmosphere ───────────────────────────────────────────────────────
@@ -321,10 +323,54 @@ namespace MoonlightMagicHouse
             MakePart(visual.transform, PrimitiveType.Sphere, "EyeR",
                 new Vector3( 0.08f, 1.88f, 0.19f), Vector3.one * 0.07f,
                 new Color(0.08f, 0.04f, 0.18f));
+            // Eye highlights — tiny white sphere "shine"
+            MakeEmissive(visual.transform, "ShineL",
+                new Vector3(-0.063f, 1.90f, 0.22f), Vector3.one * 0.022f, Color.white, 1.8f);
+            MakeEmissive(visual.transform, "ShineR",
+                new Vector3( 0.097f, 1.90f, 0.22f), Vector3.one * 0.022f, Color.white, 1.8f);
             var blinker = visual.AddComponent<EyeBlinker>();
             blinker.Bind(
                 visual.transform.Find("EyeL"),
-                visual.transform.Find("EyeR"));
+                visual.transform.Find("EyeR"),
+                visual.transform.Find("ShineL"),
+                visual.transform.Find("ShineR"));
+            // Nose — subtle rose bump
+            MakePart(visual.transform, PrimitiveType.Sphere, "Nose",
+                new Vector3(0f, 1.84f, 0.215f), Vector3.one * 0.035f,
+                new Color(1.0f, 0.75f, 0.78f));
+            // Curved mouth — three small cubes arranged as a smile arc
+            MakePartRotated(visual.transform, PrimitiveType.Cube, "SmileL",
+                new Vector3(-0.035f, 1.795f, 0.205f),
+                Quaternion.Euler(0f, 0f,  12f),
+                new Vector3(0.045f, 0.014f, 0.014f),
+                new Color(0.78f, 0.28f, 0.42f));
+            MakePartRotated(visual.transform, PrimitiveType.Cube, "SmileR",
+                new Vector3( 0.035f, 1.795f, 0.205f),
+                Quaternion.Euler(0f, 0f, -12f),
+                new Vector3(0.045f, 0.014f, 0.014f),
+                new Color(0.78f, 0.28f, 0.42f));
+            // Front bangs — two cute hair tufts over forehead
+            MakePartRotated(visual.transform, PrimitiveType.Sphere, "BangL",
+                new Vector3(-0.15f, 2.03f, 0.18f),
+                Quaternion.Euler(0f, 0f, 20f),
+                new Vector3(0.18f, 0.14f, 0.14f),
+                new Color(0.22f, 0.08f, 0.48f));
+            MakePartRotated(visual.transform, PrimitiveType.Sphere, "BangR",
+                new Vector3( 0.15f, 2.03f, 0.18f),
+                Quaternion.Euler(0f, 0f, -20f),
+                new Vector3(0.18f, 0.14f, 0.14f),
+                new Color(0.22f, 0.08f, 0.48f));
+            // Side pigtails
+            MakePart(visual.transform, PrimitiveType.Sphere, "PigL",
+                new Vector3(-0.28f, 1.90f, -0.02f), new Vector3(0.16f, 0.22f, 0.16f),
+                new Color(0.22f, 0.08f, 0.48f));
+            MakePart(visual.transform, PrimitiveType.Sphere, "PigR",
+                new Vector3( 0.28f, 1.90f, -0.02f), new Vector3(0.16f, 0.22f, 0.16f),
+                new Color(0.22f, 0.08f, 0.48f));
+            // Back hair volume
+            MakePart(visual.transform, PrimitiveType.Sphere, "HairBack",
+                new Vector3(0f, 1.95f, -0.14f), new Vector3(0.44f, 0.40f, 0.30f),
+                new Color(0.18f, 0.06f, 0.40f));
             // Cheeks
             MakePart(visual.transform, PrimitiveType.Sphere, "CheekL",
                 new Vector3(-0.14f, 1.82f, 0.17f), Vector3.one * 0.05f,
@@ -390,6 +436,23 @@ namespace MoonlightMagicHouse
                 new Vector3(0f, 1.80f, 0.20f), new Vector3(0.10f, 0.015f, 0.015f),
                 new Color(0.80f, 0.30f, 0.45f));
             return visual;
+        }
+
+        static void MakeEmissive(Transform parent, string name,
+            Vector3 pos, Vector3 scale, Color color, float intensity)
+        {
+            var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            go.name = name;
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = pos;
+            go.transform.localScale    = scale;
+            var mat = new Material(ToonShader);
+            mat.SetColor("_Color",            color);
+            mat.SetColor("_EmissionColor",    color);
+            mat.SetFloat("_EmissionIntensity", intensity);
+            mat.SetFloat("_OutlineWidth",      0f);
+            go.GetComponent<MeshRenderer>().material = mat;
+            Object.Destroy(go.GetComponent<Collider>());
         }
 
         static void MakePartRotated(Transform parent, PrimitiveType type, string name,
