@@ -72,6 +72,8 @@ namespace MoonlightMagicHouse
 
             if (!cam.GetComponent<CameraController>())
                 cam.gameObject.AddComponent<CameraController>();
+            if (!cam.GetComponent<AmbientCycle>())
+                cam.gameObject.AddComponent<AmbientCycle>();
         }
 
         // ── Atmosphere ───────────────────────────────────────────────────────
