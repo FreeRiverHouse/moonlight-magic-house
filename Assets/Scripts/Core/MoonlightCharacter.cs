@@ -143,8 +143,10 @@ namespace MoonlightMagicHouse
             stats.wonder  = Mathf.Min(100, stats.wonder + food.wonderBoost);
             stats.magic   = Mathf.Min(100, stats.magic  + food.magicBoost);
             GainXP(food.xpReward);
+            GetComponentInChildren<MoonlightAnimator>()?.TriggerEat();
             AudioManager.Instance?.Play("eat");
             HapticFeedback.Light();
+            AchievementSystem.Instance?.OnFirstFeed();
         }
 
         public void Cuddle()
@@ -152,6 +154,7 @@ namespace MoonlightMagicHouse
             stats.warmth = Mathf.Min(100, stats.warmth + 20f);
             stats.wonder = Mathf.Min(100, stats.wonder + 5f);
             GainXP(8);
+            GetComponentInChildren<MoonlightAnimator>()?.TriggerCuddle();
             AudioManager.Instance?.Play("cuddle");
             HapticFeedback.Light();
         }
@@ -160,7 +163,9 @@ namespace MoonlightMagicHouse
         {
             stats.rest   = Mathf.Min(100, stats.rest   + 45f);
             stats.warmth = Mathf.Min(100, stats.warmth + 5f);
+            GetComponentInChildren<MoonlightAnimator>()?.TriggerSleep();
             AudioManager.Instance?.Play("sleep");
+            AchievementSystem.Instance?.OnFirstSleep();
         }
 
         public void Explore(RoomType room)
