@@ -340,9 +340,46 @@ namespace MoonlightMagicHouse
             var visual = new GameObject("Visual");
             visual.transform.SetParent(parent, false);
 
+            // Neck — thin capsule between head and shoulders
+            MakePart(visual.transform, PrimitiveType.Capsule, "Neck",
+                new Vector3(0f, 1.55f, 0f), new Vector3(0.13f, 0.08f, 0.13f),
+                new Color(1.00f, 0.88f, 0.80f));
+            // Upper torso / bodice — narrower, warm purple fabric
+            MakePart(visual.transform, PrimitiveType.Capsule, "Bodice",
+                new Vector3(0f, 1.22f, 0f), new Vector3(0.46f, 0.28f, 0.40f),
+                new Color(0.65f, 0.40f, 0.88f));
+            // Collar — white lace ring around neck
+            MakePart(visual.transform, PrimitiveType.Cylinder, "Collar",
+                new Vector3(0f, 1.47f, 0f), new Vector3(0.28f, 0.03f, 0.28f),
+                new Color(0.98f, 0.92f, 1.00f));
+            // Chest-bow accent
+            MakePartRotated(visual.transform, PrimitiveType.Cube, "ChestBowL",
+                new Vector3(-0.06f, 1.35f, 0.18f), Quaternion.Euler(0, 0, 30),
+                new Vector3(0.09f, 0.07f, 0.04f), new Color(1.0f, 0.45f, 0.75f));
+            MakePartRotated(visual.transform, PrimitiveType.Cube, "ChestBowR",
+                new Vector3( 0.06f, 1.35f, 0.18f), Quaternion.Euler(0, 0, -30),
+                new Vector3(0.09f, 0.07f, 0.04f), new Color(1.0f, 0.45f, 0.75f));
+            MakePart(visual.transform, PrimitiveType.Sphere, "ChestBowKnot",
+                new Vector3(0f, 1.35f, 0.19f), Vector3.one * 0.045f,
+                new Color(1.0f, 0.30f, 0.60f));
+            // Old-style "Body" kept but tucked inside dress as hip base
             MakePart(visual.transform, PrimitiveType.Capsule, "Body",
-                new Vector3(0f, 0.9f, 0f), new Vector3(0.55f, 0.75f, 0.55f),
+                new Vector3(0f, 0.9f, 0f), new Vector3(0.55f, 0.55f, 0.55f),
                 new Color(0.82f, 0.72f, 0.96f));
+            // Puff sleeves — spheres at shoulders above arms
+            MakePart(visual.transform, PrimitiveType.Sphere, "PuffL",
+                new Vector3(-0.33f, 1.22f, 0f), new Vector3(0.22f, 0.20f, 0.22f),
+                new Color(0.70f, 0.45f, 0.92f));
+            MakePart(visual.transform, PrimitiveType.Sphere, "PuffR",
+                new Vector3( 0.33f, 1.22f, 0f), new Vector3(0.22f, 0.20f, 0.22f),
+                new Color(0.70f, 0.45f, 0.92f));
+            // Hands — small pale spheres at arm tips (ArmL rotated +25°, tip points down-outward)
+            MakePart(visual.transform, PrimitiveType.Sphere, "HandL",
+                new Vector3(-0.58f, 0.62f, 0f), Vector3.one * 0.11f,
+                new Color(1.00f, 0.88f, 0.80f));
+            MakePart(visual.transform, PrimitiveType.Sphere, "HandR",
+                new Vector3( 0.58f, 0.62f, 0f), Vector3.one * 0.11f,
+                new Color(1.00f, 0.88f, 0.80f));
             MakePart(visual.transform, PrimitiveType.Sphere, "Head",
                 new Vector3(0f, 1.85f, 0f), Vector3.one * 0.42f,
                 new Color(1.00f, 0.88f, 0.80f));
