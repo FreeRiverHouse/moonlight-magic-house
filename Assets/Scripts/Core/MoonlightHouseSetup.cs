@@ -62,8 +62,10 @@ namespace MoonlightMagicHouse
                 cam = camGO.AddComponent<Camera>();
                 camGO.AddComponent<AudioListener>();
             }
-            cam.clearFlags      = CameraClearFlags.SolidColor;
+            cam.clearFlags      = CameraClearFlags.Skybox;
             cam.backgroundColor = new Color(0.04f, 0.02f, 0.10f);
+            if (!gameObject.GetComponent<SkyboxSetup>())
+                gameObject.AddComponent<SkyboxSetup>();
             cam.farClipPlane    = 80f;
             cam.fieldOfView     = 60f;
             cam.transform.position = new Vector3(0f, 2.8f, -6.2f);
@@ -92,7 +94,7 @@ namespace MoonlightMagicHouse
             // Moon — cool blue-white directional
             MakeLight("Moon", LightType.Directional,
                 new Color(0.70f, 0.82f, 1.00f), 1.4f,
-                Quaternion.Euler(40f, -20f, 0f), LightShadows.Soft, 0.4f);
+                Quaternion.Euler(40f, -20f, 0f), LightShadows.Soft, 0.6f);
 
             // Warm fill — fireplace/lamp feel
             MakeLight("WarmFill", LightType.Directional,
