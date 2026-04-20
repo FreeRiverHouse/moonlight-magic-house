@@ -20,8 +20,10 @@ namespace MoonlightMagicHouse
     {
         public string activityName;
         public Sprite icon;
-        public float happinessBoost;
-        public float energyCost;
+        public float warmthBoost;
+        public float wonderBoost;
+        public float magicBoost;
+        public float restCost;
         public int xpReward;
     }
 

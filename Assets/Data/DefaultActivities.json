@@ -1,12 +1,12 @@
 {
   "activities": [
-    { "activityName": "Cuddle",       "happinessBoost": 15, "energyCost": 5,  "xpReward": 5  },
-    { "activityName": "Play Ball",    "happinessBoost": 20, "energyCost": 15, "xpReward": 10 },
-    { "activityName": "Dance",        "happinessBoost": 25, "energyCost": 20, "xpReward": 15 },
-    { "activityName": "Moon Walk",    "happinessBoost": 30, "energyCost": 25, "xpReward": 20 },
-    { "activityName": "Star Gazing",  "happinessBoost": 18, "energyCost": 5,  "xpReward": 12 },
-    { "activityName": "Magic Tricks", "happinessBoost": 35, "energyCost": 30, "xpReward": 30 },
-    { "activityName": "Moonlight Spa","happinessBoost": 28, "energyCost": 8,  "xpReward": 20 },
-    { "activityName": "Stardust Bath","happinessBoost": 22, "energyCost": 10, "xpReward": 18 }
+    { "activityName": "Cuddle",        "warmthBoost": 20, "wonderBoost": 5,  "magicBoost": 0,  "restCost": 5,  "xpReward": 8  },
+    { "activityName": "Garden Wander", "warmthBoost": 10, "wonderBoost": 20, "magicBoost": 5,  "restCost": 10, "xpReward": 12 },
+    { "activityName": "Moon Dance",    "warmthBoost": 15, "wonderBoost": 15, "magicBoost": 10, "restCost": 18, "xpReward": 18 },
+    { "activityName": "Star Gazing",   "warmthBoost": 5,  "wonderBoost": 25, "magicBoost": 15, "restCost": 5,  "xpReward": 15 },
+    { "activityName": "Story Time",    "warmthBoost": 10, "wonderBoost": 20, "magicBoost": 5,  "restCost": 3,  "xpReward": 14 },
+    { "activityName": "Magic Practice","warmthBoost": 5,  "wonderBoost": 10, "magicBoost": 30, "restCost": 25, "xpReward": 28 },
+    { "activityName": "Moonlight Spa", "warmthBoost": 25, "wonderBoost": 5,  "magicBoost": 5,  "restCost": 0,  "xpReward": 20 },
+    { "activityName": "House Explore", "warmthBoost": 5,  "wonderBoost": 30, "magicBoost": 10, "restCost": 15, "xpReward": 22 }
   ]
 }

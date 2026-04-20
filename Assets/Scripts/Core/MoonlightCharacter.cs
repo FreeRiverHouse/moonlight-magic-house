@@ -172,13 +172,13 @@ namespace MoonlightMagicHouse
             AchievementSystem.Instance?.OnRoomVisited(room);
         }
 
-        public void CompleteMiniGame(int magicGain, int coinReward)
+        public void PerformMagic(int magicGain, int coinReward)
         {
             stats.magic  = Mathf.Min(100, stats.magic  + magicGain);
             stats.wonder = Mathf.Min(100, stats.wonder + 10f);
             EarnCoins(coinReward);
             GainXP(20);
-            AudioManager.Instance?.Play("minigame_win");
+            AudioManager.Instance?.Play("reward");
             HapticFeedback.Success();
         }
 
