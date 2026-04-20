@@ -3,14 +3,14 @@ using UnityEditor;
 
 namespace MoonlightMagicHouse.Editor
 {
-    [CustomEditor(typeof(MoonlightPet))]
-    public class MoonlightPetEditor : UnityEditor.Editor
+    [CustomEditor(typeof(MoonlightCharacter))]
+    public class MoonlightCharacterEditor : UnityEditor.Editor
     {
         public override void OnInspectorGUI()
         {
             DrawDefaultInspector();
 
-            var pet = (MoonlightPet)target;
+            var ml = (MoonlightCharacter)target;
 
             EditorGUILayout.Space(8);
             EditorGUILayout.LabelField("── Debug Controls ──", EditorStyles.boldLabel);
@@ -19,43 +19,33 @@ namespace MoonlightMagicHouse.Editor
             if (GUILayout.Button("Feed (free)"))
             {
                 var f = ScriptableObject.CreateInstance<FoodItem>();
-                f.hungerBoost    = 30;
-                f.happinessBoost = 10;
-                f.xpReward       = 10;
-                pet.Feed(f);
+                f.hungerBoost = 30;
+                f.warmthBoost = 10;
+                f.xpReward    = 10;
+                ml.Feed(f);
                 DestroyImmediate(f);
             }
-            if (GUILayout.Button("Play")) pet.Play(CreateDebugActivity());
-            if (GUILayout.Button("Sleep")) pet.Sleep();
-            if (GUILayout.Button("Clean")) pet.Clean();
+            if (GUILayout.Button("Cuddle"))    ml.Cuddle();
+            if (GUILayout.Button("Sleep"))     ml.PutToSleep();
+            if (GUILayout.Button("Explore"))   ml.Explore(RoomType.Garden);
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("+100 XP"))   pet.GetType()
-                .GetMethod("GainXP", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
-                ?.Invoke(pet, new object[] { 100 });
-            if (GUILayout.Button("+50 Coins"))  pet.EarnCoins(50);
-            if (GUILayout.Button("Force Evolve"))
-            {
-                var f = ScriptableObject.CreateInstance<FoodItem>();
-                f.xpReward = 2000;
-                pet.Feed(f);
-                DestroyImmediate(f);
-            }
+            if (GUILayout.Button("+100 XP"))
+                typeof(MoonlightCharacter)
+                    .GetMethod("GainXP", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?.Invoke(ml, new object[] { 100 });
+            if (GUILayout.Button("+50 Stars"))  ml.EarnCoins(50);
+            if (GUILayout.Button("Force Stage"))
+                typeof(MoonlightCharacter)
+                    .GetMethod("GainXP", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    ?.Invoke(ml, new object[] { 2000 });
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(4);
-            EditorGUILayout.LabelField($"Mood: {pet.stats.GetMood()}", EditorStyles.helpBox);
-            EditorGUILayout.LabelField($"Age: {pet.ageMinutes:F1} min", EditorStyles.helpBox);
-        }
-
-        static ActivityItem CreateDebugActivity()
-        {
-            var a = ScriptableObject.CreateInstance<ActivityItem>();
-            a.happinessBoost = 20;
-            a.energyCost     = 10;
-            a.xpReward       = 15;
-            return a;
+            EditorGUILayout.LabelField($"Mood:  {ml.stats.GetMood()}", EditorStyles.helpBox);
+            EditorGUILayout.LabelField($"Stage: {ml.stage}", EditorStyles.helpBox);
+            EditorGUILayout.LabelField($"Days:  {ml.daysInHouse:F2}", EditorStyles.helpBox);
         }
     }
 
