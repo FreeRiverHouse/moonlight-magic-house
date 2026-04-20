@@ -66,7 +66,7 @@ def clear_scene():
 
 def add_sphere(loc=(0, 0, 0), radius=1.0, subdivisions=1):
     bm = bmesh.new()
-    bmesh.ops.create_ico_sphere(bm, radius=radius, subdivisions=subdivisions)
+    bmesh.ops.create_icosphere(bm, radius=radius, subdivisions=subdivisions)
     me = bpy.data.meshes.new("Sphere")
     bm.to_mesh(me)
     bm.free()

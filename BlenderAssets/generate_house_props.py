@@ -290,7 +290,7 @@ def make_moon_lamp():
     """Glowing moon-shaped floor lamp — appears in multiple rooms."""
     clear_scene()
     bm = bmesh.new()
-    bmesh.ops.create_ico_sphere(bm, radius=0.30, subdivisions=2)
+    bmesh.ops.create_icosphere(bm, radius=0.30, subdivisions=2)
     me = bpy.data.meshes.new("MoonSphere")
     bm.to_mesh(me)
     bm.free()
