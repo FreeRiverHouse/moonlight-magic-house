@@ -152,6 +152,9 @@ namespace MoonlightMagicHouse
             // Stylised primitive character — guaranteed visible, toon-shaded with outline
             var visual = BuildFallbackCharacter(mlGO.transform);
 
+            // Procedural idle bob — no Animator required
+            mlGO.AddComponent<MoonlightBobber>();
+
             // Collider
             var col = mlGO.AddComponent<CapsuleCollider>();
             col.height = 2.2f;
@@ -443,6 +446,74 @@ namespace MoonlightMagicHouse
                 Prim(PrimitiveType.Cube, "ChestLid", root.transform,
                     new Vector3(3f, 0.62f, 2.8f), new Vector3(0.82f, 0.14f, 0.57f),
                     new Color(0.45f, 0.65f, 0.90f));
+
+                // Window frame on back wall
+                Prim(PrimitiveType.Cube, "WinFrameOuter", root.transform,
+                    new Vector3(2.5f, 2.5f, 4.85f), new Vector3(2.0f, 1.6f, 0.12f),
+                    new Color(0.20f, 0.12f, 0.36f));
+                // Window glass — deep blue-night
+                var winGlass = new GameObject("WinGlass");
+                winGlass.transform.SetParent(root.transform, false);
+                winGlass.transform.localPosition = new Vector3(2.5f, 2.5f, 4.87f);
+                winGlass.transform.localScale    = new Vector3(1.7f, 1.3f, 0.04f);
+                var winMat = new Material(Shader.Find("Standard"));
+                winMat.color = new Color(0.02f, 0.04f, 0.18f, 0.85f);
+                winMat.SetFloat("_Mode", 3);   // Transparent
+                winMat.SetInt("_SrcBlend",  (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                winMat.SetInt("_DstBlend",  (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                winMat.SetInt("_ZWrite", 0);
+                winMat.DisableKeyword("_ALPHATEST_ON");
+                winMat.EnableKeyword("_ALPHABLEND_ON");
+                winMat.renderQueue = 3000;
+                var winCube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                winCube.name = "Glass";
+                winCube.transform.SetParent(root.transform, false);
+                winCube.transform.localPosition = new Vector3(2.5f, 2.5f, 4.87f);
+                winCube.transform.localScale    = new Vector3(1.7f, 1.3f, 0.04f);
+                winCube.GetComponent<MeshRenderer>().material = winMat;
+                Object.Destroy(winCube.GetComponent<Collider>());
+                // Moon circle in window
+                var moonCirc = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                moonCirc.name = "MoonCircle";
+                moonCirc.transform.SetParent(root.transform, false);
+                moonCirc.transform.localPosition = new Vector3(2.5f, 2.7f, 4.9f);
+                moonCirc.transform.localScale    = Vector3.one * 0.32f;
+                var moonMat = new Material(ToonShader);
+                moonMat.SetColor("_Color",           new Color(0.95f, 0.95f, 0.80f));
+                moonMat.SetColor("_EmissionColor",   new Color(0.90f, 0.90f, 0.60f));
+                moonMat.SetFloat("_EmissionIntensity", 1.5f);
+                moonMat.SetFloat("_OutlineWidth", 0f);
+                moonCirc.GetComponent<MeshRenderer>().material = moonMat;
+                Object.Destroy(moonCirc.GetComponent<Collider>());
+                // Stars (small spheres near window)
+                for (int s = 0; s < 8; s++)
+                {
+                    var star = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                    star.name = $"Star{s}";
+                    star.transform.SetParent(root.transform, false);
+                    float sx = 1.8f + Random.Range(-0.7f, 0.7f);
+                    float sy = 2.0f + Random.Range(-0.5f, 0.7f);
+                    star.transform.localPosition = new Vector3(sx, sy, 4.91f);
+                    star.transform.localScale    = Vector3.one * Random.Range(0.02f, 0.05f);
+                    var sMat = new Material(ToonShader);
+                    sMat.SetColor("_Color",           Color.white);
+                    sMat.SetColor("_EmissionColor",   Color.white);
+                    sMat.SetFloat("_EmissionIntensity", 2f);
+                    sMat.SetFloat("_OutlineWidth", 0f);
+                    star.GetComponent<MeshRenderer>().material = sMat;
+                    Object.Destroy(star.GetComponent<Collider>());
+                }
+                // Window light — moonbeam
+                var winLGO = new GameObject("WindowMoonbeam");
+                winLGO.transform.SetParent(root.transform, false);
+                winLGO.transform.localPosition = new Vector3(2.5f, 3f, 4f);
+                var winL = winLGO.AddComponent<Light>();
+                winL.type      = LightType.Spot;
+                winL.color     = new Color(0.78f, 0.88f, 1.00f);
+                winL.intensity = 1.2f;
+                winL.range     = 8f;
+                winL.spotAngle = 45f;
+                winL.transform.localRotation = Quaternion.Euler(60f, -160f, 0f);
             }
 
             root.SetActive(active);
