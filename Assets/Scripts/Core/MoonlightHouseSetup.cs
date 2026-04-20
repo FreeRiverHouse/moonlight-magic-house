@@ -215,6 +215,8 @@ namespace MoonlightMagicHouse
             visual.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
             // Scale-punch on button presses
             var puncher = visual.AddComponent<ScalePuncher>();
+            // Gentle idle micro-motion (head tilt, arm sway, body squash)
+            visual.AddComponent<IdleMicroMotion>();
 
             // Floating name tag above the character (3D TextMesh — billboarded)
             var tagGO = new GameObject("NameTag");
