@@ -101,6 +101,38 @@ namespace MoonlightMagicHouse
             MakeLight("MagicRim", LightType.Directional,
                 new Color(0.60f, 0.30f, 1.00f), 0.9f,
                 Quaternion.Euler(20f, 180f, 0f), LightShadows.None, 0f);
+
+            // Floating dust motes — ambient indoor atmosphere
+            var dustGO = new GameObject("DustMotes");
+            dustGO.transform.position = new Vector3(0f, 1.8f, 0f);
+            var dps = dustGO.AddComponent<ParticleSystem>();
+            var dmain = dps.main;
+            dmain.startLifetime = 8f;
+            dmain.startSpeed    = 0.15f;
+            dmain.startSize     = new ParticleSystem.MinMaxCurve(0.04f, 0.10f);
+            dmain.startColor    = new ParticleSystem.MinMaxGradient(
+                new Color(1f, 0.95f, 0.85f, 0.35f), new Color(0.85f, 0.75f, 1f, 0.35f));
+            dmain.maxParticles  = 60;
+            dmain.gravityModifier = -0.02f;
+            var demis = dps.emission;
+            demis.rateOverTime = 6f;
+            var dshape = dps.shape;
+            dshape.shapeType = ParticleSystemShapeType.Box;
+            dshape.scale     = new Vector3(8f, 3f, 8f);
+            var dvel = dps.velocityOverLifetime;
+            dvel.enabled = true;
+            dvel.x = new ParticleSystem.MinMaxCurve(-0.12f, 0.12f);
+            dvel.z = new ParticleSystem.MinMaxCurve(-0.12f, 0.12f);
+            var dcol = dps.colorOverLifetime;
+            dcol.enabled = true;
+            var dg = new Gradient();
+            dg.SetKeys(
+                new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.35f, 0.4f), new GradientAlphaKey(0f, 1f) });
+            dcol.color = new ParticleSystem.MinMaxGradient(dg);
+            var dpsr = dustGO.GetComponent<ParticleSystemRenderer>();
+            dpsr.renderMode = ParticleSystemRenderMode.Billboard;
+            dpsr.material   = new Material(Shader.Find("Sprites/Default"));
         }
 
         Light MakeLight(string n, LightType t, Color c, float intensity,
