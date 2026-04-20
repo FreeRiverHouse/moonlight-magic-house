@@ -146,7 +146,7 @@ namespace MoonlightMagicHouse
             mlGO.AddComponent<MoonlightWardrobe>();
             mlGO.AddComponent<MoonlightStageVFX>();
             mlGO.AddComponent<MoonlightGlowController>();
-            mlGO.AddComponent<PetMoodParticles>();
+            mlGO.AddComponent<MoonlightMoodParticles>();
             // MoonlightAnimator requires Animator — Unity auto-adds it via RequireComponent
             mlGO.AddComponent<MoonlightAnimator>();
 

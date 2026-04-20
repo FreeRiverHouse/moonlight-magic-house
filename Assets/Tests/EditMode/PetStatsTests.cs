@@ -53,11 +53,7 @@ namespace MoonlightMagicHouse.Tests
                 xp            = 300,
                 coins         = 55,
                 roomsUnlocked = 3,
-                wonder        = 80f,
-                warmth        = 75f,
-                rest          = 65f,
-                magic         = 90f,
-                hunger        = 70f,
+                stats         = new MoonlightStats { wonder=80f, warmth=75f, rest=65f, magic=90f, hunger=70f },
                 daysInHouse   = 7.5f,
                 lastSaveTime  = System.DateTime.UtcNow.ToString("O")
             };
@@ -68,7 +64,7 @@ namespace MoonlightMagicHouse.Tests
             Assert.AreEqual(300, back.xp);
             Assert.AreEqual(55,  back.coins);
             Assert.AreEqual(3,   back.roomsUnlocked);
-            Assert.AreEqual(80f, back.wonder);
+            Assert.AreEqual(80f, back.stats.wonder);
         }
 
         [Test]
