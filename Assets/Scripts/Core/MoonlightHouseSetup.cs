@@ -151,6 +151,8 @@ namespace MoonlightMagicHouse
 
             // Stylised primitive character — guaranteed visible, toon-shaded with outline
             var visual = BuildFallbackCharacter(mlGO.transform);
+            // Face the camera (camera is at -Z; character's face is at +Z by default)
+            visual.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
 
             // Procedural idle bob — no Animator required
             mlGO.AddComponent<MoonlightBobber>();
