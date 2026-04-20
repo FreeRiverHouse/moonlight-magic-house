@@ -323,11 +323,29 @@ namespace MoonlightMagicHouse
             MakePart(visual.transform, PrimitiveType.Sphere, "EyeR",
                 new Vector3( 0.08f, 1.88f, 0.19f), Vector3.one * 0.07f,
                 new Color(0.08f, 0.04f, 0.18f));
+            // Iris (purple) on top of black eye
+            MakeEmissive(visual.transform, "IrisL",
+                new Vector3(-0.08f, 1.88f, 0.215f), Vector3.one * 0.045f,
+                new Color(0.55f, 0.35f, 0.95f), 1.1f);
+            MakeEmissive(visual.transform, "IrisR",
+                new Vector3( 0.08f, 1.88f, 0.215f), Vector3.one * 0.045f,
+                new Color(0.55f, 0.35f, 0.95f), 1.1f);
             // Eye highlights — tiny white sphere "shine"
             MakeEmissive(visual.transform, "ShineL",
-                new Vector3(-0.063f, 1.90f, 0.22f), Vector3.one * 0.022f, Color.white, 1.8f);
+                new Vector3(-0.063f, 1.90f, 0.232f), Vector3.one * 0.022f, Color.white, 2.0f);
             MakeEmissive(visual.transform, "ShineR",
-                new Vector3( 0.097f, 1.90f, 0.22f), Vector3.one * 0.022f, Color.white, 1.8f);
+                new Vector3( 0.097f, 1.90f, 0.232f), Vector3.one * 0.022f, Color.white, 2.0f);
+            // Eyelashes — tiny tilted cubes above each eye
+            MakePartRotated(visual.transform, PrimitiveType.Cube, "LashL",
+                new Vector3(-0.08f, 1.94f, 0.215f),
+                Quaternion.Euler(0f, 0f, 15f),
+                new Vector3(0.10f, 0.012f, 0.018f),
+                new Color(0.10f, 0.05f, 0.20f));
+            MakePartRotated(visual.transform, PrimitiveType.Cube, "LashR",
+                new Vector3( 0.08f, 1.94f, 0.215f),
+                Quaternion.Euler(0f, 0f, -15f),
+                new Vector3(0.10f, 0.012f, 0.018f),
+                new Color(0.10f, 0.05f, 0.20f));
             var blinker = visual.AddComponent<EyeBlinker>();
             blinker.Bind(
                 visual.transform.Find("EyeL"),
@@ -389,10 +407,29 @@ namespace MoonlightMagicHouse
                 Quaternion.Euler(0f, 0f, -25f),
                 new Vector3(0.15f, 0.38f, 0.15f),
                 new Color(0.78f, 0.68f, 0.92f));
-            // Dress / tunic flare — hides the body capsule bottom for a cuter silhouette
-            MakePart(visual.transform, PrimitiveType.Cylinder, "Dress",
-                new Vector3(0f, 0.60f, 0f), new Vector3(0.55f, 0.32f, 0.55f),
+            // Dress — three stacked flared cylinders (ruffled)
+            MakePart(visual.transform, PrimitiveType.Cylinder, "DressTop",
+                new Vector3(0f, 0.78f, 0f), new Vector3(0.48f, 0.14f, 0.48f),
+                new Color(0.62f, 0.35f, 0.90f));
+            MakePart(visual.transform, PrimitiveType.Cylinder, "DressMid",
+                new Vector3(0f, 0.55f, 0f), new Vector3(0.62f, 0.12f, 0.62f),
                 new Color(0.55f, 0.30f, 0.82f));
+            MakePart(visual.transform, PrimitiveType.Cylinder, "DressHem",
+                new Vector3(0f, 0.36f, 0f), new Vector3(0.75f, 0.10f, 0.75f),
+                new Color(0.48f, 0.25f, 0.74f));
+            // Lace trim — thin emissive cylinder at dress hem
+            var trim = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            trim.name = "DressTrim";
+            trim.transform.SetParent(visual.transform, false);
+            trim.transform.localPosition = new Vector3(0f, 0.28f, 0f);
+            trim.transform.localScale    = new Vector3(0.76f, 0.03f, 0.76f);
+            var trimMat = new Material(ToonShader);
+            trimMat.SetColor("_Color",             new Color(1.00f, 0.85f, 0.95f));
+            trimMat.SetColor("_EmissionColor",     new Color(1.00f, 0.85f, 0.95f));
+            trimMat.SetFloat("_EmissionIntensity", 0.9f);
+            trimMat.SetFloat("_OutlineWidth",      0f);
+            trim.GetComponent<MeshRenderer>().material = trimMat;
+            Object.Destroy(trim.GetComponent<Collider>());
             // Belt
             MakePart(visual.transform, PrimitiveType.Cylinder, "Belt",
                 new Vector3(0f, 0.90f, 0f), new Vector3(0.42f, 0.05f, 0.42f),
