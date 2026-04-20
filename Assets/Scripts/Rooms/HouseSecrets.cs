@@ -55,7 +55,8 @@ namespace MoonlightMagicHouse
             if (secret.discoveryClip) AudioManager.Instance?.Play("discover");
 
             onDiscovered?.Invoke(secret);
-            AchievementSystem.Instance?.Check($"secret_{id}");
+            AchievementSystem.Instance?.OnSecretFound(_found.Count);
+            if (AllFound) AchievementSystem.Instance?.OnAllSecretsFound();
         }
 
         IEnumerator ShowVFX(GameObject vfx)

@@ -47,6 +47,7 @@ namespace MoonlightMagicHouse
                     PlayerPrefs.SetInt(pref, 1);
                     onTrickLearned?.Invoke(trick);
                     AudioManager.Instance?.Play("trick_learned");
+                    AchievementSystem.Instance?.OnTrickLearned(LearnedTricks().Count);
                 }
             }
         }
