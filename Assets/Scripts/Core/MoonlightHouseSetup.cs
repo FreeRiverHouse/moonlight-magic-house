@@ -162,6 +162,35 @@ namespace MoonlightMagicHouse
             col.center = new Vector3(0f, 1.1f, 0f);
             mlGO.AddComponent<MoonlightInteractable>();
 
+            // Sparkle particle system (ambient magic around character)
+            var sparkGO = new GameObject("Sparkles");
+            sparkGO.transform.SetParent(mlGO.transform, false);
+            sparkGO.transform.localPosition = new Vector3(0f, 1.2f, 0f);
+            var ps = sparkGO.AddComponent<ParticleSystem>();
+            var main = ps.main;
+            main.startLifetime = 2.2f;
+            main.startSpeed    = 0.35f;
+            main.startSize     = 0.06f;
+            main.startColor    = new ParticleSystem.MinMaxGradient(
+                new Color(1f, 0.90f, 0.55f), new Color(0.75f, 0.55f, 1f));
+            main.maxParticles  = 40;
+            main.simulationSpace = ParticleSystemSimulationSpace.Local;
+            var emission = ps.emission;
+            emission.rateOverTime = 8f;
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Sphere;
+            shape.radius    = 0.9f;
+            var colOverLife = ps.colorOverLifetime;
+            colOverLife.enabled = true;
+            var grad = new Gradient();
+            grad.SetKeys(
+                new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(new Color(1f, 0.85f, 0.6f), 1f) },
+                new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.9f, 0.5f), new GradientAlphaKey(0f, 1f) });
+            colOverLife.color = new ParticleSystem.MinMaxGradient(grad);
+            var psr = sparkGO.GetComponent<ParticleSystemRenderer>();
+            psr.renderMode = ParticleSystemRenderMode.Billboard;
+            psr.material   = new Material(Shader.Find("Sprites/Default"));
+
             // Glow light
             var glowGO = new GameObject("Glow");
             glowGO.transform.SetParent(mlGO.transform, false);
@@ -237,9 +266,15 @@ namespace MoonlightMagicHouse
                 new Vector3( 0.16f, -0.08f, 0.10f), new Vector3(0.18f, 0.10f, 0.22f),
                 new Color(0.30f, 0.18f, 0.50f));
             // Little star hair clip
-            MakePart(visual.transform, PrimitiveType.Cube, "StarClip",
-                new Vector3(-0.28f, 2.10f, 0.02f), Vector3.one * 0.09f,
+            MakePartRotated(visual.transform, PrimitiveType.Cube, "StarClip",
+                new Vector3(-0.28f, 2.08f, 0.02f),
+                Quaternion.Euler(0f, 0f, 45f),
+                Vector3.one * 0.08f,
                 new Color(1.0f, 0.92f, 0.45f));
+            // Smile — a tiny curved cube (approx a small rectangle under the eyes)
+            MakePart(visual.transform, PrimitiveType.Cube, "Smile",
+                new Vector3(0f, 1.80f, 0.20f), new Vector3(0.10f, 0.015f, 0.015f),
+                new Color(0.80f, 0.30f, 0.45f));
             return visual;
         }
 
@@ -601,18 +636,18 @@ namespace MoonlightMagicHouse
                     new Vector3(-1.7f, 3.05f, 4.86f), new Vector3(0.9f, 0.4f, 0.08f),
                     new Color(0.50f, 0.75f, 0.50f));
 
-                // Wall clock
-                Prim(PrimitiveType.Cylinder, "ClockBody", root.transform,
-                    new Vector3(4.4f, 3.5f, 1f), new Vector3(0.55f, 0.1f, 0.55f),
+                // Wall clock — flat disc on right wall (rotated 90° around Z so it's vertical)
+                MakePartRotated(root.transform, PrimitiveType.Cylinder, "ClockBody",
+                    new Vector3(4.88f, 3.5f, 1f),
+                    Quaternion.Euler(0f, 0f, 90f),
+                    new Vector3(0.55f, 0.06f, 0.55f),
                     new Color(0.95f, 0.92f, 0.80f));
-                // Clock rotated flat against the right wall
-                var clock = GameObject.Find("LivingRoom/ClockBody");
-                if (clock != null) clock.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+                // Hour/minute hands (flat cubes on clock face)
                 Prim(PrimitiveType.Cube, "ClockHandH", root.transform,
-                    new Vector3(4.35f, 3.5f, 1f), new Vector3(0.02f, 0.20f, 0.03f),
+                    new Vector3(4.84f, 3.5f, 1f), new Vector3(0.03f, 0.20f, 0.03f),
                     new Color(0.15f, 0.08f, 0.25f));
                 Prim(PrimitiveType.Cube, "ClockHandM", root.transform,
-                    new Vector3(4.35f, 3.5f, 1f), new Vector3(0.02f, 0.32f, 0.03f),
+                    new Vector3(4.84f, 3.58f, 1.12f), new Vector3(0.03f, 0.03f, 0.32f),
                     new Color(0.25f, 0.12f, 0.35f));
 
                 // Balloon floating in corner
