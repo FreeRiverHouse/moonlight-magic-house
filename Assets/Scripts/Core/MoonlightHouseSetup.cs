@@ -566,24 +566,17 @@ namespace MoonlightMagicHouse
             var root = new GameObject(roomName);
             root.transform.position = pos;
 
-            // Floor — checkerboard of dark purple squares for depth
-            for (int fx = 0; fx < 5; fx++)
-                for (int fz = 0; fz < 5; fz++)
-                {
-                    bool dark = ((fx + fz) & 1) == 0;
-                    Color tile = dark
-                        ? new Color(0.12f, 0.07f, 0.22f)
-                        : new Color(0.17f, 0.10f, 0.28f);
-                    Prim(PrimitiveType.Cube, $"Tile_{fx}_{fz}", root.transform,
-                        new Vector3(-4f + fx * 2f, -0.1f, -4f + fz * 2f),
-                        new Vector3(2f, 0.18f, 2f),
-                        tile);
-                }
+            // Floor — warm wood planks (procedural texture)
+            var floor = Prim(PrimitiveType.Cube, "Floor", root.transform,
+                new Vector3(0f, -0.1f, 0f), new Vector3(10f, 0.18f, 10f),
+                new Color(0.55f, 0.32f, 0.28f));
+            ApplyTiledTexture(floor, ProcTextures.WoodPlanks(), new Vector2(3f, 3f));
 
-            // Ceiling
-            Prim(PrimitiveType.Cube, "Ceiling", root.transform,
+            // Ceiling — starry sky texture
+            var ceil = Prim(PrimitiveType.Cube, "Ceiling", root.transform,
                 new Vector3(0f, 5.1f, 0f), new Vector3(10f, 0.2f, 10f),
-                new Color(0.08f, 0.05f, 0.15f));
+                new Color(0.18f, 0.10f, 0.32f));
+            ApplyTiledTexture(ceil, ProcTextures.CeilingSky(), new Vector2(2f, 2f));
 
             // Ceiling stars (emissive tiny spheres) — 16 random points
             for (int cs = 0; cs < 16; cs++)
@@ -605,12 +598,17 @@ namespace MoonlightMagicHouse
                 cStar.AddComponent<StarTwinkle>();
             }
 
-            // Walls
-            Color wallCol = new Color(0.11f, 0.07f, 0.19f);
-            Prim(PrimitiveType.Cube, "WallBack",  root.transform, new Vector3(0f, 2.5f,  5f), new Vector3(10f, 5f, 0.2f), wallCol);
-            Prim(PrimitiveType.Cube, "WallFront", root.transform, new Vector3(0f, 2.5f, -5f), new Vector3(10f, 5f, 0.2f), wallCol);
-            Prim(PrimitiveType.Cube, "WallRight", root.transform, new Vector3( 5f, 2.5f, 0f), new Vector3(0.2f, 5f, 10f), wallCol);
-            Prim(PrimitiveType.Cube, "WallLeft",  root.transform, new Vector3(-5f, 2.5f, 0f), new Vector3(0.2f, 5f, 10f), wallCol);
+            // Walls — striped wallpaper (procedural)
+            Color wallCol = new Color(0.22f, 0.14f, 0.38f);
+            var wb = Prim(PrimitiveType.Cube, "WallBack",  root.transform, new Vector3(0f, 2.5f,  5f), new Vector3(10f, 5f, 0.2f), wallCol);
+            var wf = Prim(PrimitiveType.Cube, "WallFront", root.transform, new Vector3(0f, 2.5f, -5f), new Vector3(10f, 5f, 0.2f), wallCol);
+            var wr = Prim(PrimitiveType.Cube, "WallRight", root.transform, new Vector3( 5f, 2.5f, 0f), new Vector3(0.2f, 5f, 10f), wallCol);
+            var wl = Prim(PrimitiveType.Cube, "WallLeft",  root.transform, new Vector3(-5f, 2.5f, 0f), new Vector3(0.2f, 5f, 10f), wallCol);
+            var wallTex = ProcTextures.Wallpaper();
+            ApplyTiledTexture(wb, wallTex, new Vector2(3f, 1.2f));
+            ApplyTiledTexture(wf, wallTex, new Vector2(3f, 1.2f));
+            ApplyTiledTexture(wr, wallTex, new Vector2(3f, 1.2f));
+            ApplyTiledTexture(wl, wallTex, new Vector2(3f, 1.2f));
 
             // Skirting boards
             Color skirt = new Color(0.20f, 0.14f, 0.32f);
@@ -718,10 +716,11 @@ namespace MoonlightMagicHouse
                     new Vector3(1.75f, 0.25f, 1.8f), new Vector3(0.1f, 0.5f, 0.1f),
                     new Color(0.25f, 0.14f, 0.40f));
 
-                // Rug
-                Prim(PrimitiveType.Cube, "Rug", root.transform,
+                // Rug — knit diamond pattern (procedural)
+                var rug = Prim(PrimitiveType.Cube, "Rug", root.transform,
                     new Vector3(0f, 0.01f, 1f), new Vector3(4.5f, 0.02f, 3.5f),
-                    new Color(0.40f, 0.18f, 0.65f));
+                    new Color(0.55f, 0.30f, 0.82f));
+                ApplyTiledTexture(rug, ProcTextures.Rug(), new Vector2(1f, 1f));
 
                 // Toy chest
                 Prim(PrimitiveType.Cube, "ChestBody", root.transform,
@@ -1263,6 +1262,20 @@ namespace MoonlightMagicHouse
             go.transform.localScale    = scale;
             SetToonMat(go, color);
             return go;
+        }
+
+        static void ApplyTiledTexture(GameObject go, Texture2D tex, Vector2 tiling)
+        {
+            var mr = go.GetComponent<MeshRenderer>();
+            if (mr == null || tex == null) return;
+            var mat = mr.material;
+            if (mat.HasProperty("_MainTex"))
+            {
+                mat.mainTexture      = tex;
+                mat.mainTextureScale = tiling;
+            }
+            if (mat.HasProperty("_BaseMap"))
+                mat.SetTexture("_BaseMap", tex);
         }
 
         static Shader _toonShader;
