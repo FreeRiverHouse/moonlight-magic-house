@@ -692,6 +692,31 @@ namespace MoonlightMagicHouse
                     new Vector3(4.84f, 3.58f, 1.12f), new Vector3(0.03f, 0.03f, 0.32f),
                     new Color(0.25f, 0.12f, 0.35f));
 
+                // Stuffed bunny on rug
+                Prim(PrimitiveType.Sphere, "BunnyBody", root.transform,
+                    new Vector3(1.8f, 0.22f, -0.2f), new Vector3(0.28f, 0.30f, 0.30f),
+                    new Color(0.95f, 0.85f, 0.90f));
+                Prim(PrimitiveType.Sphere, "BunnyHead", root.transform,
+                    new Vector3(1.8f, 0.47f, -0.3f), Vector3.one * 0.18f,
+                    new Color(1.0f, 0.90f, 0.92f));
+                Prim(PrimitiveType.Capsule, "BunnyEarL", root.transform,
+                    new Vector3(1.73f, 0.62f, -0.3f), new Vector3(0.05f, 0.12f, 0.05f),
+                    new Color(1.0f, 0.75f, 0.85f));
+                Prim(PrimitiveType.Capsule, "BunnyEarR", root.transform,
+                    new Vector3(1.87f, 0.62f, -0.3f), new Vector3(0.05f, 0.12f, 0.05f),
+                    new Color(1.0f, 0.75f, 0.85f));
+                Prim(PrimitiveType.Sphere, "BunnyEyeL", root.transform,
+                    new Vector3(1.76f, 0.49f, -0.44f), Vector3.one * 0.025f,
+                    new Color(0.08f, 0.04f, 0.18f));
+                Prim(PrimitiveType.Sphere, "BunnyEyeR", root.transform,
+                    new Vector3(1.85f, 0.49f, -0.44f), Vector3.one * 0.025f,
+                    new Color(0.08f, 0.04f, 0.18f));
+
+                // Star-shaped cushion on rug
+                Prim(PrimitiveType.Cube, "FloorCushion", root.transform,
+                    new Vector3(-0.5f, 0.15f, -0.5f), new Vector3(0.6f, 0.18f, 0.6f),
+                    new Color(0.95f, 0.70f, 0.95f));
+
                 // Balloon floating in corner
                 Prim(PrimitiveType.Sphere, "Balloon", root.transform,
                     new Vector3(3.8f, 3.2f, -3.5f), Vector3.one * 0.45f,
