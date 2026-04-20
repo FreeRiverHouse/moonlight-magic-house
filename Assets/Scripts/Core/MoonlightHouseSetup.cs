@@ -17,7 +17,9 @@ namespace MoonlightMagicHouse
         [SerializeField] GameObject localizationPrefab;
         [SerializeField] GameObject notificationPrefab;
         [SerializeField] GameObject achievementPrefab;
-        [SerializeField] GameObject dailyRewardPrefab;
+        [SerializeField] GameObject seasonalEventPrefab;
+        [SerializeField] GameObject tricksPrefab;
+        [SerializeField] GameObject streakPrefab;
 
         [Header("UI")]
         [SerializeField] GameObject uiCanvasPrefab;
@@ -42,7 +44,9 @@ namespace MoonlightMagicHouse
             Spawn(localizationPrefab);
             Spawn(notificationPrefab);
             Spawn(achievementPrefab);
-            Spawn(dailyRewardPrefab);
+            if (seasonalEventPrefab) Spawn(seasonalEventPrefab);
+            if (tricksPrefab)        Spawn(tricksPrefab);
+            if (streakPrefab)        Spawn(streakPrefab);
 
             // Rooms
             var living  = Spawn(livingRoomPrefab);
@@ -65,10 +69,11 @@ namespace MoonlightMagicHouse
             // Game manager
             var gmGO = Spawn(gameManagerPrefab);
             var gm   = gmGO.GetComponent<MoonlightGameManager>();
-            gm.moonlight = ml;
-            gm.ui        = ui;
-            gm.rooms     = roomMgr;
-            gm.wardrobe  = mlGO.GetComponent<MoonlightWardrobe>();
+            gm.moonlight    = ml;
+            gm.ui           = ui;
+            gm.rooms        = roomMgr;
+            gm.wardrobe     = mlGO.GetComponent<MoonlightWardrobe>();
+            gm.idleBehavior = mlGO.GetComponent<MoonlightIdleBehavior>();
         }
 
         void SetupAtmosphere()
