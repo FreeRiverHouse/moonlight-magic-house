@@ -3,58 +3,70 @@
     {
       "name": "Lunina",
       "personality": "Moon Guardian",
-      "greeting": "Welcome back, little one. The moon missed you!",
+      "greeting": "Oh, you're here! Moonlight will be so happy.",
       "idle": [
-        { "text": "The stars are bright tonight, aren't they?", "duration": 3 },
-        { "text": "Your pet looks up to you, you know.", "duration": 3 },
-        { "text": "Every moment you spend here is pure magic.", "duration": 3 },
-        { "text": "The moonlight makes everything more beautiful.", "duration": 3 }
+        { "text": "The house feels warmer when you visit.", "duration": 3 },
+        { "text": "Have you tried exploring the garden at night?", "duration": 3 },
+        { "text": "Moonlight was humming to herself earlier. A good sign!", "duration": 3 },
+        { "text": "Every room in this house holds a little secret.", "duration": 3 },
+        { "text": "Moonlight grows so quickly. It feels like only yesterday she was a Moonbud.", "duration": 4 },
+        { "text": "If you listen carefully, the house makes its own music.", "duration": 3 }
       ],
       "happy": [
-        { "text": "Oh! Your pet is glowing with joy!", "duration": 3 },
-        { "text": "Look at that happy little face! Wonderful.", "duration": 3 }
+        { "text": "Look at Moonlight glow! You're doing wonderfully.", "duration": 3 },
+        { "text": "She hasn't looked this happy in days!", "duration": 3 },
+        { "text": "Whatever you did — keep doing it.", "duration": 3 }
       ],
       "sad": [
-        { "text": "Hmm, your pet needs some attention. Don't forget to feed them!", "duration": 4 },
-        { "text": "The moon is watching — take care of your friend.", "duration": 4 }
+        { "text": "Moonlight seems a little withdrawn. Maybe she needs a cuddle?", "duration": 4 },
+        { "text": "She hasn't eaten properly today. Try the moonberry — she loves it.", "duration": 4 },
+        { "text": "Even the bravest magical girls need rest.", "duration": 3 }
       ]
     },
     {
       "name": "Stellina",
       "personality": "Playful Guide",
-      "greeting": "Yay, you're here! Let's play play play!",
+      "greeting": "Ooh! You're back! Can we explore the garden?",
       "idle": [
-        { "text": "Have you tried the Magic Garden yet?", "duration": 3 },
-        { "text": "I found a new star last night! It was SO sparkly!", "duration": 3 },
-        { "text": "Your pet loves it when you visit every day!", "duration": 3 },
-        { "text": "Did you know pets grow faster when they're happy?", "duration": 3 }
+        { "text": "I counted fourteen fireflies last night. A new record.", "duration": 3 },
+        { "text": "The garden has a secret corner behind the moonflower bush.", "duration": 3 },
+        { "text": "I taught Moonlight a new dance. She's a natural.", "duration": 3 },
+        { "text": "Do you think the stars remember us between visits?", "duration": 4 },
+        { "text": "The kitchen has a jar in the back cupboard. Not telling what's inside.", "duration": 3 },
+        { "text": "I think the Living Room carpet has a map hidden in the pattern.", "duration": 4 }
       ],
       "happy": [
-        { "text": "Woohoo! Party time! 🌟", "duration": 2 },
-        { "text": "Your pet is over the moon with happiness!", "duration": 3 }
+        { "text": "She's so sparkly today! Almost hard to look at.", "duration": 3 },
+        { "text": "Happy Moonlight = best Moonlight. Fact.", "duration": 2 },
+        { "text": "She's been bouncing around all morning!", "duration": 3 }
       ],
       "sad": [
-        { "text": "Aw no! Quick, give your pet a hug!", "duration": 3 },
-        { "text": "Maybe some yummy food would help? Just saying!", "duration": 3 }
+        { "text": "She's being very quiet. Let's fix that.", "duration": 3 },
+        { "text": "Did she get enough sleep? She looks a little dim.", "duration": 3 },
+        { "text": "Moonlight needs adventures! Take her somewhere new.", "duration": 3 }
       ]
     },
     {
       "name": "Noctua",
       "personality": "Wise Mentor",
-      "greeting": "Hmm. You have returned. Good.",
+      "greeting": "Hm. You've returned. The house remembered you.",
       "idle": [
-        { "text": "Patience is the greatest magic of all.", "duration": 4 },
-        { "text": "A well-fed pet thinks more clearly. Remember that.", "duration": 4 },
-        { "text": "The Library holds secrets for those who seek them.", "duration": 4 },
-        { "text": "Evolution is earned, not given.", "duration": 3 }
+        { "text": "The moon has been watching. It approves.", "duration": 4 },
+        { "text": "Every stage of growth requires letting something go.", "duration": 4 },
+        { "text": "The library holds answers, but only if you ask the right questions.", "duration": 4 },
+        { "text": "A Moonkeeper is not born. She is chosen — and she chooses back.", "duration": 5 },
+        { "text": "Moonlight is more capable than she yet knows. As are you.", "duration": 4 },
+        { "text": "The magic in this house is older than the house itself.", "duration": 4 }
       ],
       "happy": [
-        { "text": "Excellent. Your bond grows stronger.", "duration": 3 },
-        { "text": "I am... pleased. Do not let it show.", "duration": 3 }
+        { "text": "She shines. This is as it should be.", "duration": 3 },
+        { "text": "The house resonates when she is well. Can you hear it?", "duration": 4 },
+        { "text": "A content Moonlight makes the garden bloom faster.", "duration": 3 }
       ],
       "sad": [
-        { "text": "Your pet's stats are declining. This is unacceptable.", "duration": 4 },
-        { "text": "Attend to your responsibilities.", "duration": 3 }
+        { "text": "Her light dims when she is hungry or alone. Tend to her.", "duration": 4 },
+        { "text": "Magic cannot flourish in an empty vessel. She needs nourishment.", "duration": 4 },
+        { "text": "Even the moon wanes. It does not mean it has forgotten how to shine.", "duration": 5 }
       ]
     }
   ]
