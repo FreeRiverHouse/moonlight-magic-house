@@ -642,6 +642,7 @@ namespace MoonlightMagicHouse
                 moonMat.SetFloat("_OutlineWidth", 0f);
                 moonCirc.GetComponent<MeshRenderer>().material = moonMat;
                 Object.Destroy(moonCirc.GetComponent<Collider>());
+                moonCirc.AddComponent<MoonArc>();
                 // Stars (small spheres near window)
                 for (int s = 0; s < 8; s++)
                 {
