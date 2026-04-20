@@ -16,24 +16,32 @@ namespace MoonlightMagicHouse
         static readonly Dictionary<string, Dictionary<Language, string>> Table =
             new Dictionary<string, Dictionary<Language, string>>
         {
-            ["ui.hunger"]       = new() { [Language.English]="Hunger",    [Language.Italian]="Fame",      [Language.French]="Faim",    [Language.Spanish]="Hambre",    [Language.Japanese]="おなか" },
-            ["ui.happiness"]    = new() { [Language.English]="Happiness", [Language.Italian]="Felicità",  [Language.French]="Bonheur", [Language.Spanish]="Felicidad", [Language.Japanese]="しあわせ" },
-            ["ui.energy"]       = new() { [Language.English]="Energy",    [Language.Italian]="Energia",   [Language.French]="Énergie", [Language.Spanish]="Energía",   [Language.Japanese]="エネルギー" },
-            ["ui.cleanliness"]  = new() { [Language.English]="Cleanliness",[Language.Italian]="Pulizia",  [Language.French]="Propreté",[Language.Spanish]="Limpieza",  [Language.Japanese]="きれいさ" },
-            ["ui.health"]       = new() { [Language.English]="Health",    [Language.Italian]="Salute",    [Language.French]="Santé",   [Language.Spanish]="Salud",     [Language.Japanese]="けんこう" },
-            ["ui.coins"]        = new() { [Language.English]="Coins",     [Language.Italian]="Stelle",    [Language.French]="Étoiles", [Language.Spanish]="Monedas",   [Language.Japanese]="コイン" },
-            ["room.bedroom"]    = new() { [Language.English]="Bedroom",   [Language.Italian]="Camera",    [Language.French]="Chambre", [Language.Spanish]="Dormitorio",[Language.Japanese]="しんしつ" },
-            ["room.kitchen"]    = new() { [Language.English]="Kitchen",   [Language.Italian]="Cucina",    [Language.French]="Cuisine", [Language.Spanish]="Cocina",    [Language.Japanese]="だいどころ" },
-            ["room.livingroom"] = new() { [Language.English]="Living Room",[Language.Italian]="Salotto",  [Language.French]="Salon",   [Language.Spanish]="Sala",      [Language.Japanese]="リビング" },
-            ["room.garden"]     = new() { [Language.English]="Garden",    [Language.Italian]="Giardino",  [Language.French]="Jardin",  [Language.Spanish]="Jardín",    [Language.Japanese]="にわ" },
-            ["room.library"]    = new() { [Language.English]="Library",   [Language.Italian]="Biblioteca",[Language.French]="Bibliothèque",[Language.Spanish]="Biblioteca",[Language.Japanese]="としょかん" },
-            ["onboard.welcome"] = new() { [Language.English]="Welcome to the Moonlight Magic House!", [Language.Italian]="Benvenuto nella Casa della Magia Lunare!", [Language.French]="Bienvenue dans la Maison de la Magie Lunaire!", [Language.Spanish]="¡Bienvenido a la Casa de la Magia Lunar!", [Language.Japanese]="ムーンライト マジックハウスへようこそ！" },
-            ["onboard.namePrompt"] = new() { [Language.English]="Give your pet a name!", [Language.Italian]="Dai un nome al tuo amico!", [Language.French]="Donnez un nom à votre ami!", [Language.Spanish]="¡Dale un nombre a tu amigo!", [Language.Japanese]="なまえをつけてあげよう！" },
-            ["stage.egg"]       = new() { [Language.English]="Egg",       [Language.Italian]="Uovo",      [Language.French]="Œuf",     [Language.Spanish]="Huevo",     [Language.Japanese]="たまご" },
-            ["stage.baby"]      = new() { [Language.English]="Baby",      [Language.Italian]="Cucciolo",  [Language.French]="Bébé",    [Language.Spanish]="Bebé",      [Language.Japanese]="ベビー" },
-            ["stage.child"]     = new() { [Language.English]="Child",     [Language.Italian]="Piccolo",   [Language.French]="Enfant",  [Language.Spanish]="Niño",      [Language.Japanese]="こども" },
-            ["stage.teen"]      = new() { [Language.English]="Teen",      [Language.Italian]="Giovane",   [Language.French]="Ado",     [Language.Spanish]="Joven",     [Language.Japanese]="ティーン" },
-            ["stage.adult"]     = new() { [Language.English]="Adult",     [Language.Italian]="Adulto",    [Language.French]="Adulte",  [Language.Spanish]="Adulto",    [Language.Japanese]="おとな" },
+            // ── Stats ───────────────────────────────────────────────────────
+            ["ui.hunger"]          = new() { [Language.English]="Hunger",    [Language.Italian]="Fame",          [Language.French]="Faim",        [Language.Spanish]="Hambre",    [Language.Japanese]="おなか" },
+            ["ui.wonder"]          = new() { [Language.English]="Wonder",    [Language.Italian]="Meraviglia",    [Language.French]="Émerveillement",[Language.Spanish]="Asombro", [Language.Japanese]="ふしぎ" },
+            ["ui.warmth"]          = new() { [Language.English]="Warmth",    [Language.Italian]="Calore",        [Language.French]="Chaleur",     [Language.Spanish]="Calidez",   [Language.Japanese]="ぬくもり" },
+            ["ui.rest"]            = new() { [Language.English]="Rest",      [Language.Italian]="Riposo",        [Language.French]="Repos",       [Language.Spanish]="Descanso",  [Language.Japanese]="きゅうそく" },
+            ["ui.magic"]           = new() { [Language.English]="Magic",     [Language.Italian]="Magia",         [Language.French]="Magie",       [Language.Spanish]="Magia",     [Language.Japanese]="まほう" },
+            ["ui.coins"]           = new() { [Language.English]="Stars",     [Language.Italian]="Stelle",        [Language.French]="Étoiles",     [Language.Spanish]="Estrellas", [Language.Japanese]="ほし" },
+            // ── Rooms ───────────────────────────────────────────────────────
+            ["room.bedroom"]       = new() { [Language.English]="Bedroom",   [Language.Italian]="Camera",        [Language.French]="Chambre",     [Language.Spanish]="Dormitorio",[Language.Japanese]="しんしつ" },
+            ["room.kitchen"]       = new() { [Language.English]="Kitchen",   [Language.Italian]="Cucina",        [Language.French]="Cuisine",     [Language.Spanish]="Cocina",    [Language.Japanese]="だいどころ" },
+            ["room.livingroom"]    = new() { [Language.English]="Living Room",[Language.Italian]="Salotto",      [Language.French]="Salon",       [Language.Spanish]="Sala",      [Language.Japanese]="リビング" },
+            ["room.garden"]        = new() { [Language.English]="Garden",    [Language.Italian]="Giardino",      [Language.French]="Jardin",      [Language.Spanish]="Jardín",    [Language.Japanese]="にわ" },
+            ["room.library"]       = new() { [Language.English]="Library",   [Language.Italian]="Biblioteca",    [Language.French]="Bibliothèque",[Language.Spanish]="Biblioteca",[Language.Japanese]="としょかん" },
+            // ── Welcome ─────────────────────────────────────────────────────
+            ["ui.welcome"]         = new() { [Language.English]="Welcome to the Moonlight Magic House!", [Language.Italian]="Benvenuta nella Casa della Magia Lunare!", [Language.French]="Bienvenue dans la Maison de la Magie Lunaire!", [Language.Spanish]="¡Bienvenida a la Casa de la Magia Lunar!", [Language.Japanese]="ムーンライト マジックハウスへようこそ！" },
+            ["ui.offline"]         = new() { [Language.English]="Moonlight missed you!", [Language.Italian]="Moonlight ti aspettava!", [Language.French]="Moonlight s'ennuyait de toi!", [Language.Spanish]="¡Moonlight te echaba de menos!", [Language.Japanese]="ムーンライトがさびしがっていたよ！" },
+            // ── Moonlight stages ────────────────────────────────────────────
+            ["stage.moonbud"]      = new() { [Language.English]="Moonbud",   [Language.Italian]="Germoglio",     [Language.French]="Bourgeon",    [Language.Spanish]="Brote Lunar",[Language.Japanese]="ムーンバッド" },
+            ["stage.starling"]     = new() { [Language.English]="Starling",  [Language.Italian]="Stellina",      [Language.French]="Étoilée",     [Language.Spanish]="Estrellita", [Language.Japanese]="スターリング" },
+            ["stage.luminary"]     = new() { [Language.English]="Luminary",  [Language.Italian]="Luminaria",     [Language.French]="Luminaire",   [Language.Spanish]="Luminaria",  [Language.Japanese]="ルミナリー" },
+            ["stage.sorceress"]    = new() { [Language.English]="Sorceress", [Language.Italian]="Strega",        [Language.French]="Sorcière",    [Language.Spanish]="Hechicera",  [Language.Japanese]="ソーサレス" },
+            ["stage.moonkeeper"]   = new() { [Language.English]="Moonkeeper",[Language.Italian]="Guardiana",     [Language.French]="Gardienne",   [Language.Spanish]="Guardiana",  [Language.Japanese]="ムーンキーパー" },
+            // ── Actions ─────────────────────────────────────────────────────
+            ["action.feed"]        = new() { [Language.English]="Feed",      [Language.Italian]="Dai da mangiare",[Language.French]="Nourrir",    [Language.Spanish]="Alimentar",  [Language.Japanese]="たべさせる" },
+            ["action.cuddle"]      = new() { [Language.English]="Cuddle",    [Language.Italian]="Coccola",       [Language.French]="Câlin",       [Language.Spanish]="Abrazar",    [Language.Japanese]="だっこ" },
+            ["action.sleep"]       = new() { [Language.English]="Sleep",     [Language.Italian]="Dormi",         [Language.French]="Dormir",      [Language.Spanish]="Dormir",     [Language.Japanese]="ねる" },
         };
 
         void Awake()

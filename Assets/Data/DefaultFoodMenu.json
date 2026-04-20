@@ -1,12 +1,12 @@
 {
   "foods": [
-    { "itemName": "Moonberry",        "cost": 0,   "hungerBoost": 20, "happinessBoost": 5,  "xpReward": 5  },
-    { "itemName": "Star Biscuit",     "cost": 5,   "hungerBoost": 30, "happinessBoost": 8,  "xpReward": 8  },
-    { "itemName": "Magic Soup",       "cost": 10,  "hungerBoost": 45, "happinessBoost": 10, "xpReward": 12 },
-    { "itemName": "Luna Cake",        "cost": 20,  "hungerBoost": 50, "happinessBoost": 20, "xpReward": 18 },
-    { "itemName": "Stardust Candy",   "cost": 15,  "hungerBoost": 25, "happinessBoost": 30, "xpReward": 15 },
-    { "itemName": "Cosmic Fruit",     "cost": 35,  "hungerBoost": 60, "happinessBoost": 25, "xpReward": 25 },
-    { "itemName": "Dream Pudding",    "cost": 50,  "hungerBoost": 70, "happinessBoost": 35, "xpReward": 35 },
-    { "itemName": "Golden Moonapple", "cost": 100, "hungerBoost": 90, "happinessBoost": 50, "xpReward": 60 }
+    { "itemName": "Moonberry",        "cost": 0,   "hungerBoost": 20, "warmthBoost": 5,  "wonderBoost": 5,  "magicBoost": 0,  "xpReward": 5  },
+    { "itemName": "Star Biscuit",     "cost": 5,   "hungerBoost": 30, "warmthBoost": 8,  "wonderBoost": 3,  "magicBoost": 0,  "xpReward": 8  },
+    { "itemName": "Magic Soup",       "cost": 10,  "hungerBoost": 45, "warmthBoost": 10, "wonderBoost": 5,  "magicBoost": 5,  "xpReward": 12 },
+    { "itemName": "Luna Cake",        "cost": 20,  "hungerBoost": 50, "warmthBoost": 20, "wonderBoost": 10, "magicBoost": 5,  "xpReward": 18 },
+    { "itemName": "Stardust Candy",   "cost": 15,  "hungerBoost": 20, "warmthBoost": 10, "wonderBoost": 25, "magicBoost": 15, "xpReward": 15 },
+    { "itemName": "Cosmic Fruit",     "cost": 35,  "hungerBoost": 60, "warmthBoost": 15, "wonderBoost": 10, "magicBoost": 10, "xpReward": 25 },
+    { "itemName": "Dream Pudding",    "cost": 50,  "hungerBoost": 55, "warmthBoost": 30, "wonderBoost": 15, "magicBoost": 20, "xpReward": 35 },
+    { "itemName": "Golden Moonapple", "cost": 100, "hungerBoost": 80, "warmthBoost": 40, "wonderBoost": 30, "magicBoost": 40, "xpReward": 60 }
   ]
 }

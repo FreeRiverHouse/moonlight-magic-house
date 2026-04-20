@@ -139,7 +139,9 @@ namespace MoonlightMagicHouse
         {
             if (!SpendCoins(food.cost)) return;
             stats.hunger  = Mathf.Min(100, stats.hunger + food.hungerBoost);
-            stats.warmth  = Mathf.Min(100, stats.warmth + food.happinessBoost * 0.5f);
+            stats.warmth  = Mathf.Min(100, stats.warmth + food.warmthBoost);
+            stats.wonder  = Mathf.Min(100, stats.wonder + food.wonderBoost);
+            stats.magic   = Mathf.Min(100, stats.magic  + food.magicBoost);
             GainXP(food.xpReward);
             AudioManager.Instance?.Play("eat");
             HapticFeedback.Light();

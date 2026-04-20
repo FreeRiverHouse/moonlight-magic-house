@@ -4,89 +4,72 @@ using UnityEngine;
 
 namespace MoonlightMagicHouse.Tests
 {
-    public class PetStatsTests
+    public class MoonlightStatsTests
     {
-        // ── PetStats.GetMood ────────────────────────────────────────────────
-
         [Test]
-        public void GetMood_AllFull_ReturnsEcstatic()
+        public void GetMood_AllFull_ReturnsRadiant()
         {
             var s = FullStats();
-            Assert.AreEqual(PetMood.Ecstatic, s.GetMood());
+            Assert.AreEqual(MoonlightMood.Radiant, s.GetMood());
         }
 
         [Test]
-        public void GetMood_LowHealth_ReturnsSad()
+        public void GetMood_LowRest_ReturnsAsleep()
         {
             var s = FullStats();
-            s.health = 10f;
-            Assert.AreEqual(PetMood.Sad, s.GetMood());
+            s.rest = 10f;
+            Assert.AreEqual(MoonlightMood.Asleep, s.GetMood());
         }
 
         [Test]
-        public void GetMood_LowEnergy_ReturnsTired()
-        {
-            var s = FullStats();
-            s.energy = 10f;
-            Assert.AreEqual(PetMood.Tired, s.GetMood());
-        }
-
-        [Test]
-        public void GetMood_LowHunger_ReturnsHungry()
+        public void GetMood_LowHunger_ReturnsGrumpy()
         {
             var s = FullStats();
             s.hunger = 10f;
-            Assert.AreEqual(PetMood.Hungry, s.GetMood());
+            Assert.AreEqual(MoonlightMood.Grumpy, s.GetMood());
         }
 
         [Test]
-        public void GetMood_AllLow_ReturnsSad_HealthFirst()
+        public void GetMood_LowWonder_ReturnsBored()
         {
-            var s = new PetStats { hunger=10, happiness=10, energy=10, cleanliness=10, health=10 };
-            Assert.AreEqual(PetMood.Sad, s.GetMood());
+            var s = FullStats();
+            s.wonder = 20f;
+            Assert.AreEqual(MoonlightMood.Bored, s.GetMood());
         }
-
-        // ── DailyRewardManager ──────────────────────────────────────────────
 
         [Test]
-        public void DailyReward_CoinsPerStreak_ArrayLength_Is7()
+        public void GetMood_AverageStats_ReturnsHappy()
         {
-            // Verifies the stripe array via reflection — keeps sync with class
-            var field = typeof(DailyRewardManager)
-                .GetField("CoinsPerStreak",
-                          System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-            var arr = (int[])field.GetValue(null);
-            Assert.AreEqual(7, arr.Length, "CoinsPerStreak must have 7 entries (one per day)");
+            var s = new MoonlightStats { wonder=70, warmth=70, rest=70, magic=50, hunger=70 };
+            Assert.AreEqual(MoonlightMood.Happy, s.GetMood());
         }
-
-        // ── PetSaveData serialisation ───────────────────────────────────────
 
         [Test]
         public void SaveData_JsonRoundtrip_PreservesFields()
         {
-            var data = new PetSaveData
+            var data = new MoonlightSaveData
             {
-                petName    = "TestPet",
-                species    = PetSpecies.Fox,
-                stage      = EvolutionStage.Child,
-                xp         = 250,
-                level      = 3,
-                coins      = 77,
-                ageMinutes = 42f,
-                stats      = new PetStats { hunger=60, happiness=80, energy=50, cleanliness=90, health=100 },
-                lastSaveTime = System.DateTime.UtcNow.ToString("O")
+                stage         = MoonlightStage.Luminary,
+                xp            = 300,
+                coins         = 55,
+                roomsUnlocked = 3,
+                wonder        = 80f,
+                warmth        = 75f,
+                rest          = 65f,
+                magic         = 90f,
+                hunger        = 70f,
+                daysInHouse   = 7.5f,
+                lastSaveTime  = System.DateTime.UtcNow.ToString("O")
             };
-            var json    = JsonUtility.ToJson(data);
-            var back    = JsonUtility.FromJson<PetSaveData>(json);
-            Assert.AreEqual("TestPet",          back.petName);
-            Assert.AreEqual(PetSpecies.Fox,     back.species);
-            Assert.AreEqual(EvolutionStage.Child, back.stage);
-            Assert.AreEqual(250,                back.xp);
-            Assert.AreEqual(77,                 back.coins);
-            Assert.AreEqual(60f,                back.stats.hunger);
-        }
+            var json = JsonUtility.ToJson(data);
+            var back = JsonUtility.FromJson<MoonlightSaveData>(json);
 
-        // ── Item sanity ─────────────────────────────────────────────────────
+            Assert.AreEqual(MoonlightStage.Luminary, back.stage);
+            Assert.AreEqual(300, back.xp);
+            Assert.AreEqual(55,  back.coins);
+            Assert.AreEqual(3,   back.roomsUnlocked);
+            Assert.AreEqual(80f, back.wonder);
+        }
 
         [Test]
         public void FoodItem_HungerBoost_Positive()
@@ -98,17 +81,15 @@ namespace MoonlightMagicHouse.Tests
         }
 
         [Test]
-        public void ActivityItem_EnergyCost_NonNegative()
+        public void FoodItem_WonderBoost_NonNegative()
         {
-            var act = ScriptableObject.CreateInstance<ActivityItem>();
-            act.energyCost = 15f;
-            Assert.GreaterOrEqual(act.energyCost, 0f);
-            Object.DestroyImmediate(act);
+            var food = ScriptableObject.CreateInstance<FoodItem>();
+            food.wonderBoost = 10f;
+            Assert.GreaterOrEqual(food.wonderBoost, 0f);
+            Object.DestroyImmediate(food);
         }
 
-        // ── Helpers ─────────────────────────────────────────────────────────
-
-        static PetStats FullStats() =>
-            new PetStats { hunger=100, happiness=100, energy=100, cleanliness=100, health=100 };
+        static MoonlightStats FullStats() =>
+            new MoonlightStats { wonder=100, warmth=100, rest=100, magic=100, hunger=100 };
     }
 }

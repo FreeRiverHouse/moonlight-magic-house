@@ -9,7 +9,9 @@ namespace MoonlightMagicHouse
         public Sprite icon;
         public int cost;
         public float hungerBoost;
-        public float happinessBoost;
+        public float wonderBoost;
+        public float warmthBoost;
+        public float magicBoost;
         public int xpReward;
     }
 
