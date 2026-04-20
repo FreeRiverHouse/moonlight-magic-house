@@ -422,6 +422,25 @@ namespace MoonlightMagicHouse
                 new Vector3(0f, 5.1f, 0f), new Vector3(10f, 0.2f, 10f),
                 new Color(0.08f, 0.05f, 0.15f));
 
+            // Ceiling stars (emissive tiny spheres) — 16 random points
+            for (int cs = 0; cs < 16; cs++)
+            {
+                var cStar = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                cStar.name = $"CStar{cs}";
+                cStar.transform.SetParent(root.transform, false);
+                cStar.transform.localPosition = new Vector3(
+                    Random.Range(-4.5f, 4.5f), 4.95f, Random.Range(-4.5f, 4.5f));
+                cStar.transform.localScale = Vector3.one * Random.Range(0.04f, 0.09f);
+                var csMat = new Material(ToonShader);
+                var c = new Color(1f, Random.Range(0.85f, 1f), Random.Range(0.75f, 1f));
+                csMat.SetColor("_Color",            c);
+                csMat.SetColor("_EmissionColor",    c);
+                csMat.SetFloat("_EmissionIntensity", 2.2f);
+                csMat.SetFloat("_OutlineWidth",      0f);
+                cStar.GetComponent<MeshRenderer>().material = csMat;
+                Object.Destroy(cStar.GetComponent<Collider>());
+            }
+
             // Walls
             Color wallCol = new Color(0.11f, 0.07f, 0.19f);
             Prim(PrimitiveType.Cube, "WallBack",  root.transform, new Vector3(0f, 2.5f,  5f), new Vector3(10f, 5f, 0.2f), wallCol);
