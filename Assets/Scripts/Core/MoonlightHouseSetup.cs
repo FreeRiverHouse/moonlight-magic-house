@@ -66,7 +66,7 @@ namespace MoonlightMagicHouse
             cam.backgroundColor = new Color(0.04f, 0.02f, 0.10f);
             cam.farClipPlane    = 80f;
             cam.fieldOfView     = 60f;
-            cam.transform.position = new Vector3(0f, 3f, -8f);
+            cam.transform.position = new Vector3(0f, 2f, -4f);
             cam.transform.LookAt(new Vector3(0f, 1f, 0f));
             cam.allowHDR = true;
 
@@ -78,7 +78,7 @@ namespace MoonlightMagicHouse
         void SetupAtmosphere()
         {
             RenderSettings.ambientMode    = AmbientMode.Flat;
-            RenderSettings.ambientLight   = new Color(0.04f, 0.02f, 0.10f);
+            RenderSettings.ambientLight   = new Color(0.18f, 0.12f, 0.30f);
             RenderSettings.fog            = true;
             RenderSettings.fogMode        = FogMode.Linear;
             RenderSettings.fogStartDistance = 18f;
@@ -86,18 +86,18 @@ namespace MoonlightMagicHouse
             RenderSettings.fogColor       = new Color(0.05f, 0.02f, 0.13f);
 
             // Moon — cool blue-white directional
-            var moon = MakeLight("Moon", LightType.Directional,
-                new Color(0.70f, 0.82f, 1.00f), 0.55f,
+            MakeLight("Moon", LightType.Directional,
+                new Color(0.70f, 0.82f, 1.00f), 1.4f,
                 Quaternion.Euler(40f, -20f, 0f), LightShadows.Soft, 0.4f);
 
             // Warm fill — fireplace/lamp feel
             MakeLight("WarmFill", LightType.Directional,
-                new Color(1.00f, 0.60f, 0.30f), 0.28f,
+                new Color(1.00f, 0.60f, 0.30f), 0.6f,
                 Quaternion.Euler(30f, 160f, 0f), LightShadows.None, 0f);
 
             // Magic rim — purple
             MakeLight("MagicRim", LightType.Directional,
-                new Color(0.60f, 0.30f, 1.00f), 0.55f,
+                new Color(0.60f, 0.30f, 1.00f), 0.9f,
                 Quaternion.Euler(20f, 180f, 0f), LightShadows.None, 0f);
         }
 
@@ -154,13 +154,13 @@ namespace MoonlightMagicHouse
             var visual = new GameObject("Visual");
             visual.transform.SetParent(mlGO.transform, false);
 
-            // Capsule body — pale lavender
+            // Capsule body — pale lavender with soft glow
             var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
             body.name = "Body";
             body.transform.SetParent(visual.transform, false);
             body.transform.localPosition = new Vector3(0f, 0.9f, 0f);
             body.transform.localScale    = new Vector3(0.55f, 0.75f, 0.55f);
-            SetMat(body, new Color(0.82f, 0.72f, 0.96f));
+            SetMat(body, new Color(0.82f, 0.72f, 0.96f), new Color(0.22f, 0.10f, 0.40f));
             Object.Destroy(body.GetComponent<Collider>());
 
             // Sphere head — warm skin tone
@@ -169,16 +169,16 @@ namespace MoonlightMagicHouse
             head.transform.SetParent(visual.transform, false);
             head.transform.localPosition = new Vector3(0f, 1.85f, 0f);
             head.transform.localScale    = new Vector3(0.42f, 0.42f, 0.42f);
-            SetMat(head, new Color(1.00f, 0.90f, 0.82f));
+            SetMat(head, new Color(1.00f, 0.90f, 0.82f), new Color(0.18f, 0.10f, 0.08f));
             Object.Destroy(head.GetComponent<Collider>());
 
-            // Hair blob — deep violet
+            // Hair blob — deep violet with glow
             var hair = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             hair.name = "Hair";
             hair.transform.SetParent(visual.transform, false);
             hair.transform.localPosition = new Vector3(0f, 2.08f, 0.04f);
             hair.transform.localScale    = new Vector3(0.46f, 0.30f, 0.46f);
-            SetMat(hair, new Color(0.22f, 0.08f, 0.48f));
+            SetMat(hair, new Color(0.22f, 0.08f, 0.48f), new Color(0.20f, 0.04f, 0.40f));
             Object.Destroy(hair.GetComponent<Collider>());
 
             // Collider + interactable on root
@@ -195,8 +195,8 @@ namespace MoonlightMagicHouse
             var glow = glowGO.AddComponent<Light>();
             glow.type      = LightType.Point;
             glow.color     = new Color(0.65f, 0.40f, 1.00f);
-            glow.intensity = 1.2f;
-            glow.range     = 4.5f;
+            glow.intensity = 2.8f;
+            glow.range     = 6f;
 
             return mlGO;
         }
@@ -268,7 +268,7 @@ namespace MoonlightMagicHouse
             var rl = lGO.AddComponent<Light>();
             rl.type      = LightType.Point;
             rl.color     = Color.Lerp(ambColor, Color.white, 0.5f);
-            rl.intensity = 0.8f;
+            rl.intensity = 2.0f;
             rl.range     = 12f;
 
             root.SetActive(active);
@@ -499,12 +499,18 @@ namespace MoonlightMagicHouse
             return go;
         }
 
-        static void SetMat(GameObject go, Color color)
+        static void SetMat(GameObject go, Color color, Color emissive = default)
         {
             var mr = go.GetComponent<MeshRenderer>();
             if (!mr) return;
-            var mat = new Material(Shader.Find("Standard") ?? Shader.Find("Diffuse"));
+            var shader = Shader.Find("Standard") ?? Shader.Find("Diffuse");
+            var mat = new Material(shader);
             mat.color = color;
+            if (emissive != default && emissive != Color.black)
+            {
+                mat.EnableKeyword("_EMISSION");
+                mat.SetColor("_EmissionColor", emissive);
+            }
             mr.material = mat;
         }
     }
