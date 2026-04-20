@@ -156,6 +156,23 @@ namespace MoonlightMagicHouse
             // Scale-punch on button presses
             var puncher = visual.AddComponent<ScalePuncher>();
 
+            // Floating name tag above the character (3D TextMesh — billboarded)
+            var tagGO = new GameObject("NameTag");
+            tagGO.transform.SetParent(mlGO.transform, false);
+            tagGO.transform.localPosition = new Vector3(0f, 2.5f, 0f);
+            tagGO.transform.localScale    = Vector3.one * 0.25f;
+            tagGO.AddComponent<BillboardToCamera>();
+            var tm = tagGO.AddComponent<TextMesh>();
+            tm.text       = "Moonbud";
+            tm.fontSize   = 48;
+            tm.fontStyle  = FontStyle.Bold;
+            tm.anchor     = TextAnchor.MiddleCenter;
+            tm.alignment  = TextAlignment.Center;
+            tm.color      = new Color(1f, 0.9f, 1f);
+            tm.characterSize = 0.1f;
+            var tmr = tagGO.GetComponent<MeshRenderer>();
+            tmr.sortingOrder = 5;
+
             // Procedural idle bob — no Animator required
             mlGO.AddComponent<MoonlightBobber>();
 
