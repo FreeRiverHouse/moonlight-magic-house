@@ -127,6 +127,6 @@ Transform:
 --- !u!114 &102
 MonoBehaviour:
   m_ObjectHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 00000000000000000000000000000001, type: 3}
+  m_Script: {fileID: 11500000, guid: 7936015699b2b434c96875aa967ab1dc, type: 3}
   m_Name:
   m_EditorClassIdentifier: MoonlightMagicHouse.MoonlightHouseSetup

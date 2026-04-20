@@ -26,8 +26,10 @@ namespace MoonlightMagicHouse
             if (Instance != null) { Destroy(gameObject); return; }
             Instance = this;
             DontDestroyOnLoad(gameObject);
+            if (sfxSource   == null) sfxSource   = gameObject.AddComponent<AudioSource>();
+            if (musicSource == null) musicSource = gameObject.AddComponent<AudioSource>();
             _map = new Dictionary<string, SoundEntry>();
-            foreach (var s in sounds) _map[s.key] = s;
+            if (sounds != null) foreach (var s in sounds) _map[s.key] = s;
         }
 
         public void Play(string key)

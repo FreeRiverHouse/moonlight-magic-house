@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
@@ -7,145 +8,180 @@ namespace MoonlightMagicHouse
 {
     public class MoonlightUI : MonoBehaviour
     {
-        // ── Stat bars ─────────────────────────────────────────────────────
-        [Header("Stats")]
-        [SerializeField] Slider wonderBar;
-        [SerializeField] Slider warmthBar;
-        [SerializeField] Slider restBar;
-        [SerializeField] Slider magicBar;
-        [SerializeField] Slider hungerBar;
+        // Stat bars
+        public Slider wonderBar;
+        public Slider warmthBar;
+        public Slider restBar;
+        public Slider magicBar;
+        public Slider hungerBar;
 
-        // ── Info strip ────────────────────────────────────────────────────
-        [Header("Info")]
-        [SerializeField] TMP_Text stageLabel;
-        [SerializeField] TMP_Text coinsLabel;
-        [SerializeField] TMP_Text xpLabel;
-        [SerializeField] TMP_Text moodEmoji;
-        [SerializeField] TMP_Text daysLabel;
+        // Info strip
+        public TMP_Text stageLabel;
+        public TMP_Text coinsLabel;
+        public TMP_Text xpLabel;
+        public TMP_Text moodEmoji;
+        public TMP_Text daysLabel;
 
-        // ── Action buttons ────────────────────────────────────────────────
-        [Header("Actions")]
-        [SerializeField] Button feedBtn;
-        [SerializeField] Button cuddleBtn;
-        [SerializeField] Button sleepBtn;
+        // Action buttons
+        public Button feedBtn;
+        public Button cuddleBtn;
+        public Button sleepBtn;
 
-        // ── Overlays ──────────────────────────────────────────────────────
-        [Header("Overlays")]
-        [SerializeField] GameObject stagePanel;
-        [SerializeField] TMP_Text   stagePanelLabel;
-        [SerializeField] GameObject roomUnlockPanel;
-        [SerializeField] TMP_Text   roomUnlockLabel;
-        [SerializeField] GameObject offlinePanel;
-        [SerializeField] GameObject sleepOverlay;
+        // Overlays
+        public GameObject stagePanel;
+        public TMP_Text   stagePanelLabel;
+        public GameObject roomUnlockPanel;
+        public TMP_Text   roomUnlockLabel;
+        public GameObject offlinePanel;
+        public GameObject sleepOverlay;
 
-        // ── Prompt ────────────────────────────────────────────────────────
-        [Header("Prompt")]
-        [SerializeField] GameObject promptRoot;
-        [SerializeField] TMP_Text   promptLabel;
+        // Prompt
+        public GameObject promptRoot;
+        public TMP_Text   promptLabel;
+
+        // Feed menu
+        public GameObject  feedMenuRoot;
+        public Transform   feedMenuContent;
+        public FoodItem[]  foodCatalogue;
+
+        static readonly string[] MoodEmojis = { "😴", "😠", "😑", "🌸", "✨", "🌟" };
+        static readonly string[] StageNames = { "Moonbud", "Starling", "Luminary", "Sorceress", "Moonkeeper" };
+        static readonly string[] RoomNames  = { "", "Living Room", "Kitchen", "Bedroom", "Garden", "Library" };
+
+        void Start()
+        {
+            if (cuddleBtn) cuddleBtn.onClick.AddListener(() =>
+            {
+                MoonlightGameManager.Instance?.moonlight.Cuddle();
+                if (MoonlightGameManager.Instance?.moonlight != null)
+                    Refresh(MoonlightGameManager.Instance.moonlight);
+            });
+            if (sleepBtn) sleepBtn.onClick.AddListener(() =>
+            {
+                MoonlightGameManager.Instance?.moonlight.PutToSleep();
+                if (sleepOverlay) StartCoroutine(ShowThenHide(sleepOverlay, 2f));
+                if (MoonlightGameManager.Instance?.moonlight != null)
+                    Refresh(MoonlightGameManager.Instance.moonlight);
+            });
+            if (feedBtn) feedBtn.onClick.AddListener(OpenFeedMenu);
+        }
+
+        // Called by MoonlightHouseSetup to inject all UI refs programmatically
+        public void Wire(
+            Slider wonder, Slider warmth, Slider rest, Slider magic, Slider hunger,
+            TMP_Text stage, TMP_Text coins, TMP_Text xp, TMP_Text mood, TMP_Text days,
+            Button feed, Button cuddle, Button sleep,
+            GameObject stgPanel, TMP_Text stgLabel,
+            GameObject roomPanel, TMP_Text roomLabel,
+            GameObject offline, GameObject sleepOvr,
+            GameObject feedRoot, Transform feedContent)
+        {
+            wonderBar = wonder; warmthBar = warmth; restBar = rest;
+            magicBar  = magic;  hungerBar = hunger;
+            stageLabel = stage; coinsLabel = coins; xpLabel = xp;
+            moodEmoji  = mood;  daysLabel  = days;
+            feedBtn = feed; cuddleBtn = cuddle; sleepBtn = sleep;
+            stagePanel = stgPanel; stagePanelLabel = stgLabel;
+            roomUnlockPanel = roomPanel; roomUnlockLabel = roomLabel;
+            offlinePanel = offline; sleepOverlay = sleepOvr;
+            feedMenuRoot = feedRoot; feedMenuContent = feedContent;
+        }
 
         public void ShowPrompt(string text)
         {
             if (promptRoot == null) return;
-            promptLabel.text = text;
+            if (promptLabel) promptLabel.text = text;
             promptRoot.SetActive(true);
         }
 
-        public void HidePrompt()
-        {
-            promptRoot?.SetActive(false);
-        }
-
-        // ── Food menu ─────────────────────────────────────────────────────
-        [Header("Feed Menu")]
-        [SerializeField] GameObject  feedMenuRoot;
-        [SerializeField] Transform   feedMenuContent;
-        [SerializeField] GameObject  feedItemPrefab;
-        [SerializeField] FoodItem[]  foodCatalogue;
-
-        static readonly string[] MoodEmojis = { "😴", "😠", "😑", "🌸", "✨", "🌟" };
-        static readonly string[] StageNames =
-        {
-            "Moonbud", "Starling", "Luminary", "Sorceress", "Moonkeeper"
-        };
-        static readonly string[] RoomNames =
-        {
-            "", "Living Room", "Kitchen", "Bedroom", "Garden", "Library"
-        };
-
-        void Start()
-        {
-            cuddleBtn.onClick.AddListener(() =>
-            {
-                MoonlightGameManager.Instance.moonlight.Cuddle();
-                Refresh(MoonlightGameManager.Instance.moonlight);
-            });
-            sleepBtn.onClick.AddListener(() =>
-            {
-                MoonlightGameManager.Instance.moonlight.PutToSleep();
-                StartCoroutine(ShowThenHide(sleepOverlay, 2f));
-                Refresh(MoonlightGameManager.Instance.moonlight);
-            });
-            feedBtn.onClick.AddListener(OpenFeedMenu);
-        }
+        public void HidePrompt() => promptRoot?.SetActive(false);
 
         public void Refresh(MoonlightCharacter m)
         {
-            wonderBar.value = m.stats.wonder / 100f;
-            warmthBar.value = m.stats.warmth / 100f;
-            restBar.value   = m.stats.rest   / 100f;
-            magicBar.value  = m.stats.magic  / 100f;
-            hungerBar.value = m.stats.hunger / 100f;
+            if (wonderBar) wonderBar.value = m.stats.wonder / 100f;
+            if (warmthBar) warmthBar.value = m.stats.warmth / 100f;
+            if (restBar)   restBar.value   = m.stats.rest   / 100f;
+            if (magicBar)  magicBar.value  = m.stats.magic  / 100f;
+            if (hungerBar) hungerBar.value = m.stats.hunger / 100f;
 
-            stageLabel.text = StageNames[(int)m.stage];
-            coinsLabel.text = $"⭐ {m.coins}";
-            xpLabel.text    = $"XP {m.xp}";
-            daysLabel.text  = $"Day {Mathf.FloorToInt(m.daysInHouse) + 1}";
-            moodEmoji.text  = MoodEmojis[(int)m.stats.GetMood()];
+            if (stageLabel) stageLabel.text = StageNames[(int)m.stage];
+            if (coinsLabel) coinsLabel.text = $"⭐ {m.coins}";
+            if (xpLabel)    xpLabel.text    = $"XP {m.xp}";
+            if (daysLabel)  daysLabel.text  = $"Day {Mathf.FloorToInt(m.daysInHouse) + 1}";
+            if (moodEmoji)  moodEmoji.text  = MoodEmojis[(int)m.stats.GetMood()];
         }
 
-        public void OnMoodChange(MoonlightMood mood) => moodEmoji.text = MoodEmojis[(int)mood];
-        public void UpdateCoins(int coins)            => coinsLabel.text = $"⭐ {coins}";
-        public void UpdateXP(int xp)                  => xpLabel.text = $"XP {xp}";
+        public void OnMoodChange(MoonlightMood mood)
+        {
+            if (moodEmoji) moodEmoji.text = MoodEmojis[(int)mood];
+        }
+        public void UpdateCoins(int coins) { if (coinsLabel) coinsLabel.text = $"⭐ {coins}"; }
+        public void UpdateXP(int xp)       { if (xpLabel) xpLabel.text = $"XP {xp}"; }
 
         public void ShowStageCelebration(MoonlightStage stage)
         {
-            stagePanelLabel.text = $"Moonlight became a {StageNames[(int)stage]}! ✨";
-            StartCoroutine(ShowThenHide(stagePanel, 4f));
+            if (stagePanelLabel) stagePanelLabel.text = $"Moonlight became a {StageNames[(int)stage]}! ✨";
+            if (stagePanel) StartCoroutine(ShowThenHide(stagePanel, 4f));
         }
 
         public void ShowRoomUnlocked(int count)
         {
-            roomUnlockLabel.text = $"New room unlocked: {RoomNames[count]}! 🌙";
-            StartCoroutine(ShowThenHide(roomUnlockPanel, 3f));
+            if (roomUnlockLabel) roomUnlockLabel.text = $"New room unlocked: {RoomNames[Mathf.Min(count, RoomNames.Length-1)]}! 🌙";
+            if (roomUnlockPanel) StartCoroutine(ShowThenHide(roomUnlockPanel, 3f));
         }
 
-        public void ShowOfflineNotice() => StartCoroutine(ShowThenHide(offlinePanel, 3f));
+        public void ShowOfflineNotice()
+        {
+            if (offlinePanel) StartCoroutine(ShowThenHide(offlinePanel, 3f));
+        }
 
-        public void OpenFeedMenuWith(System.Collections.Generic.List<FoodItem> overrideCatalogue)
+        public void OpenFeedMenuWith(List<FoodItem> overrideCatalogue)
         {
             PopulateFeedMenu(overrideCatalogue);
-            feedMenuRoot.SetActive(true);
+            if (feedMenuRoot) feedMenuRoot.SetActive(true);
         }
 
         void OpenFeedMenu()
         {
-            PopulateFeedMenu(new System.Collections.Generic.List<FoodItem>(foodCatalogue));
-            feedMenuRoot.SetActive(true);
+            if (foodCatalogue != null)
+                PopulateFeedMenu(new List<FoodItem>(foodCatalogue));
+            else if (feedMenuRoot)
+                feedMenuRoot.SetActive(true);
         }
 
-        void PopulateFeedMenu(System.Collections.Generic.List<FoodItem> catalogue)
+        void PopulateFeedMenu(List<FoodItem> catalogue)
         {
+            if (feedMenuContent == null) return;
             foreach (Transform t in feedMenuContent) Destroy(t.gameObject);
             foreach (var food in catalogue)
             {
-                var item = Instantiate(feedItemPrefab, feedMenuContent);
-                item.GetComponentInChildren<TMP_Text>().text = $"{food.itemName}\n⭐{food.cost}";
+                var itemGO = new GameObject(food.itemName);
+                itemGO.transform.SetParent(feedMenuContent, false);
+                var btn = itemGO.AddComponent<Button>();
+                var img = itemGO.AddComponent<Image>();
+                img.color = new Color(0.2f, 0.1f, 0.35f);
+                var rt = itemGO.GetComponent<RectTransform>();
+                rt.sizeDelta = new Vector2(200, 60);
+
+                var lblGO = new GameObject("Label");
+                lblGO.transform.SetParent(itemGO.transform, false);
+                var lbl = lblGO.AddComponent<TextMeshProUGUI>();
+                lbl.text = $"{food.itemName}\n⭐{food.cost}";
+                lbl.fontSize = 18;
+                lbl.alignment = TextAlignmentOptions.Center;
+                var lblRt = lbl.GetComponent<RectTransform>();
+                lblRt.anchorMin = Vector2.zero;
+                lblRt.anchorMax = Vector2.one;
+                lblRt.offsetMin = Vector2.zero;
+                lblRt.offsetMax = Vector2.zero;
+
                 var captured = food;
-                item.GetComponent<Button>().onClick.AddListener(() =>
+                btn.onClick.AddListener(() =>
                 {
-                    MoonlightGameManager.Instance.moonlight.Feed(captured);
-                    Refresh(MoonlightGameManager.Instance.moonlight);
-                    feedMenuRoot.SetActive(false);
+                    MoonlightGameManager.Instance?.moonlight.Feed(captured);
+                    if (MoonlightGameManager.Instance?.moonlight != null)
+                        Refresh(MoonlightGameManager.Instance.moonlight);
+                    if (feedMenuRoot) feedMenuRoot.SetActive(false);
                 });
             }
         }

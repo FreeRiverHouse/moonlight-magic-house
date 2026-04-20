@@ -16,14 +16,19 @@ namespace MoonlightMagicHouse
             public AudioClip ambience;
         }
 
-        [SerializeField] List<Room> rooms;
-        [SerializeField] RoomType startRoom = RoomType.LivingRoom;
+        public List<Room> rooms = new();
+        public RoomType startRoom = RoomType.LivingRoom;
 
         public UnityEvent<RoomType> onRoomChanged;
 
         Room _current;
 
         void Start() => GoToRoom(startRoom);
+
+        public void AddRoom(RoomType type, GameObject root)
+        {
+            rooms.Add(new Room { type = type, root = root });
+        }
 
         public void GoToRoom(RoomType type)
         {
@@ -34,7 +39,8 @@ namespace MoonlightMagicHouse
                 if (active)
                 {
                     _current = r;
-                    AudioManager.Instance?.PlayMusic(r.ambience);
+                    if (r.ambience != null)
+                        AudioManager.Instance?.PlayMusic(r.ambience);
                 }
             }
             onRoomChanged?.Invoke(type);

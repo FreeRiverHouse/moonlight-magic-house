@@ -2,13 +2,12 @@ using UnityEngine;
 
 namespace MoonlightMagicHouse
 {
-    // Attached to each room root. Tweens ambient light when room becomes active.
     public class RoomAmbience : MonoBehaviour
     {
-        [SerializeField] Color  ambientColor  = new Color(0.10f, 0.06f, 0.20f);
-        [SerializeField] Color  fogColor      = new Color(0.08f, 0.04f, 0.16f);
-        [SerializeField] bool   enableFog     = false;
-        [SerializeField] float  transitionSec = 1.2f;
+        public Color  ambientColor  = new Color(0.10f, 0.06f, 0.20f);
+        public Color  fogColor      = new Color(0.08f, 0.04f, 0.16f);
+        public bool   enableFog     = false;
+        public float  transitionSec = 1.2f;
 
         Color  _fromAmbient;
         Color  _fromFog;
