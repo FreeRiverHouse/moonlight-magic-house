@@ -147,48 +147,19 @@ namespace MoonlightMagicHouse
             mlGO.AddComponent<MoonlightStageVFX>();
             mlGO.AddComponent<MoonlightGlowController>();
             mlGO.AddComponent<MoonlightMoodParticles>();
-            // MoonlightAnimator requires Animator — Unity auto-adds it via RequireComponent
             mlGO.AddComponent<MoonlightAnimator>();
 
-            // Visual child (rendering only — primitives)
-            var visual = new GameObject("Visual");
-            visual.transform.SetParent(mlGO.transform, false);
+            // Stylised primitive character — guaranteed visible, toon-shaded with outline
+            var visual = BuildFallbackCharacter(mlGO.transform);
 
-            // Capsule body — pale lavender with soft glow
-            var body = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            body.name = "Body";
-            body.transform.SetParent(visual.transform, false);
-            body.transform.localPosition = new Vector3(0f, 0.9f, 0f);
-            body.transform.localScale    = new Vector3(0.55f, 0.75f, 0.55f);
-            SetMat(body, new Color(0.82f, 0.72f, 0.96f), new Color(0.22f, 0.10f, 0.40f));
-            Object.Destroy(body.GetComponent<Collider>());
-
-            // Sphere head — warm skin tone
-            var head = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            head.name = "Head";
-            head.transform.SetParent(visual.transform, false);
-            head.transform.localPosition = new Vector3(0f, 1.85f, 0f);
-            head.transform.localScale    = new Vector3(0.42f, 0.42f, 0.42f);
-            SetMat(head, new Color(1.00f, 0.90f, 0.82f), new Color(0.18f, 0.10f, 0.08f));
-            Object.Destroy(head.GetComponent<Collider>());
-
-            // Hair blob — deep violet with glow
-            var hair = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            hair.name = "Hair";
-            hair.transform.SetParent(visual.transform, false);
-            hair.transform.localPosition = new Vector3(0f, 2.08f, 0.04f);
-            hair.transform.localScale    = new Vector3(0.46f, 0.30f, 0.46f);
-            SetMat(hair, new Color(0.22f, 0.08f, 0.48f), new Color(0.20f, 0.04f, 0.40f));
-            Object.Destroy(hair.GetComponent<Collider>());
-
-            // Collider + interactable on root
+            // Collider
             var col = mlGO.AddComponent<CapsuleCollider>();
-            col.height = 2.3f;
+            col.height = 2.2f;
             col.radius = 0.38f;
             col.center = new Vector3(0f, 1.1f, 0f);
             mlGO.AddComponent<MoonlightInteractable>();
 
-            // Point glow light
+            // Glow light
             var glowGO = new GameObject("Glow");
             glowGO.transform.SetParent(mlGO.transform, false);
             glowGO.transform.localPosition = new Vector3(0f, 1.2f, 0f);
@@ -201,6 +172,56 @@ namespace MoonlightMagicHouse
             return mlGO;
         }
 
+        static GameObject BuildFallbackCharacter(Transform parent)
+        {
+            var visual = new GameObject("Visual");
+            visual.transform.SetParent(parent, false);
+
+            MakePart(visual.transform, PrimitiveType.Capsule, "Body",
+                new Vector3(0f, 0.9f, 0f), new Vector3(0.55f, 0.75f, 0.55f),
+                new Color(0.82f, 0.72f, 0.96f));
+            MakePart(visual.transform, PrimitiveType.Sphere, "Head",
+                new Vector3(0f, 1.85f, 0f), Vector3.one * 0.42f,
+                new Color(1.00f, 0.88f, 0.80f));
+            MakePart(visual.transform, PrimitiveType.Sphere, "Hair",
+                new Vector3(0f, 2.06f, 0.04f), new Vector3(0.46f, 0.30f, 0.46f),
+                new Color(0.22f, 0.08f, 0.48f));
+            // Eyes
+            MakePart(visual.transform, PrimitiveType.Sphere, "EyeL",
+                new Vector3(-0.08f, 1.88f, 0.19f), Vector3.one * 0.07f,
+                new Color(0.08f, 0.04f, 0.18f));
+            MakePart(visual.transform, PrimitiveType.Sphere, "EyeR",
+                new Vector3( 0.08f, 1.88f, 0.19f), Vector3.one * 0.07f,
+                new Color(0.08f, 0.04f, 0.18f));
+            // Cheeks
+            MakePart(visual.transform, PrimitiveType.Sphere, "CheekL",
+                new Vector3(-0.14f, 1.82f, 0.17f), Vector3.one * 0.05f,
+                new Color(1.0f, 0.6f, 0.7f));
+            MakePart(visual.transform, PrimitiveType.Sphere, "CheekR",
+                new Vector3( 0.14f, 1.82f, 0.17f), Vector3.one * 0.05f,
+                new Color(1.0f, 0.6f, 0.7f));
+            // Arms
+            MakePart(visual.transform, PrimitiveType.Capsule, "ArmL",
+                new Vector3(-0.42f, 1.0f, 0f), new Vector3(0.16f, 0.35f, 0.16f),
+                new Color(0.78f, 0.68f, 0.92f));
+            MakePart(visual.transform, PrimitiveType.Capsule, "ArmR",
+                new Vector3( 0.42f, 1.0f, 0f), new Vector3(0.16f, 0.35f, 0.16f),
+                new Color(0.78f, 0.68f, 0.92f));
+            return visual;
+        }
+
+        static void MakePart(Transform parent, PrimitiveType type, string name,
+            Vector3 pos, Vector3 scale, Color color)
+        {
+            var go = GameObject.CreatePrimitive(type);
+            go.name = name;
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = pos;
+            go.transform.localScale    = scale;
+            SetToonMat(go, color);
+            Object.Destroy(go.GetComponent<Collider>());
+        }
+
         // ── Rooms ────────────────────────────────────────────────────────────
         RoomManager CreateRooms()
         {
@@ -208,23 +229,67 @@ namespace MoonlightMagicHouse
             var rm   = rmGO.AddComponent<RoomManager>();
 
             var lr = BuildRoom("LivingRoom", Vector3.zero,
-                new Color(0.12f, 0.07f, 0.22f), true);
+                new Color(0.12f, 0.07f, 0.22f), true,
+                new[]{ "Models/Props/LivingRoom/Sofa",
+                       "Models/Props/LivingRoom/ToyChest",
+                       "Models/Props/Shared/MoonLamp" },
+                new[]{ new Vector3(-2f, 0f, 3f),
+                       new Vector3( 2.5f, 0f, 2.5f),
+                       new Vector3(-3.5f, 0f, -2f) },
+                new[]{ Vector3.one * 1.2f, Vector3.one, Vector3.one * 1.1f },
+                new[]{ new Color(0.55f, 0.30f, 0.80f),
+                       new Color(0.40f, 0.20f, 0.65f),
+                       new Color(0.70f, 0.50f, 0.90f) });
             lr.AddComponent<FeedingStation>();
             lr.AddComponent<PlayArea>();
 
-            var kt = BuildRoom("Kitchen",  new Vector3(14f, 0f,   0f),
-                new Color(0.06f, 0.10f, 0.06f), false);
+            var kt = BuildRoom("Kitchen", new Vector3(14f, 0f, 0f),
+                new Color(0.06f, 0.10f, 0.06f), false,
+                new[]{ "Models/Props/Kitchen/Fridge",
+                       "Models/Props/Kitchen/FoodBowl",
+                       "Models/Props/Kitchen/Cake" },
+                new[]{ new Vector3(3.5f, 0f, 3.5f),
+                       new Vector3(-1f,  0f, 0f),
+                       new Vector3( 1f,  0f, -1f) },
+                new[]{ Vector3.one, Vector3.one * 0.8f, Vector3.one * 0.9f },
+                new[]{ new Color(0.70f, 0.85f, 0.70f),
+                       new Color(0.80f, 0.60f, 0.40f),
+                       new Color(0.90f, 0.50f, 0.60f) });
 
-            var bd = BuildRoom("Bedroom",  new Vector3(-14f, 0f,  0f),
-                new Color(0.04f, 0.04f, 0.18f), false);
+            var bd = BuildRoom("Bedroom", new Vector3(-14f, 0f, 0f),
+                new Color(0.04f, 0.04f, 0.18f), false,
+                new[]{ "Models/Props/Bedroom/Bed",
+                       "Models/Props/Bedroom/Wardrobe",
+                       "Models/Props/Shared/MoonLamp" },
+                new[]{ new Vector3(0f, 0f, 2f),
+                       new Vector3(3.5f, 0f, 3f),
+                       new Vector3(-3f, 0f, 0f) },
+                new[]{ Vector3.one * 1.3f, Vector3.one * 1.2f, Vector3.one },
+                new[]{ new Color(0.45f, 0.45f, 0.80f),
+                       new Color(0.35f, 0.25f, 0.60f),
+                       new Color(0.55f, 0.55f, 0.90f) });
             bd.AddComponent<SleepArea>();
 
-            var gd = BuildRoom("Garden",   new Vector3(0f,   0f, 14f),
-                new Color(0.04f, 0.10f, 0.04f), false);
+            var gd = BuildRoom("Garden", new Vector3(0f, 0f, 14f),
+                new Color(0.04f, 0.10f, 0.04f), false,
+                new[]{ "Models/Props/Garden/MagicFlower",
+                       "Models/Props/Garden/MagicWell" },
+                new[]{ new Vector3(-2f, 0f, 1f),
+                       new Vector3( 2f, 0f, 2f) },
+                new[]{ Vector3.one, Vector3.one * 1.2f },
+                new[]{ new Color(0.70f, 0.95f, 0.55f),
+                       new Color(0.55f, 0.80f, 0.70f) });
             gd.AddComponent<GardenArea>();
 
-            var lb = BuildRoom("Library",  new Vector3(0f,   0f, -14f),
-                new Color(0.09f, 0.05f, 0.02f), false);
+            var lb = BuildRoom("Library", new Vector3(0f, 0f, -14f),
+                new Color(0.09f, 0.05f, 0.02f), false,
+                new[]{ "Models/Props/Library/Bookshelf",
+                       "Models/Props/Library/ReadingChair" },
+                new[]{ new Vector3(-3.5f, 0f, 3.5f),
+                       new Vector3( 1f,   0f, 0f) },
+                new[]{ Vector3.one * 1.2f, Vector3.one * 1.1f },
+                new[]{ new Color(0.65f, 0.45f, 0.25f),
+                       new Color(0.55f, 0.35f, 0.20f) });
             lb.AddComponent<LibraryRoom>();
 
             rm.AddRoom(RoomType.LivingRoom, lr);
@@ -236,26 +301,36 @@ namespace MoonlightMagicHouse
             return rm;
         }
 
-        GameObject BuildRoom(string roomName, Vector3 pos, Color ambColor, bool active)
+        GameObject BuildRoom(string roomName, Vector3 pos, Color ambColor, bool active,
+            string[] propPaths = null, Vector3[] propPositions = null,
+            Vector3[] propScales = null, Color[] propColors = null)
         {
             var root = new GameObject(roomName);
             root.transform.position = pos;
 
-            // Floor
-            var floor = Prim(PrimitiveType.Cube, "Floor", root.transform,
+            // Floor — slightly textured color
+            Prim(PrimitiveType.Cube, "Floor", root.transform,
                 new Vector3(0f, -0.1f, 0f), new Vector3(10f, 0.2f, 10f),
-                new Color(0.16f, 0.10f, 0.26f));
+                new Color(0.14f, 0.09f, 0.24f));
 
             // Ceiling
             Prim(PrimitiveType.Cube, "Ceiling", root.transform,
                 new Vector3(0f, 5.1f, 0f), new Vector3(10f, 0.2f, 10f),
-                new Color(0.10f, 0.06f, 0.18f));
+                new Color(0.08f, 0.05f, 0.15f));
 
-            // Walls: back, front, left, right
-            Prim(PrimitiveType.Cube, "WallBack",  root.transform, new Vector3(0f, 2.5f,  5f), new Vector3(10f, 5f, 0.2f), new Color(0.12f, 0.07f, 0.20f));
-            Prim(PrimitiveType.Cube, "WallFront", root.transform, new Vector3(0f, 2.5f, -5f), new Vector3(10f, 5f, 0.2f), new Color(0.12f, 0.07f, 0.20f));
-            Prim(PrimitiveType.Cube, "WallRight", root.transform, new Vector3( 5f, 2.5f, 0f), new Vector3(0.2f, 5f, 10f), new Color(0.12f, 0.07f, 0.20f));
-            Prim(PrimitiveType.Cube, "WallLeft",  root.transform, new Vector3(-5f, 2.5f, 0f), new Vector3(0.2f, 5f, 10f), new Color(0.12f, 0.07f, 0.20f));
+            // Walls
+            Color wallCol = new Color(0.11f, 0.07f, 0.19f);
+            Prim(PrimitiveType.Cube, "WallBack",  root.transform, new Vector3(0f, 2.5f,  5f), new Vector3(10f, 5f, 0.2f), wallCol);
+            Prim(PrimitiveType.Cube, "WallFront", root.transform, new Vector3(0f, 2.5f, -5f), new Vector3(10f, 5f, 0.2f), wallCol);
+            Prim(PrimitiveType.Cube, "WallRight", root.transform, new Vector3( 5f, 2.5f, 0f), new Vector3(0.2f, 5f, 10f), wallCol);
+            Prim(PrimitiveType.Cube, "WallLeft",  root.transform, new Vector3(-5f, 2.5f, 0f), new Vector3(0.2f, 5f, 10f), wallCol);
+
+            // Skirting boards
+            Color skirt = new Color(0.20f, 0.14f, 0.32f);
+            Prim(PrimitiveType.Cube, "SkirtBack",  root.transform, new Vector3(0f, 0.12f,  4.9f), new Vector3(9.8f, 0.24f, 0.1f), skirt);
+            Prim(PrimitiveType.Cube, "SkirtFront", root.transform, new Vector3(0f, 0.12f, -4.9f), new Vector3(9.8f, 0.24f, 0.1f), skirt);
+            Prim(PrimitiveType.Cube, "SkirtRight", root.transform, new Vector3( 4.9f, 0.12f, 0f), new Vector3(0.1f, 0.24f, 9.8f), skirt);
+            Prim(PrimitiveType.Cube, "SkirtLeft",  root.transform, new Vector3(-4.9f, 0.12f, 0f), new Vector3(0.1f, 0.24f, 9.8f), skirt);
 
             // Ambient
             var amb = root.AddComponent<RoomAmbience>();
@@ -270,6 +345,105 @@ namespace MoonlightMagicHouse
             rl.color     = Color.Lerp(ambColor, Color.white, 0.5f);
             rl.intensity = 2.0f;
             rl.range     = 12f;
+
+            // Load FBX props
+            if (propPaths != null)
+            {
+                for (int i = 0; i < propPaths.Length; i++)
+                {
+                    var prefab = Resources.Load<GameObject>(propPaths[i]);
+                    if (prefab == null) continue;
+                    var prop = Object.Instantiate(prefab, root.transform);
+                    prop.name = propPaths[i].Split('/')[^1];
+                    prop.transform.localPosition = propPositions != null && i < propPositions.Length
+                        ? propPositions[i] : Vector3.zero;
+                    prop.transform.localScale = propScales != null && i < propScales.Length
+                        ? propScales[i] : Vector3.one;
+                    Color tint = propColors != null && i < propColors.Length
+                        ? propColors[i] : Color.white;
+                    ApplyToonToAll(prop, tint);
+                }
+            }
+
+            // Always add a MoonLamp primitive so the room looks furnished even if FBX props fail
+            if (active)
+            {
+                // Lamp post
+                Prim(PrimitiveType.Cylinder, "LampBase", root.transform,
+                    new Vector3(-3.2f, 0.3f, -2f), new Vector3(0.12f, 0.3f, 0.12f),
+                    new Color(0.30f, 0.18f, 0.50f));
+                Prim(PrimitiveType.Cylinder, "LampStem", root.transform,
+                    new Vector3(-3.2f, 1.1f, -2f), new Vector3(0.06f, 0.8f, 0.06f),
+                    new Color(0.35f, 0.22f, 0.55f));
+                var lampHead = Prim(PrimitiveType.Sphere, "LampGlobe", root.transform,
+                    new Vector3(-3.2f, 2.0f, -2f), Vector3.one * 0.28f,
+                    new Color(1.0f, 0.95f, 0.70f));
+                // Make lamp globe emissive
+                var lampMat = new Material(ToonShader);
+                lampMat.SetColor("_Color",     new Color(1.0f, 0.95f, 0.70f));
+                lampMat.SetColor("_EmissionColor", new Color(1.0f, 0.90f, 0.50f));
+                lampMat.SetFloat("_EmissionIntensity", 1.2f);
+                lampMat.SetFloat("_OutlineWidth", 0f);
+                lampHead.GetComponent<MeshRenderer>().material = lampMat;
+                // Lamp light
+                var lampLGO = new GameObject("LampLight");
+                lampLGO.transform.SetParent(root.transform, false);
+                lampLGO.transform.localPosition = new Vector3(-3.2f, 2.0f, -2f);
+                var lampL = lampLGO.AddComponent<Light>();
+                lampL.type      = LightType.Point;
+                lampL.color     = new Color(1.0f, 0.88f, 0.55f);
+                lampL.intensity = 1.5f;
+                lampL.range     = 8f;
+
+                // Sofa primitive
+                Prim(PrimitiveType.Cube, "SofaBase", root.transform,
+                    new Vector3(-1.5f, 0.3f, 3f), new Vector3(2.4f, 0.55f, 0.9f),
+                    new Color(0.50f, 0.25f, 0.75f));
+                Prim(PrimitiveType.Cube, "SofaBack", root.transform,
+                    new Vector3(-1.5f, 0.85f, 3.4f), new Vector3(2.4f, 0.65f, 0.2f),
+                    new Color(0.45f, 0.22f, 0.68f));
+                Prim(PrimitiveType.Cube, "SofaArmL", root.transform,
+                    new Vector3(-2.75f, 0.55f, 3f), new Vector3(0.2f, 0.6f, 0.9f),
+                    new Color(0.42f, 0.20f, 0.65f));
+                Prim(PrimitiveType.Cube, "SofaArmR", root.transform,
+                    new Vector3(-0.25f, 0.55f, 3f), new Vector3(0.2f, 0.6f, 0.9f),
+                    new Color(0.42f, 0.20f, 0.65f));
+
+                // Cushion
+                Prim(PrimitiveType.Cube, "Cushion", root.transform,
+                    new Vector3(-1.5f, 0.65f, 2.85f), new Vector3(0.7f, 0.18f, 0.55f),
+                    new Color(0.85f, 0.55f, 0.95f));
+
+                // Coffee table
+                Prim(PrimitiveType.Cube, "TableTop", root.transform,
+                    new Vector3(1.2f, 0.5f, 1.5f), new Vector3(1.2f, 0.08f, 0.7f),
+                    new Color(0.28f, 0.16f, 0.45f));
+                Prim(PrimitiveType.Cube, "TableLeg1", root.transform,
+                    new Vector3(0.65f, 0.25f, 1.2f), new Vector3(0.1f, 0.5f, 0.1f),
+                    new Color(0.25f, 0.14f, 0.40f));
+                Prim(PrimitiveType.Cube, "TableLeg2", root.transform,
+                    new Vector3(1.75f, 0.25f, 1.2f), new Vector3(0.1f, 0.5f, 0.1f),
+                    new Color(0.25f, 0.14f, 0.40f));
+                Prim(PrimitiveType.Cube, "TableLeg3", root.transform,
+                    new Vector3(0.65f, 0.25f, 1.8f), new Vector3(0.1f, 0.5f, 0.1f),
+                    new Color(0.25f, 0.14f, 0.40f));
+                Prim(PrimitiveType.Cube, "TableLeg4", root.transform,
+                    new Vector3(1.75f, 0.25f, 1.8f), new Vector3(0.1f, 0.5f, 0.1f),
+                    new Color(0.25f, 0.14f, 0.40f));
+
+                // Rug
+                Prim(PrimitiveType.Cube, "Rug", root.transform,
+                    new Vector3(0f, 0.01f, 1f), new Vector3(4.5f, 0.02f, 3.5f),
+                    new Color(0.40f, 0.18f, 0.65f));
+
+                // Toy chest
+                Prim(PrimitiveType.Cube, "ChestBody", root.transform,
+                    new Vector3(3f, 0.28f, 2.8f), new Vector3(0.8f, 0.56f, 0.55f),
+                    new Color(0.35f, 0.55f, 0.80f));
+                Prim(PrimitiveType.Cube, "ChestLid", root.transform,
+                    new Vector3(3f, 0.62f, 2.8f), new Vector3(0.82f, 0.14f, 0.57f),
+                    new Color(0.45f, 0.65f, 0.90f));
+            }
 
             root.SetActive(active);
             return root;
@@ -495,9 +669,13 @@ namespace MoonlightMagicHouse
             go.transform.SetParent(parent, false);
             go.transform.localPosition = localPos;
             go.transform.localScale    = scale;
-            SetMat(go, color);
+            SetToonMat(go, color);
             return go;
         }
+
+        static Shader _toonShader;
+        static Shader ToonShader =>
+            _toonShader ??= Shader.Find("MoonlightHouse/Toon") ?? Shader.Find("Standard");
 
         static void SetMat(GameObject go, Color color, Color emissive = default)
         {
@@ -512,6 +690,38 @@ namespace MoonlightMagicHouse
                 mat.SetColor("_EmissionColor", emissive);
             }
             mr.material = mat;
+        }
+
+        static void SetToonMat(GameObject go, Color color)
+        {
+            var mr = go.GetComponent<MeshRenderer>();
+            if (!mr) return;
+            var mat = new Material(ToonShader);
+            mat.SetColor("_Color", color);
+            mat.SetColor("_ShadowColor", new Color(color.r * 0.50f, color.g * 0.40f, color.b * 0.65f, 1f));
+            mat.SetFloat("_ShadowThreshold", 0.32f);
+            mat.SetFloat("_OutlineWidth",    0.009f);
+            mat.SetColor("_OutlineColor",    new Color(0.06f, 0.03f, 0.12f, 1f));
+            mat.SetColor("_EmissionColor",   Color.black);
+            mat.SetFloat("_EmissionIntensity", 0f);
+            mr.material = mat;
+        }
+
+        static void ApplyToonToAll(GameObject root, Color tint)
+        {
+            foreach (var mr in root.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                var mat = new Material(ToonShader);
+                // Blend existing albedo with tint
+                var origColor = mr.material != null ? mr.material.color : Color.white;
+                var blended   = Color.Lerp(origColor, tint, 0.4f);
+                mat.SetColor("_Color", blended);
+                mat.SetColor("_ShadowColor", new Color(blended.r * 0.5f, blended.g * 0.4f, blended.b * 0.65f));
+                mat.SetFloat("_ShadowThreshold", 0.35f);
+                mat.SetFloat("_OutlineWidth", 0.006f);
+                mat.SetColor("_OutlineColor", new Color(0.06f, 0.03f, 0.12f));
+                mr.material = mat;
+            }
         }
     }
 }

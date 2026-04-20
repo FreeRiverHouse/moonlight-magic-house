@@ -15,7 +15,7 @@ public static class BuildAll
         BuildPlayerOptions opt = new BuildPlayerOptions
         {
             scenes           = Scenes,
-            locationPathName = "Builds/Mac/MoonlightMagicHouse.app",
+            locationPathName = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.Desktop), "MMH-Build/MoonlightMagicHouse.app"),
             target           = BuildTarget.StandaloneOSX,
             options          = BuildOptions.None
         };
