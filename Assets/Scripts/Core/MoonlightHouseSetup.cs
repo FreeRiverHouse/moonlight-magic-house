@@ -132,7 +132,31 @@ namespace MoonlightMagicHouse
             dcol.color = new ParticleSystem.MinMaxGradient(dg);
             var dpsr = dustGO.GetComponent<ParticleSystemRenderer>();
             dpsr.renderMode = ParticleSystemRenderMode.Billboard;
-            dpsr.material   = new Material(Shader.Find("Sprites/Default"));
+            var dustMat     = new Material(Shader.Find("Sprites/Default"));
+            dustMat.mainTexture = MakeSoftCircleTex(32);
+            dpsr.material   = dustMat;
+        }
+
+        static Texture2D _softCircleTex;
+        public static Texture2D MakeSoftCircleTex(int size)
+        {
+            if (_softCircleTex != null) return _softCircleTex;
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode   = TextureWrapMode.Clamp;
+            float c = (size - 1) * 0.5f;
+            for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float dx = (x - c) / c, dy = (y - c) / c;
+                float d  = Mathf.Sqrt(dx * dx + dy * dy);
+                float a  = Mathf.Clamp01(1f - d);
+                a = a * a; // soft falloff
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+            }
+            tex.Apply();
+            _softCircleTex = tex;
+            return tex;
         }
 
         Light MakeLight(string n, LightType t, Color c, float intensity,
@@ -244,7 +268,9 @@ namespace MoonlightMagicHouse
             colOverLife.color = new ParticleSystem.MinMaxGradient(grad);
             var psr = sparkGO.GetComponent<ParticleSystemRenderer>();
             psr.renderMode = ParticleSystemRenderMode.Billboard;
-            psr.material   = new Material(Shader.Find("Sprites/Default"));
+            var sparkMat   = new Material(Shader.Find("Sprites/Default"));
+            sparkMat.mainTexture = MakeSoftCircleTex(32);
+            psr.material   = sparkMat;
 
             // Glow light
             var glowGO = new GameObject("Glow");

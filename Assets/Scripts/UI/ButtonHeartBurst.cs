@@ -51,7 +51,9 @@ namespace MoonlightMagicHouse
             colOverLife.color = new ParticleSystem.MinMaxGradient(grad);
             var psr = burstGO.GetComponent<ParticleSystemRenderer>();
             psr.renderMode = ParticleSystemRenderMode.Billboard;
-            psr.material   = new Material(Shader.Find("Sprites/Default"));
+            var mat = new Material(Shader.Find("Sprites/Default"));
+            mat.mainTexture = MoonlightHouseSetup.MakeSoftCircleTex(32);
+            psr.material   = mat;
             Destroy(burstGO, 2.5f);
         }
     }
