@@ -306,6 +306,10 @@ namespace MoonlightMagicHouse
             MakePart(visual.transform, PrimitiveType.Sphere, "EyeR",
                 new Vector3( 0.08f, 1.88f, 0.19f), Vector3.one * 0.07f,
                 new Color(0.08f, 0.04f, 0.18f));
+            var blinker = visual.AddComponent<EyeBlinker>();
+            blinker.Bind(
+                visual.transform.Find("EyeL"),
+                visual.transform.Find("EyeR"));
             // Cheeks
             MakePart(visual.transform, PrimitiveType.Sphere, "CheekL",
                 new Vector3(-0.14f, 1.82f, 0.17f), Vector3.one * 0.05f,
