@@ -746,29 +746,35 @@ namespace MoonlightMagicHouse
                 lampL.intensity = 1.5f;
                 lampL.range     = 8f;
 
-                // Sofa primitive
-                Prim(PrimitiveType.Cube, "SofaBase", root.transform,
+                // Sofa — velvet fabric (procedural texture)
+                var velvet = ProcTextures.Velvet();
+                var sofaBase = Prim(PrimitiveType.Cube, "SofaBase", root.transform,
                     new Vector3(-1.5f, 0.3f, 3f), new Vector3(2.4f, 0.55f, 0.9f),
-                    new Color(0.50f, 0.25f, 0.75f));
-                Prim(PrimitiveType.Cube, "SofaBack", root.transform,
+                    new Color(0.72f, 0.38f, 0.90f));
+                var sofaBack = Prim(PrimitiveType.Cube, "SofaBack", root.transform,
                     new Vector3(-1.5f, 0.85f, 3.4f), new Vector3(2.4f, 0.65f, 0.2f),
-                    new Color(0.45f, 0.22f, 0.68f));
-                Prim(PrimitiveType.Cube, "SofaArmL", root.transform,
+                    new Color(0.66f, 0.33f, 0.84f));
+                var sofaArmL = Prim(PrimitiveType.Cube, "SofaArmL", root.transform,
                     new Vector3(-2.75f, 0.55f, 3f), new Vector3(0.2f, 0.6f, 0.9f),
-                    new Color(0.42f, 0.20f, 0.65f));
-                Prim(PrimitiveType.Cube, "SofaArmR", root.transform,
+                    new Color(0.60f, 0.28f, 0.80f));
+                var sofaArmR = Prim(PrimitiveType.Cube, "SofaArmR", root.transform,
                     new Vector3(-0.25f, 0.55f, 3f), new Vector3(0.2f, 0.6f, 0.9f),
-                    new Color(0.42f, 0.20f, 0.65f));
+                    new Color(0.60f, 0.28f, 0.80f));
+                ApplyTiledTexture(sofaBase, velvet, new Vector2(2f, 1f));
+                ApplyTiledTexture(sofaBack, velvet, new Vector2(2f, 1f));
+                ApplyTiledTexture(sofaArmL, velvet, new Vector2(1f, 1f));
+                ApplyTiledTexture(sofaArmR, velvet, new Vector2(1f, 1f));
 
                 // Cushion
                 Prim(PrimitiveType.Cube, "Cushion", root.transform,
                     new Vector3(-1.5f, 0.65f, 2.85f), new Vector3(0.7f, 0.18f, 0.55f),
                     new Color(0.85f, 0.55f, 0.95f));
 
-                // Coffee table
-                Prim(PrimitiveType.Cube, "TableTop", root.transform,
+                // Coffee table — light wood top
+                var tableTop = Prim(PrimitiveType.Cube, "TableTop", root.transform,
                     new Vector3(1.2f, 0.5f, 1.5f), new Vector3(1.2f, 0.08f, 0.7f),
-                    new Color(0.28f, 0.16f, 0.45f));
+                    new Color(0.70f, 0.48f, 0.32f));
+                ApplyTiledTexture(tableTop, ProcTextures.LightWood(), new Vector2(1f, 1f));
                 Prim(PrimitiveType.Cube, "TableLeg1", root.transform,
                     new Vector3(0.65f, 0.25f, 1.2f), new Vector3(0.1f, 0.5f, 0.1f),
                     new Color(0.25f, 0.14f, 0.40f));
@@ -788,13 +794,15 @@ namespace MoonlightMagicHouse
                     new Color(0.55f, 0.30f, 0.82f));
                 ApplyTiledTexture(rug, ProcTextures.Rug(), new Vector2(1f, 1f));
 
-                // Toy chest
-                Prim(PrimitiveType.Cube, "ChestBody", root.transform,
+                // Toy chest — light wood
+                var chestBody = Prim(PrimitiveType.Cube, "ChestBody", root.transform,
                     new Vector3(3f, 0.28f, 2.8f), new Vector3(0.8f, 0.56f, 0.55f),
-                    new Color(0.35f, 0.55f, 0.80f));
-                Prim(PrimitiveType.Cube, "ChestLid", root.transform,
+                    new Color(0.75f, 0.52f, 0.36f));
+                var chestLid  = Prim(PrimitiveType.Cube, "ChestLid", root.transform,
                     new Vector3(3f, 0.62f, 2.8f), new Vector3(0.82f, 0.14f, 0.57f),
-                    new Color(0.45f, 0.65f, 0.90f));
+                    new Color(0.82f, 0.58f, 0.40f));
+                ApplyTiledTexture(chestBody, ProcTextures.LightWood(), new Vector2(1f, 1f));
+                ApplyTiledTexture(chestLid,  ProcTextures.LightWood(), new Vector2(1f, 1f));
 
                 // Window frame on back wall
                 Prim(PrimitiveType.Cube, "WinFrameOuter", root.transform,
