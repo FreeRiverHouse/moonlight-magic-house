@@ -1,0 +1,12 @@
+{
+  "foods": [
+    { "itemName": "Moonberry",        "cost": 0,   "hungerBoost": 20, "happinessBoost": 5,  "xpReward": 5  },
+    { "itemName": "Star Biscuit",     "cost": 5,   "hungerBoost": 30, "happinessBoost": 8,  "xpReward": 8  },
+    { "itemName": "Magic Soup",       "cost": 10,  "hungerBoost": 45, "happinessBoost": 10, "xpReward": 12 },
+    { "itemName": "Luna Cake",        "cost": 20,  "hungerBoost": 50, "happinessBoost": 20, "xpReward": 18 },
+    { "itemName": "Stardust Candy",   "cost": 15,  "hungerBoost": 25, "happinessBoost": 30, "xpReward": 15 },
+    { "itemName": "Cosmic Fruit",     "cost": 35,  "hungerBoost": 60, "happinessBoost": 25, "xpReward": 25 },
+    { "itemName": "Dream Pudding",    "cost": 50,  "hungerBoost": 70, "happinessBoost": 35, "xpReward": 35 },
+    { "itemName": "Golden Moonapple", "cost": 100, "hungerBoost": 90, "happinessBoost": 50, "xpReward": 60 }
+  ]
+}

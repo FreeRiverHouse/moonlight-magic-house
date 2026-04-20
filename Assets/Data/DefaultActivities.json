@@ -1,0 +1,12 @@
+{
+  "activities": [
+    { "activityName": "Cuddle",       "happinessBoost": 15, "energyCost": 5,  "xpReward": 5  },
+    { "activityName": "Play Ball",    "happinessBoost": 20, "energyCost": 15, "xpReward": 10 },
+    { "activityName": "Dance",        "happinessBoost": 25, "energyCost": 20, "xpReward": 15 },
+    { "activityName": "Moon Walk",    "happinessBoost": 30, "energyCost": 25, "xpReward": 20 },
+    { "activityName": "Star Gazing",  "happinessBoost": 18, "energyCost": 5,  "xpReward": 12 },
+    { "activityName": "Magic Tricks", "happinessBoost": 35, "energyCost": 30, "xpReward": 30 },
+    { "activityName": "Moonlight Spa","happinessBoost": 28, "energyCost": 8,  "xpReward": 20 },
+    { "activityName": "Stardust Bath","happinessBoost": 22, "energyCost": 10, "xpReward": 18 }
+  ]
+}

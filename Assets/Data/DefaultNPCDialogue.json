@@ -1,0 +1,61 @@
+{
+  "npcs": [
+    {
+      "name": "Lunina",
+      "personality": "Moon Guardian",
+      "greeting": "Welcome back, little one. The moon missed you!",
+      "idle": [
+        { "text": "The stars are bright tonight, aren't they?", "duration": 3 },
+        { "text": "Your pet looks up to you, you know.", "duration": 3 },
+        { "text": "Every moment you spend here is pure magic.", "duration": 3 },
+        { "text": "The moonlight makes everything more beautiful.", "duration": 3 }
+      ],
+      "happy": [
+        { "text": "Oh! Your pet is glowing with joy!", "duration": 3 },
+        { "text": "Look at that happy little face! Wonderful.", "duration": 3 }
+      ],
+      "sad": [
+        { "text": "Hmm, your pet needs some attention. Don't forget to feed them!", "duration": 4 },
+        { "text": "The moon is watching — take care of your friend.", "duration": 4 }
+      ]
+    },
+    {
+      "name": "Stellina",
+      "personality": "Playful Guide",
+      "greeting": "Yay, you're here! Let's play play play!",
+      "idle": [
+        { "text": "Have you tried the Magic Garden yet?", "duration": 3 },
+        { "text": "I found a new star last night! It was SO sparkly!", "duration": 3 },
+        { "text": "Your pet loves it when you visit every day!", "duration": 3 },
+        { "text": "Did you know pets grow faster when they're happy?", "duration": 3 }
+      ],
+      "happy": [
+        { "text": "Woohoo! Party time! 🌟", "duration": 2 },
+        { "text": "Your pet is over the moon with happiness!", "duration": 3 }
+      ],
+      "sad": [
+        { "text": "Aw no! Quick, give your pet a hug!", "duration": 3 },
+        { "text": "Maybe some yummy food would help? Just saying!", "duration": 3 }
+      ]
+    },
+    {
+      "name": "Noctua",
+      "personality": "Wise Mentor",
+      "greeting": "Hmm. You have returned. Good.",
+      "idle": [
+        { "text": "Patience is the greatest magic of all.", "duration": 4 },
+        { "text": "A well-fed pet thinks more clearly. Remember that.", "duration": 4 },
+        { "text": "The Library holds secrets for those who seek them.", "duration": 4 },
+        { "text": "Evolution is earned, not given.", "duration": 3 }
+      ],
+      "happy": [
+        { "text": "Excellent. Your bond grows stronger.", "duration": 3 },
+        { "text": "I am... pleased. Do not let it show.", "duration": 3 }
+      ],
+      "sad": [
+        { "text": "Your pet's stats are declining. This is unacceptable.", "duration": 4 },
+        { "text": "Attend to your responsibilities.", "duration": 3 }
+      ]
+    }
+  ]
+}

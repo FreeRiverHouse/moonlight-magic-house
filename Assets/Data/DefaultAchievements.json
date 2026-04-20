@@ -1,0 +1,21 @@
+{
+  "achievements": [
+    { "id": "first_feed",     "title": "First Meal",          "description": "Feed your pet for the first time",     "coinReward": 10 },
+    { "id": "first_play",     "title": "Playtime!",           "description": "Play with your pet for the first time", "coinReward": 10 },
+    { "id": "evolve_baby",    "title": "Hatched!",            "description": "Your pet hatched from its egg",         "coinReward": 20 },
+    { "id": "evolve_child",   "title": "Growing Up",          "description": "Your pet reached Child stage",          "coinReward": 30 },
+    { "id": "evolve_teen",    "title": "Teenage Magic",       "description": "Your pet reached Teen stage",           "coinReward": 50 },
+    { "id": "evolve_adult",   "title": "Fully Grown",         "description": "Your pet reached Adult stage!",         "coinReward": 100 },
+    { "id": "streak_3",       "title": "3-Day Streak",        "description": "Visited 3 days in a row",              "coinReward": 25 },
+    { "id": "streak_7",       "title": "Week of Magic",       "description": "Visited 7 days in a row",              "coinReward": 60 },
+    { "id": "streak_30",      "title": "Moon Keeper",         "description": "Visited 30 days in a row",             "coinReward": 200 },
+    { "id": "level_5",        "title": "Moonling",            "description": "Reached level 5",                      "coinReward": 30 },
+    { "id": "level_10",       "title": "Star Child",          "description": "Reached level 10",                     "coinReward": 60 },
+    { "id": "level_20",       "title": "Lunar Guardian",      "description": "Reached level 20",                     "coinReward": 150 },
+    { "id": "room_bedroom",   "title": "Sweet Dreams",        "description": "Visited the Bedroom",                   "coinReward": 5  },
+    { "id": "room_kitchen",   "title": "Master Chef",         "description": "Visited the Kitchen",                   "coinReward": 5  },
+    { "id": "room_livingroom","title": "Cozy Corner",         "description": "Visited the Living Room",               "coinReward": 5  },
+    { "id": "room_garden",    "title": "Garden Explorer",     "description": "Visited the Magic Garden",              "coinReward": 5  },
+    { "id": "room_library",   "title": "Moonlight Scholar",   "description": "Visited the Library",                   "coinReward": 5  }
+  ]
+}

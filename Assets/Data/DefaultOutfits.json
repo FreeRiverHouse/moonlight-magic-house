@@ -1,0 +1,12 @@
+{
+  "outfits": [
+    { "id": 0, "outfitName": "Moonlit Bow",       "cost": 0   },
+    { "id": 1, "outfitName": "Star Crown",         "cost": 30  },
+    { "id": 2, "outfitName": "Purple Cape",        "cost": 50  },
+    { "id": 3, "outfitName": "Golden Collar",      "cost": 60  },
+    { "id": 4, "outfitName": "Witch Hat",          "cost": 80  },
+    { "id": 5, "outfitName": "Night Sky Cloak",    "cost": 100 },
+    { "id": 6, "outfitName": "Fairy Wings",        "cost": 120 },
+    { "id": 7, "outfitName": "Lunar Armor",        "cost": 200 }
+  ]
+}

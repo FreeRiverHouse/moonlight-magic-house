@@ -144,6 +144,12 @@ namespace MoonlightMagicHouse
             for (int i = 0; i < count; i++) setup(i);
         }
 
+        public void ShowStoryPage(StoryPage page)
+        {
+            var storyUI = FindAnyObjectByType<StoryPageUI>();
+            storyUI?.Show(page);
+        }
+
         IEnumerator ShowThenHide(GameObject panel, float duration)
         {
             panel.SetActive(true);
