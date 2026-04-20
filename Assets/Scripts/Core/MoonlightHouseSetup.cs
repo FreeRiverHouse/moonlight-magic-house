@@ -462,6 +462,7 @@ namespace MoonlightMagicHouse
                 csMat.SetFloat("_OutlineWidth",      0f);
                 cStar.GetComponent<MeshRenderer>().material = csMat;
                 Object.Destroy(cStar.GetComponent<Collider>());
+                cStar.AddComponent<StarTwinkle>();
             }
 
             // Walls
@@ -660,6 +661,7 @@ namespace MoonlightMagicHouse
                     sMat.SetFloat("_OutlineWidth", 0f);
                     star.GetComponent<MeshRenderer>().material = sMat;
                     Object.Destroy(star.GetComponent<Collider>());
+                    star.AddComponent<StarTwinkle>();
                 }
                 // Bookshelf on left wall
                 Prim(PrimitiveType.Cube, "Bookshelf", root.transform,
