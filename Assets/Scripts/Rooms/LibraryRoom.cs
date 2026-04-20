@@ -24,17 +24,16 @@ namespace MoonlightMagicHouse
             int next = (_lastReadPage + 1) % pages.Count;
             _lastReadPage = next;
 
-            PetUIController.Instance?.ShowStoryPage(pages[next]);
-            GameManager.Instance.pet.stats.happiness =
-                Mathf.Min(100, GameManager.Instance.pet.stats.happiness + 8f);
+            FindAnyObjectByType<StoryPageUI>()?.Show(pages[next]);
 
-            // Reward only first full cycle
-            if (_lastReadPage == 0)
+            var ml = MoonlightGameManager.Instance?.moonlight;
+            if (ml != null)
             {
-                GameManager.Instance.pet.EarnCoins(coinsPerRead);
-                // XP credited inside pet
+                ml.ReadStory();
+                if (_lastReadPage == 0) ml.EarnCoins(coinsPerRead);
             }
-            AchievementSystem.Instance?.OnRoomVisited(RoomType.Library);
+
+            AchievementSystem.Instance?.Check("room_library");
             AudioManager.Instance?.Play("page_turn");
         }
 

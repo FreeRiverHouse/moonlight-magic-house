@@ -1,5 +1,5 @@
 #!/bin/bash
-# Generate all Moonlight Magic House assets via Blender headless
+# Generate all Moonlight Magic House 3D assets via Blender headless
 # Usage: ./run_blender_gen.sh [path-to-blender]
 
 BLENDER="${1:-/Applications/Blender.app/Contents/MacOS/Blender}"
@@ -15,12 +15,27 @@ echo "🌙 Moonlight Magic House — Asset Generator"
 echo "   Blender: $BLENDER"
 echo ""
 
-echo "── Generating pet models (40 meshes) ──"
-"$BLENDER" --background --python "$DIR/generate_pets.py" -- 2>&1 | grep -E "→|✅|❌|Error"
+echo "── Moonlight character (5 stages) ──"
+"$BLENDER" --background --python "$DIR/generate_moonlight_character.py" -- 2>&1 | grep -E "→|✅|❌|Error"
 
 echo ""
-echo "── Generating house props ──"
+echo "── Moonlight outfits (11 accessories) ──"
+"$BLENDER" --background --python "$DIR/generate_moonlight_outfits.py" -- 2>&1 | grep -E "→|✅|❌|Error"
+
+echo ""
+echo "── House props (12 meshes) ──"
 "$BLENDER" --background --python "$DIR/generate_house_props.py" -- 2>&1 | grep -E "→|✅|❌|Error"
 
 echo ""
-echo "✅ Done! Assets in Assets/Models/"
+echo "── Audio SFX (numpy, no Blender needed) ──"
+python3 "$DIR/generate_audio_sfx.py" 2>&1 | grep -E "→|✅|❌|Error"
+
+echo ""
+echo "── Ambient music (numpy, no Blender needed) ──"
+python3 "$DIR/generate_ambient_music.py" 2>&1 | grep -E "→|✅|❌|Error"
+
+echo ""
+echo "✅ All assets generated."
+echo "   Models  → Assets/Models/"
+echo "   SFX     → Assets/Audio/SFX/"
+echo "   Music   → Assets/Audio/Music/"

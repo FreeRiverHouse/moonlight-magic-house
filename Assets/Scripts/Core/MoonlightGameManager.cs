@@ -62,7 +62,7 @@ namespace MoonlightMagicHouse
         {
             ui.ShowStageCelebration(stage);
             AchievementSystem.Instance?.Check($"stage_{stage}".ToLower());
-            AnalyticsManager.TrackEvolution(PetSpecies.Cat /*unused*/, (EvolutionStage)(int)stage);
+            AnalyticsManager.TrackEvolution(stage);
         }
 
         void OnRoomUnlocked(int count)

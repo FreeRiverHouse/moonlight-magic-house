@@ -1,0 +1,72 @@
+[
+  {
+    "id": "story_001",
+    "title": "The Night Moonlight Was Born",
+    "body": "On the night of the last crescent moon of winter, a small light fell from the sky and landed in the garden of the Magic House. From the dew and starlight, Moonlight was born — tiny, glowing faintly purple, with wide curious eyes and a ribbon that seemed to tie itself.",
+    "unlockStage": 0,
+    "coinsReward": 5
+  },
+  {
+    "id": "story_002",
+    "title": "The First Room",
+    "body": "The Living Room became Moonlight's favourite place. She would curl up on the soft rug, watching the fireplace flicker, and wonder where all the light went when morning came. 'Maybe it hides in the walls,' she decided, pressing her small paw against the warm stone.",
+    "unlockStage": 0,
+    "coinsReward": 5
+  },
+  {
+    "id": "story_003",
+    "title": "A Recipe Written in Stars",
+    "body": "Moonlight discovered the Kitchen by following the smell of something sweet. On the counter sat a dusty recipe book, its pages full of instructions like 'add three spoonfuls of midnight' and 'stir until the mixture hums'. She tried her best. The result glowed softly and tasted like moonberry jam.",
+    "unlockStage": 1,
+    "coinsReward": 8
+  },
+  {
+    "id": "story_004",
+    "title": "The Garden's Secret Frequency",
+    "body": "The Garden speaks to those who listen carefully. Moonlight learned this one evening when she sat very still and heard the flowers humming — each a different note, each telling a different memory of the house. She began to hum back, and the garden brightened.",
+    "unlockStage": 1,
+    "coinsReward": 8
+  },
+  {
+    "id": "story_005",
+    "title": "What Luminary Means",
+    "body": "When Moonlight's star crown first appeared, she didn't know what it meant. Noctua the owl said: 'A luminary is one who carries light so others can see.' Moonlight looked at the crown glowing on her head and made a quiet promise to always leave a light on.",
+    "unlockStage": 2,
+    "coinsReward": 12
+  },
+  {
+    "id": "story_006",
+    "title": "The Library Was Waiting",
+    "body": "The Library had been locked for a long time. When Moonlight finally opened the door, the books shook their covers in greeting. Every shelf held a memory of the house — of moonlit nights, of visitors who stayed too short, of magic practiced in secret. She sat down and began to read everything.",
+    "unlockStage": 2,
+    "coinsReward": 12
+  },
+  {
+    "id": "story_007",
+    "title": "The Spell That Didn't Work",
+    "body": "The book said: 'To make a moonflower bloom, speak its name at midnight.' Moonlight tried seven times. On the eighth, she whispered instead of speaking — and the flower opened, glowing soft gold. Some spells, she learned, want to be asked, not commanded.",
+    "unlockStage": 2,
+    "coinsReward": 10
+  },
+  {
+    "id": "story_008",
+    "title": "Sorceress of the Quiet Hour",
+    "body": "The hour between midnight and dawn is the Quiet Hour — when magic is most honest. Moonlight found her staff waiting for her there, leaning against the garden gate as if it had always known she was coming. She held it, and the stars arranged themselves into a new constellation just for her.",
+    "unlockStage": 3,
+    "coinsReward": 15
+  },
+  {
+    "id": "story_009",
+    "title": "The Moonkeeper's Oath",
+    "body": "To become a Moonkeeper is not a ceremony. It happens in a moment when you realise the house isn't magic because of the walls or the books or even the moonlight. It is magic because someone chose to tend to it — to water the garden, to keep the fire going, to leave the lamp on in the window. Moonlight understood, and the house glowed a little brighter.",
+    "unlockStage": 4,
+    "coinsReward": 25
+  },
+  {
+    "id": "story_010",
+    "title": "A Letter Found Under the Floorboards",
+    "body": "Dear whoever finds this — I built this house to hold wonder. I hid small things in every room so the next keeper would always have something to discover. The house will take care of you if you take care of it. Love, the first Moonkeeper.",
+    "unlockStage": 3,
+    "coinsReward": 20
+  }
+]

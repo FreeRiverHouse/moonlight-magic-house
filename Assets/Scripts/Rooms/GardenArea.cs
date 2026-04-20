@@ -18,20 +18,14 @@ namespace MoonlightMagicHouse
         {
             if (Time.time - _lastExplore < exploreCooldown) return;
             _lastExplore = Time.time;
-            GameManager.Instance.pet.EarnCoins(exploreCoins);
-            GameManager.Instance.pet.Play(CreateExploreActivity());
-            AchievementSystem.Instance?.OnRoomVisited(RoomType.Garden);
-            AudioManager.Instance?.Play("explore");
-        }
 
-        ActivityItem CreateExploreActivity()
-        {
-            var a = ScriptableObject.CreateInstance<ActivityItem>();
-            a.activityName  = "Garden Explore";
-            a.happinessBoost = 15f;
-            a.energyCost    = 10f;
-            a.xpReward      = 10;
-            return a;
+            var ml = MoonlightGameManager.Instance?.moonlight;
+            if (ml == null) return;
+
+            ml.Explore(RoomType.Garden);
+            ml.EarnCoins(exploreCoins);
+            AchievementSystem.Instance?.Check("room_garden");
+            AudioManager.Instance?.Play("discover");
         }
     }
 }

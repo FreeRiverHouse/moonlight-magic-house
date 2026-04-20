@@ -9,8 +9,8 @@ namespace MoonlightMagicHouse
         public static void TrackSessionStart(int level, EvolutionStage stage)
             => Log("session_start", $"level={level} stage={stage}");
 
-        public static void TrackEvolution(PetSpecies species, EvolutionStage newStage)
-            => Log("evolution", $"species={species} stage={newStage}");
+        public static void TrackEvolution(MoonlightStage newStage)
+            => Log("evolution", $"stage={newStage}");
 
         public static void TrackFeed(string foodName, int cost)
             => Log("feed", $"food={foodName} cost={cost}");
