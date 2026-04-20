@@ -1143,6 +1143,13 @@ namespace MoonlightMagicHouse
                     {
                         var p = visual.GetComponent<ScalePuncher>();
                         if (p != null) p.Punch(0.22f, 0.40f);
+                        var smile = visual.Find("Smile");
+                        if (smile != null)
+                        {
+                            var sp = smile.GetComponent<ScalePuncher>();
+                            if (sp == null) sp = smile.gameObject.AddComponent<ScalePuncher>();
+                            sp.Punch(0.55f, 0.55f);
+                        }
                     }
                 }
             });
