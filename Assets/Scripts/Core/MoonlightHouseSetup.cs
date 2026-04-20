@@ -594,6 +594,20 @@ namespace MoonlightMagicHouse
                 winCube.transform.localScale    = new Vector3(1.7f, 1.3f, 0.04f);
                 winCube.GetComponent<MeshRenderer>().material = winMat;
                 Object.Destroy(winCube.GetComponent<Collider>());
+                // Moon halo — bigger translucent sphere behind moon for glow
+                var halo = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                halo.name = "MoonHalo";
+                halo.transform.SetParent(root.transform, false);
+                halo.transform.localPosition = new Vector3(2.5f, 2.7f, 4.92f);
+                halo.transform.localScale    = Vector3.one * 0.55f;
+                var haloMat = new Material(ToonShader);
+                haloMat.SetColor("_Color",           new Color(0.95f, 0.92f, 0.70f, 0.25f));
+                haloMat.SetColor("_EmissionColor",   new Color(0.95f, 0.85f, 0.55f));
+                haloMat.SetFloat("_EmissionIntensity", 0.7f);
+                haloMat.SetFloat("_OutlineWidth", 0f);
+                halo.GetComponent<MeshRenderer>().material = haloMat;
+                Object.Destroy(halo.GetComponent<Collider>());
+
                 // Moon circle in window
                 var moonCirc = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 moonCirc.name = "MoonCircle";
