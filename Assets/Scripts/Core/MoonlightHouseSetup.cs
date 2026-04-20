@@ -265,6 +265,20 @@ namespace MoonlightMagicHouse
             MakePart(visual.transform, PrimitiveType.Sphere, "FootR",
                 new Vector3( 0.16f, -0.08f, 0.10f), new Vector3(0.18f, 0.10f, 0.22f),
                 new Color(0.30f, 0.18f, 0.50f));
+            // Pink hair bow (two small cubes on right side)
+            MakePartRotated(visual.transform, PrimitiveType.Cube, "BowL",
+                new Vector3(0.28f, 2.12f, 0f),
+                Quaternion.Euler(0f, 0f, 20f),
+                new Vector3(0.14f, 0.10f, 0.06f),
+                new Color(1.0f, 0.55f, 0.80f));
+            MakePartRotated(visual.transform, PrimitiveType.Cube, "BowR",
+                new Vector3(0.38f, 2.15f, 0f),
+                Quaternion.Euler(0f, 0f, -20f),
+                new Vector3(0.14f, 0.10f, 0.06f),
+                new Color(1.0f, 0.55f, 0.80f));
+            MakePart(visual.transform, PrimitiveType.Sphere, "BowKnot",
+                new Vector3(0.32f, 2.13f, 0.01f), Vector3.one * 0.045f,
+                new Color(1.0f, 0.35f, 0.65f));
             // Little star hair clip
             MakePartRotated(visual.transform, PrimitiveType.Cube, "StarClip",
                 new Vector3(-0.28f, 2.08f, 0.02f),
@@ -389,10 +403,19 @@ namespace MoonlightMagicHouse
             var root = new GameObject(roomName);
             root.transform.position = pos;
 
-            // Floor — slightly textured color
-            Prim(PrimitiveType.Cube, "Floor", root.transform,
-                new Vector3(0f, -0.1f, 0f), new Vector3(10f, 0.2f, 10f),
-                new Color(0.14f, 0.09f, 0.24f));
+            // Floor — checkerboard of dark purple squares for depth
+            for (int fx = 0; fx < 5; fx++)
+                for (int fz = 0; fz < 5; fz++)
+                {
+                    bool dark = ((fx + fz) & 1) == 0;
+                    Color tile = dark
+                        ? new Color(0.12f, 0.07f, 0.22f)
+                        : new Color(0.17f, 0.10f, 0.28f);
+                    Prim(PrimitiveType.Cube, $"Tile_{fx}_{fz}", root.transform,
+                        new Vector3(-4f + fx * 2f, -0.1f, -4f + fz * 2f),
+                        new Vector3(2f, 0.18f, 2f),
+                        tile);
+                }
 
             // Ceiling
             Prim(PrimitiveType.Cube, "Ceiling", root.transform,
