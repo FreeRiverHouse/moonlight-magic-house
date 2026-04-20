@@ -14,8 +14,9 @@ namespace MoonlightMagicHouse
 
         void Start()
         {
-            if (captureOnEvolution && GameManager.Instance?.pet != null)
-                GameManager.Instance.pet.onEvolution.AddListener(_ => Capture("evolution"));
+            var ml = MoonlightGameManager.Instance?.moonlight;
+            if (captureOnEvolution && ml != null)
+                ml.onStageUp.AddListener(_ => Capture("evolution"));
 
             if (captureOnAchievement && AchievementSystem.Instance != null)
                 AchievementSystem.Instance.onUnlocked.AddListener(a => Capture($"ach_{a.id}"));

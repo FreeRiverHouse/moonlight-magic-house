@@ -40,17 +40,20 @@ namespace MoonlightMagicHouse
             ach.unlocked = true;
             PlayerPrefs.SetInt(PREFIX + id, 1);
             PlayerPrefs.Save();
-            GameManager.Instance.pet.EarnCoins(ach.coinReward);
+            MoonlightGameManager.Instance?.moonlight.EarnCoins(ach.coinReward);
             onUnlocked?.Invoke(ach);
             AudioManager.Instance?.Play("achievement");
         }
 
-        // Call sites ─────────────────────────────────────────────
-        public void OnPetEvolved(EvolutionStage s)  => Check($"evolve_{s}".ToLower());
+        public void OnStageUp(MoonlightStage s)     => Check($"stage_{s}".ToLower());
         public void OnFirstFeed()                    => Check("first_feed");
-        public void OnFirstPlay()                    => Check("first_play");
+        public void OnFirstCuddle()                  => Check("first_cuddle");
+        public void OnFirstSleep()                   => Check("first_sleep");
         public void OnStreakDay(int days)            => Check($"streak_{days}");
         public void OnRoomVisited(RoomType r)        => Check($"room_{r}".ToLower());
-        public void OnLevel(int lv)                  => Check($"level_{lv}");
+        public void OnTrickLearned(int total)        { Check("tricks_first"); if (total >= 8) Check("tricks_all"); }
+        public void OnSecretFound(int total)        { if (total >= 5) Check("secrets_5"); }
+        public void OnAllSecretsFound()              => Check("secrets_all");
+        public void OnAllStoriesRead()               => Check("stories_all");
     }
 }

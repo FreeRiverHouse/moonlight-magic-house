@@ -6,8 +6,8 @@ namespace MoonlightMagicHouse
     // Replace body of each method with your preferred provider (GameAnalytics, Firebase, etc.)
     public static class AnalyticsManager
     {
-        public static void TrackSessionStart(int level, EvolutionStage stage)
-            => Log("session_start", $"level={level} stage={stage}");
+        public static void TrackSessionStart(int xp, MoonlightStage stage)
+            => Log("session_start", $"xp={xp} stage={stage}");
 
         public static void TrackEvolution(MoonlightStage newStage)
             => Log("evolution", $"stage={newStage}");

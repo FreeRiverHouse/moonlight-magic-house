@@ -7,6 +7,10 @@ namespace MoonlightMagicHouse
     {
         [SerializeField] List<ActivityItem> activities;
 
-        public void OpenActivities() => PetUIController.Instance?.ShowActivitiesMenu(activities);
+        public void OpenActivities()
+        {
+            foreach (var act in activities)
+                MoonlightGameManager.Instance?.moonlight.Explore(RoomType.LivingRoom);
+        }
     }
 }

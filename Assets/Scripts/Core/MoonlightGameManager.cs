@@ -7,10 +7,11 @@ namespace MoonlightMagicHouse
         public static MoonlightGameManager Instance { get; private set; }
 
         [Header("Core")]
-        public MoonlightCharacter moonlight;
-        public MoonlightUI        ui;
-        public RoomManager        rooms;
-        public MoonlightWardrobe  wardrobe;
+        public MoonlightCharacter   moonlight;
+        public MoonlightUI          ui;
+        public RoomManager          rooms;
+        public MoonlightWardrobe    wardrobe;
+        public MoonlightIdleBehavior idleBehavior;
 
         [Header("Auto-save interval (s)")]
         [SerializeField] float autoSaveInterval = 90f;
@@ -32,6 +33,7 @@ namespace MoonlightMagicHouse
             }
 
             moonlight.onStageUp.AddListener(OnStageUp);
+            moonlight.onStageUp.AddListener(s => AchievementSystem.Instance?.OnStageUp(s));
             moonlight.onMoodChange.AddListener(ui.OnMoodChange);
             moonlight.onCoinsChanged.AddListener(ui.UpdateCoins);
             moonlight.onRoomUnlocked.AddListener(OnRoomUnlocked);

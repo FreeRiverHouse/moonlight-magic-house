@@ -7,6 +7,6 @@ namespace MoonlightMagicHouse
     {
         [SerializeField] List<FoodItem> menu;
 
-        public void OpenMenu() => PetUIController.Instance?.ShowFoodMenu(menu);
+        public void OpenMenu() => MoonlightGameManager.Instance?.ui.OpenFeedMenuWith(menu);
     }
 }

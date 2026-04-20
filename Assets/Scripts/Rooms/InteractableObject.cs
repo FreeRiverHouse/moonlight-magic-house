@@ -25,14 +25,14 @@ namespace MoonlightMagicHouse
         {
             _isHovered = true;
             SetGlow(glowIntensity);
-            PetUIController.Instance?.ShowPrompt(promptText);
+            MoonlightGameManager.Instance?.ui.ShowPrompt(promptText);
         }
 
         void OnMouseExit()
         {
             _isHovered = false;
             SetGlow(0f);
-            PetUIController.Instance?.HidePrompt();
+            MoonlightGameManager.Instance?.ui.HidePrompt();
         }
 
         void OnMouseUpAsButton() => Interact();

@@ -49,7 +49,7 @@ namespace MoonlightMagicHouse
 
         void ConfirmReset()
         {
-            SaveManager.Instance.Delete();
+            MoonlightSave.Delete();
             UnityEngine.SceneManagement.SceneManager.LoadScene(0);
         }
 

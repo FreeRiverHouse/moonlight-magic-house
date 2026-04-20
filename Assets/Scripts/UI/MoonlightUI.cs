@@ -38,6 +38,23 @@ namespace MoonlightMagicHouse
         [SerializeField] GameObject offlinePanel;
         [SerializeField] GameObject sleepOverlay;
 
+        // ── Prompt ────────────────────────────────────────────────────────
+        [Header("Prompt")]
+        [SerializeField] GameObject promptRoot;
+        [SerializeField] TMP_Text   promptLabel;
+
+        public void ShowPrompt(string text)
+        {
+            if (promptRoot == null) return;
+            promptLabel.text = text;
+            promptRoot.SetActive(true);
+        }
+
+        public void HidePrompt()
+        {
+            promptRoot?.SetActive(false);
+        }
+
         // ── Food menu ─────────────────────────────────────────────────────
         [Header("Feed Menu")]
         [SerializeField] GameObject  feedMenuRoot;
@@ -104,11 +121,22 @@ namespace MoonlightMagicHouse
 
         public void ShowOfflineNotice() => StartCoroutine(ShowThenHide(offlinePanel, 3f));
 
+        public void OpenFeedMenuWith(System.Collections.Generic.List<FoodItem> overrideCatalogue)
+        {
+            PopulateFeedMenu(overrideCatalogue);
+            feedMenuRoot.SetActive(true);
+        }
+
         void OpenFeedMenu()
         {
-            // Populate from foodCatalogue ScriptableObjects
+            PopulateFeedMenu(new System.Collections.Generic.List<FoodItem>(foodCatalogue));
+            feedMenuRoot.SetActive(true);
+        }
+
+        void PopulateFeedMenu(System.Collections.Generic.List<FoodItem> catalogue)
+        {
             foreach (Transform t in feedMenuContent) Destroy(t.gameObject);
-            foreach (var food in foodCatalogue)
+            foreach (var food in catalogue)
             {
                 var item = Instantiate(feedItemPrefab, feedMenuContent);
                 item.GetComponentInChildren<TMP_Text>().text = $"{food.itemName}\n⭐{food.cost}";
@@ -120,7 +148,6 @@ namespace MoonlightMagicHouse
                     feedMenuRoot.SetActive(false);
                 });
             }
-            feedMenuRoot.SetActive(true);
         }
 
         IEnumerator ShowThenHide(GameObject panel, float dur)

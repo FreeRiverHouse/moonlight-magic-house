@@ -20,7 +20,7 @@ namespace MoonlightMagicHouse
 
         void Start()
         {
-            _rooms = GameManager.Instance.rooms;
+            _rooms = MoonlightGameManager.Instance.rooms;
             _rooms.onRoomChanged.AddListener(OnRoomChanged);
 
             foreach (var rb in buttons)
