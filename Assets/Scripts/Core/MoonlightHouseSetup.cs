@@ -76,6 +76,8 @@ namespace MoonlightMagicHouse
                 cam.gameObject.AddComponent<CameraController>();
             if (!cam.GetComponent<AmbientCycle>())
                 cam.gameObject.AddComponent<AmbientCycle>();
+            if (!cam.GetComponent<GodRaysPostFx>())
+                cam.gameObject.AddComponent<GodRaysPostFx>();
             if (!cam.GetComponent<BloomPostFx>())
                 cam.gameObject.AddComponent<BloomPostFx>();
             if (!cam.GetComponent<CelOutlinePostFx>())
