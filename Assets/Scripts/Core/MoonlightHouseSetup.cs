@@ -1160,6 +1160,43 @@ namespace MoonlightMagicHouse
                 SpawnKenney(root.transform, "Kenney/Furniture/pillowLong",
                     new Vector3(-1.5f, 0.62f, 3.1f), new Vector3(0f, 0f, 0f), 0.30f,
                     new Color(1.0f, 0.75f, 0.88f));
+                // Layered books on the bookcase shelves
+                SpawnKenney(root.transform, "Kenney/Furniture/books",
+                    new Vector3(-4.45f, 0.28f, 1.1f), new Vector3(0f, 90f, 0f), 0.30f,
+                    new Color(0.55f, 0.75f, 1.00f));
+                SpawnKenney(root.transform, "Kenney/Furniture/books",
+                    new Vector3(-4.45f, 1.45f, 0.5f), new Vector3(0f, 90f, 0f), 0.32f,
+                    new Color(1.00f, 0.72f, 0.55f));
+                SpawnKenney(root.transform, "Kenney/Furniture/books",
+                    new Vector3(-4.45f, 1.45f, 1.1f), new Vector3(0f, -90f, 0f), 0.30f,
+                    new Color(0.72f, 0.92f, 0.70f));
+                // TV cabinet on right wall
+                SpawnKenney(root.transform, "Kenney/Furniture/cabinetTelevision",
+                    new Vector3(4.6f, 0f, 2.0f), new Vector3(0f, -90f, 0f), 0.40f,
+                    new Color(0.65f, 0.42f, 0.28f));
+                // Table lamp on the cabinet (warm emissive applied separately)
+                var tlamp = SpawnKenney(root.transform, "Kenney/Furniture/lampRoundTable",
+                    new Vector3(4.5f, 1.30f, 2.0f), Vector3.zero, 0.28f,
+                    new Color(1.00f, 0.82f, 0.55f));
+                if (tlamp != null)
+                {
+                    var lgo = new GameObject("TableLampLight");
+                    lgo.transform.SetParent(tlamp.transform, false);
+                    lgo.transform.localPosition = new Vector3(0f, 0.5f, 0f);
+                    var pl = lgo.AddComponent<Light>();
+                    pl.type      = LightType.Point;
+                    pl.color     = new Color(1.0f, 0.80f, 0.50f);
+                    pl.intensity = 1.8f;
+                    pl.range     = 4f;
+                }
+                // Extra small pillow on sofa
+                SpawnKenney(root.transform, "Kenney/Furniture/pillowLong",
+                    new Vector3(-0.6f, 0.62f, 3.0f), new Vector3(0f, 15f, 0f), 0.24f,
+                    new Color(0.78f, 0.62f, 1.00f));
+                // Round rug at hallway entrance
+                SpawnKenney(root.transform, "Kenney/Furniture/rugRound",
+                    new Vector3(4.2f, 0.02f, 0.5f), Vector3.zero, 0.55f,
+                    new Color(0.88f, 0.55f, 0.95f));
 
                 // Window light — moonbeam
                 var winLGO = new GameObject("WindowMoonbeam");

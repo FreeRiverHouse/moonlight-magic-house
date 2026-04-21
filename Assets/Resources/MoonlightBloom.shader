@@ -76,22 +76,27 @@ Shader "MoonlightMagicHouse/Bloom"
                 vig          = saturate(vig);
                 float3 col   = src.rgb + bloom.rgb * _Intensity;
 
-                // ── Subtle cinematic grade (on LDR-ish range) ──
-                float3 ldr   = saturate(col);
-                float  luma  = dot(ldr, float3(0.299, 0.587, 0.114));
-                float  sMask = 1.0 - smoothstep(0.0, 0.4, luma);
-                float  hMask = smoothstep(0.6, 1.0, luma);
-                float3 shadowTint    = float3(1.04, 1.00, 0.95);
-                float3 highlightTint = float3(0.97, 1.01, 1.05);
-                col *= lerp(float3(1,1,1), shadowTint,    sMask * 0.35);
-                col *= lerp(float3(1,1,1), highlightTint, hMask * 0.35);
+                // ── SOTA grade: split-toning + ACES tonemap ──
+                float  luma = dot(saturate(col), float3(0.2126, 0.7152, 0.0722));
+                // Cool-blue shadows, warm-amber highlights (Ghibli moonlit indoor)
+                float3 shadowTint    = float3(0.92, 0.95, 1.06);
+                float3 highlightTint = float3(1.08, 1.02, 0.92);
+                float  sMask = 1.0 - smoothstep(0.0, 0.5, luma);
+                float  hMask = smoothstep(0.5, 1.0, luma);
+                col *= lerp(float3(1,1,1), shadowTint,    sMask * 0.55);
+                col *= lerp(float3(1,1,1), highlightTint, hMask * 0.55);
 
-                // Mild saturation boost
+                // Saturation lift
                 float3 gray = float3(luma, luma, luma);
-                col = lerp(gray, col, 1.06);
+                col = lerp(gray, col, 1.12);
 
-                col         *= _Tint.rgb;
-                col         *= vig;
+                col *= _Tint.rgb;
+
+                // Narkowicz ACES approximation — filmic tonemap
+                float3 x = col * 1.05;
+                col = saturate((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14));
+
+                col *= vig;
 
                 return fixed4(col, 1);
             }
