@@ -78,6 +78,8 @@ namespace MoonlightMagicHouse
                 cam.gameObject.AddComponent<AmbientCycle>();
             if (!cam.GetComponent<BloomPostFx>())
                 cam.gameObject.AddComponent<BloomPostFx>();
+            if (!cam.GetComponent<CelOutlinePostFx>())
+                cam.gameObject.AddComponent<CelOutlinePostFx>();
         }
 
         // ── Atmosphere ───────────────────────────────────────────────────────
