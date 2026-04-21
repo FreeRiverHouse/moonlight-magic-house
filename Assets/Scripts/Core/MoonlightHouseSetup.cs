@@ -504,20 +504,96 @@ namespace MoonlightMagicHouse
             MakePart(visual.transform, PrimitiveType.Cylinder, "Belt",
                 new Vector3(0f, 0.90f, 0f), new Vector3(0.42f, 0.05f, 0.42f),
                 new Color(1.0f, 0.85f, 0.40f));
-            // Legs
-            MakePart(visual.transform, PrimitiveType.Capsule, "LegL",
-                new Vector3(-0.16f, 0.22f, 0f), new Vector3(0.15f, 0.30f, 0.15f),
-                new Color(0.72f, 0.60f, 0.90f));
-            MakePart(visual.transform, PrimitiveType.Capsule, "LegR",
-                new Vector3( 0.16f, 0.22f, 0f), new Vector3(0.15f, 0.30f, 0.15f),
-                new Color(0.72f, 0.60f, 0.90f));
-            // Feet
+            // ── LEGS: thigh + knee + calf ──
+            var tights = new Color(0.92f, 0.86f, 1.00f);
+            MakePart(visual.transform, PrimitiveType.Capsule, "ThighL",
+                new Vector3(-0.14f, 0.32f, 0f), new Vector3(0.14f, 0.18f, 0.14f), tights);
+            MakePart(visual.transform, PrimitiveType.Capsule, "ThighR",
+                new Vector3( 0.14f, 0.32f, 0f), new Vector3(0.14f, 0.18f, 0.14f), tights);
+            MakePart(visual.transform, PrimitiveType.Sphere, "KneeL",
+                new Vector3(-0.14f, 0.13f, 0f), Vector3.one * 0.13f, tights);
+            MakePart(visual.transform, PrimitiveType.Sphere, "KneeR",
+                new Vector3( 0.14f, 0.13f, 0f), Vector3.one * 0.13f, tights);
+            MakePart(visual.transform, PrimitiveType.Capsule, "CalfL",
+                new Vector3(-0.14f, -0.02f, 0f), new Vector3(0.12f, 0.14f, 0.12f), tights);
+            MakePart(visual.transform, PrimitiveType.Capsule, "CalfR",
+                new Vector3( 0.14f, -0.02f, 0f), new Vector3(0.12f, 0.14f, 0.12f), tights);
+            // Ankle strap (emissive pink)
+            MakeEmissive(visual.transform, "AnkleL",
+                new Vector3(-0.14f, -0.13f, 0f), new Vector3(0.14f, 0.025f, 0.14f),
+                new Color(1.0f, 0.55f, 0.80f), 0.7f);
+            MakeEmissive(visual.transform, "AnkleR",
+                new Vector3( 0.14f, -0.13f, 0f), new Vector3(0.14f, 0.025f, 0.14f),
+                new Color(1.0f, 0.55f, 0.80f), 0.7f);
+            // ── SHOES: oval main + heel + buckle ──
+            var shoeCol = new Color(0.30f, 0.14f, 0.45f);
             MakePart(visual.transform, PrimitiveType.Sphere, "FootL",
-                new Vector3(-0.16f, -0.08f, 0.10f), new Vector3(0.18f, 0.10f, 0.22f),
-                new Color(0.30f, 0.18f, 0.50f));
+                new Vector3(-0.15f, -0.18f, 0.11f), new Vector3(0.19f, 0.10f, 0.26f), shoeCol);
             MakePart(visual.transform, PrimitiveType.Sphere, "FootR",
-                new Vector3( 0.16f, -0.08f, 0.10f), new Vector3(0.18f, 0.10f, 0.22f),
-                new Color(0.30f, 0.18f, 0.50f));
+                new Vector3( 0.15f, -0.18f, 0.11f), new Vector3(0.19f, 0.10f, 0.26f), shoeCol);
+            MakePart(visual.transform, PrimitiveType.Cube, "HeelL",
+                new Vector3(-0.15f, -0.22f, -0.02f), new Vector3(0.08f, 0.07f, 0.06f), shoeCol);
+            MakePart(visual.transform, PrimitiveType.Cube, "HeelR",
+                new Vector3( 0.15f, -0.22f, -0.02f), new Vector3(0.08f, 0.07f, 0.06f), shoeCol);
+            MakeEmissive(visual.transform, "BuckleL",
+                new Vector3(-0.15f, -0.15f, 0.22f), Vector3.one * 0.035f,
+                new Color(1.0f, 0.90f, 0.50f), 1.2f);
+            MakeEmissive(visual.transform, "BuckleR",
+                new Vector3( 0.15f, -0.15f, 0.22f), Vector3.one * 0.035f,
+                new Color(1.0f, 0.90f, 0.50f), 1.2f);
+
+            // ── EARS ──
+            MakePartRotated(visual.transform, PrimitiveType.Sphere, "EarL",
+                new Vector3(-0.21f, 1.85f, 0.02f), Quaternion.Euler(0,0,10),
+                new Vector3(0.06f, 0.10f, 0.04f), new Color(1.00f, 0.85f, 0.78f));
+            MakePartRotated(visual.transform, PrimitiveType.Sphere, "EarR",
+                new Vector3( 0.21f, 1.85f, 0.02f), Quaternion.Euler(0,0,-10),
+                new Vector3(0.06f, 0.10f, 0.04f), new Color(1.00f, 0.85f, 0.78f));
+
+            // ── FINGERS: 3 tiny nubs per hand for "mitten" reads ──
+            var skin = new Color(1.00f, 0.88f, 0.80f);
+            for (int f = 0; f < 3; f++)
+            {
+                float fx = -0.03f + f * 0.03f;
+                MakePart(visual.transform, PrimitiveType.Sphere, $"FingerL{f}",
+                    new Vector3(-0.58f + fx, 0.54f, 0.02f), Vector3.one * 0.035f, skin);
+                MakePart(visual.transform, PrimitiveType.Sphere, $"FingerR{f}",
+                    new Vector3( 0.58f + fx, 0.54f, 0.02f), Vector3.one * 0.035f, skin);
+            }
+
+            // ── HAIR LAYERS: side-swept fringe + long back tails ──
+            var hairCol  = new Color(0.22f, 0.08f, 0.48f);
+            var hairDark = new Color(0.16f, 0.05f, 0.38f);
+            MakePartRotated(visual.transform, PrimitiveType.Sphere, "FringeSide",
+                new Vector3(0.02f, 2.02f, 0.19f), Quaternion.Euler(0,0,-12),
+                new Vector3(0.32f, 0.12f, 0.14f), hairCol);
+            MakePartRotated(visual.transform, PrimitiveType.Capsule, "TailL",
+                new Vector3(-0.32f, 1.70f, -0.05f), Quaternion.Euler(10,0,0),
+                new Vector3(0.16f, 0.30f, 0.16f), hairDark);
+            MakePartRotated(visual.transform, PrimitiveType.Capsule, "TailR",
+                new Vector3( 0.32f, 1.70f, -0.05f), Quaternion.Euler(10,0,0),
+                new Vector3(0.16f, 0.30f, 0.16f), hairDark);
+
+            // ── DRESS EXTRA FRILLS: extra hem ruffle + underskirt peek ──
+            MakePart(visual.transform, PrimitiveType.Cylinder, "DressRuffle",
+                new Vector3(0f, 0.24f, 0f), new Vector3(0.82f, 0.05f, 0.82f),
+                new Color(0.70f, 0.45f, 0.90f));
+            MakePart(visual.transform, PrimitiveType.Cylinder, "DressUnder",
+                new Vector3(0f, 0.19f, 0f), new Vector3(0.68f, 0.06f, 0.68f),
+                new Color(0.95f, 0.88f, 1.00f));
+            MakePart(visual.transform, PrimitiveType.Cylinder, "DressApron",
+                new Vector3(0f, 0.50f, 0.08f), new Vector3(0.50f, 0.20f, 0.20f),
+                new Color(0.98f, 0.94f, 1.00f));
+
+            // ── SPARKLE ACCENTS on dress ──
+            for (int s = 0; s < 5; s++)
+            {
+                float ang = s * (Mathf.PI * 2f / 5f);
+                MakeEmissive(visual.transform, $"DressGem{s}",
+                    new Vector3(Mathf.Sin(ang) * 0.38f, 0.55f, Mathf.Cos(ang) * 0.20f),
+                    Vector3.one * 0.035f,
+                    new Color(1.0f, 0.85f, 0.55f), 1.3f);
+            }
             // Pink hair bow on right side — anchored right against hair
             MakePartRotated(visual.transform, PrimitiveType.Cube, "BowL",
                 new Vector3(0.20f, 2.10f, 0.02f),
