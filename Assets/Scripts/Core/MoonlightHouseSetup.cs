@@ -663,6 +663,32 @@ namespace MoonlightMagicHouse
             Object.Destroy(go.GetComponent<Collider>());
         }
 
+        // ── Kenney CC0 prop spawner ──
+        static GameObject SpawnKenney(Transform parent, string resourcePath,
+            Vector3 pos, Vector3 eulerRot, float scale, Color tint)
+        {
+            var prefab = Resources.Load<GameObject>(resourcePath);
+            if (prefab == null)
+            {
+                Debug.LogWarning($"[Kenney] Missing Resources/{resourcePath}");
+                return null;
+            }
+            var go = Object.Instantiate(prefab, parent);
+            go.name = System.IO.Path.GetFileName(resourcePath);
+            go.transform.localPosition = pos;
+            go.transform.localRotation = Quaternion.Euler(eulerRot);
+            go.transform.localScale    = Vector3.one * scale;
+            // Retint using toon shader for stylistic consistency
+            foreach (var r in go.GetComponentsInChildren<Renderer>())
+            {
+                var m = new Material(ToonShader);
+                m.SetColor("_Color", tint);
+                m.SetFloat("_OutlineWidth", 0.003f);
+                r.sharedMaterial = m;
+            }
+            return go;
+        }
+
         // ── Rooms ────────────────────────────────────────────────────────────
         RoomManager CreateRooms()
         {
@@ -1109,6 +1135,29 @@ namespace MoonlightMagicHouse
                 Prim(PrimitiveType.Cube, "BalloonString", root.transform,
                     new Vector3(3.8f, 2.6f, -3.5f), new Vector3(0.02f, 0.7f, 0.02f),
                     new Color(0.85f, 0.85f, 0.90f));
+
+                // ── Kenney CC0 furniture pass (native scale ~3x, so use ~0.35) ──
+                SpawnKenney(root.transform, "Kenney/Furniture/bookcaseOpen",
+                    new Vector3(-4.6f, 0f, 0.8f), new Vector3(0f, 90f, 0f), 0.40f,
+                    new Color(0.68f, 0.45f, 0.30f));
+                SpawnKenney(root.transform, "Kenney/Furniture/books",
+                    new Vector3(-4.40f, 0.85f, 0.8f), new Vector3(0f, 90f, 0f), 0.35f,
+                    new Color(0.85f, 0.55f, 0.75f));
+                SpawnKenney(root.transform, "Kenney/Furniture/lampRoundFloor",
+                    new Vector3(-3.8f, 0f, -2.2f), Vector3.zero, 0.42f,
+                    new Color(1.00f, 0.88f, 0.72f));
+                SpawnKenney(root.transform, "Kenney/Furniture/pottedPlant",
+                    new Vector3(4.0f, 0f, -2.6f), Vector3.zero, 0.38f,
+                    new Color(0.55f, 0.88f, 0.55f));
+                SpawnKenney(root.transform, "Kenney/Furniture/plantSmall2",
+                    new Vector3(1.2f, 0.55f, 1.5f), Vector3.zero, 0.22f,
+                    new Color(0.55f, 0.88f, 0.55f));
+                SpawnKenney(root.transform, "Kenney/Furniture/chairCushion",
+                    new Vector3(3.5f, 0f, -0.5f), new Vector3(0f, -120f, 0f), 0.35f,
+                    new Color(0.85f, 0.45f, 0.90f));
+                SpawnKenney(root.transform, "Kenney/Furniture/pillowLong",
+                    new Vector3(-1.5f, 0.62f, 3.1f), new Vector3(0f, 0f, 0f), 0.30f,
+                    new Color(1.0f, 0.75f, 0.88f));
 
                 // Window light — moonbeam
                 var winLGO = new GameObject("WindowMoonbeam");
