@@ -42,3 +42,39 @@ Latest verification:
 Known follow-up:
 - The bed-rest vignette now clearly reads as sleeping/resting, but future polish should make it feel physically integrated with bedding rather than a 3D avatar floating against a 2D photo plane.
 - The door/portal transition works and communicates the scene change; later polish can replace the simple runtime geometry with a higher-quality authored prop.
+
+## 2026-04-24 - Next Phase Pass: Bed, Portal, Proportions
+
+Linear source of truth was created for Moonlight:
+- Project: `Moonlight Magic House`
+- Onboarding issue: `FRE-114`
+- Active next-phase issues: `FRE-116`, `FRE-117`, `FRE-118`, `FRE-119`
+
+Implementation direction for this pass:
+- Tune Moonlight less chibi while preserving the animated/cute improvement the user liked.
+- Add a runtime bedding/occlusion layer during `NAP`, so the rest pose reads more like she is tucked into the bed rather than floating over a flat photo.
+- Replace the blocky feel of the PLAY door with a softer fairy portal: glow aura, meadow reveal, smaller frame, translucent panel, and pearl-like lights.
+- Add subtle storybook warmth in the room through soft window/floor glow overlays, while keeping the generated photoreal bedroom as the base.
+
+Verification gate remains unchanged:
+- Build with Unity batchmode only.
+- Run the built app with `-mmhPlaytest`.
+- Inspect screenshots for `03_SleepBtn`, `04_PlayDoor`, `04_PlayBtn`, and the room return before calling the pass done.
+
+## 2026-04-24 - Next Phase Result: Room-Only Treats, Bed Polish, Portal Polish
+
+Implemented in the next-phase pass:
+- Moonlight proportions were tuned less chibi: smaller head/ribbons, slimmer/taller body read, longer legs, while preserving the animated cute avatar the playtest liked.
+- `NAP` now moves Moonlight to the bed, switches to a closer bed camera, lies her down, and uses a subtle soft shadow/duvet occlusion instead of the earlier obvious pink blob.
+- `PLAY` now keeps the room-to-meadow transition: Moonlight walks to the fairy portal/door, opens it, then runs in the generated meadow.
+- The portal was softened with a translucent panel, meadow reveal, fairy pearls, and warmer glow so it reads more fairytale and less blocky.
+- Small snack macarons were enabled as room-only props. They stay in the bedroom and are hidden automatically during the outdoor meadow scene.
+
+Latest verification:
+- Built successfully in Unity 6000.3.2f1 batchmode/headless.
+- Ran `Moonlight Magic House.app` with `-mmhPlaytest`.
+- Player log reached `[Playtest][PASS]` with no runtime exceptions.
+- Inspected `00_initial`, `03_SleepBtn`, `04_PlayDoor`, `04_PlayBtn`, and `06_DanceBtn` screenshots.
+
+Remaining quality bar:
+- The current result is improved and playable, but the avatar remains stylized against photoreal backdrops. The next big visual jump should be a better child avatar/material pass or a more authored 3D bed/action vignette layer.

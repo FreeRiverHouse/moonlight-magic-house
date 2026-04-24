@@ -468,7 +468,7 @@ namespace MoonlightMagicHouse
             foreach (var r in renderers) b.Encapsulate(r.bounds);
             float height = Mathf.Max(0.1f, b.size.y);
             float childScale = 1.06f / height;
-            instance.transform.localScale = new Vector3(childScale * 0.92f, childScale * 1.10f, childScale * 0.92f);
+            instance.transform.localScale = new Vector3(childScale * 0.86f, childScale * 1.14f, childScale * 0.86f);
             instance.transform.localRotation = Quaternion.identity;
 
             b = renderers[0].bounds;
@@ -1427,6 +1427,8 @@ namespace MoonlightMagicHouse
             CreatePhotorealFloorBlend(root.transform);
             CreatePhotoMatchedFairyLights(root.transform);
             CreateDollhouseMagicGlow(root.transform);
+            CreateDreamyRoomVignette(root.transform);
+            CreateGlossyKidTreats(root.transform);
 
             var lamp = new GameObject("ReferenceBunnyLampGlow");
             lamp.transform.SetParent(root.transform, false);
@@ -1546,32 +1548,46 @@ namespace MoonlightMagicHouse
             }
         }
 
+        static void CreateDreamyRoomVignette(Transform parent)
+        {
+            var windowGlow = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            windowGlow.name = "StorybookWindowGlow";
+            windowGlow.transform.SetParent(parent, false);
+            windowGlow.transform.localPosition = new Vector3(0.38f, 1.92f, -0.72f);
+            windowGlow.transform.localScale = new Vector3(2.20f, 0.92f, 1f);
+            Object.Destroy(windowGlow.GetComponent<Collider>());
+            var glowMat = new Material(TransparentSpriteShader);
+            glowMat.mainTexture = MakeSoftCircleTex(160);
+            glowMat.color = new Color(1.0f, 0.76f, 0.46f, 0.11f);
+            windowGlow.GetComponent<MeshRenderer>().material = glowMat;
+
+            var rugGlow = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            rugGlow.name = "FairytaleFloorWarmth";
+            rugGlow.transform.SetParent(parent, false);
+            rugGlow.transform.localPosition = new Vector3(-0.32f, 0.018f, -1.12f);
+            rugGlow.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            rugGlow.transform.localScale = new Vector3(2.90f, 0.82f, 1f);
+            Object.Destroy(rugGlow.GetComponent<Collider>());
+            var rugMat = new Material(TransparentSpriteShader);
+            rugMat.mainTexture = MakeSoftCircleTex(160);
+            rugMat.color = new Color(1.0f, 0.52f, 0.58f, 0.055f);
+            rugGlow.GetComponent<MeshRenderer>().material = rugMat;
+        }
+
         static void CreateGlossyKidTreats(Transform parent)
         {
             MakePhotorealToy(parent, PrimitiveType.Sphere, "StrawberryMacaron",
-                new Vector3(1.62f, 0.13f, -1.18f), new Vector3(0.18f, 0.07f, 0.18f),
+                new Vector3(1.56f, 0.06f, -1.18f), new Vector3(0.070f, 0.024f, 0.070f),
                 new Color(1.00f, 0.46f, 0.62f), 0.62f);
             MakePhotorealToy(parent, PrimitiveType.Sphere, "LemonMacaron",
-                new Vector3(1.90f, 0.12f, -1.05f), new Vector3(0.15f, 0.06f, 0.15f),
+                new Vector3(1.78f, 0.055f, -1.08f), new Vector3(0.064f, 0.022f, 0.064f),
                 new Color(1.00f, 0.84f, 0.32f), 0.58f);
             MakePhotorealToy(parent, PrimitiveType.Sphere, "BlueberryMacaron",
-                new Vector3(2.14f, 0.11f, -1.28f), new Vector3(0.14f, 0.055f, 0.14f),
+                new Vector3(2.04f, 0.052f, -1.18f), new Vector3(0.058f, 0.020f, 0.058f),
                 new Color(0.42f, 0.62f, 1.00f), 0.60f);
 
-            var wand = MakePhotorealToy(parent, PrimitiveType.Cylinder, "LittleMagicWand",
-                new Vector3(-1.54f, 0.08f, -1.12f), new Vector3(0.026f, 0.42f, 0.026f),
-                new Color(1.00f, 0.68f, 0.90f), 0.35f);
-            wand.transform.localRotation = Quaternion.Euler(74f, 0f, -32f);
-            MakePhotorealToy(parent, PrimitiveType.Sphere, "WandStarGlow",
-                new Vector3(-1.72f, 0.26f, -1.28f), Vector3.one * 0.08f,
-                new Color(1.00f, 0.86f, 0.30f), 0.8f, true);
-
-            MakePhotorealToy(parent, PrimitiveType.Sphere, "PocketPlushBody",
-                new Vector3(-1.96f, 0.20f, -0.98f), new Vector3(0.18f, 0.22f, 0.15f),
-                new Color(0.96f, 0.82f, 0.70f), 0.22f);
-            MakePhotorealToy(parent, PrimitiveType.Sphere, "PocketPlushHead",
-                new Vector3(-1.96f, 0.43f, -1.02f), Vector3.one * 0.13f,
-                new Color(0.98f, 0.86f, 0.76f), 0.24f);
+            // Keep this pass intentionally tiny: the photo already carries plush/detail,
+            // while the macarons add a small readable "treat" affordance near SNACK.
         }
 
         static GameObject MakePhotorealToy(Transform parent, PrimitiveType type, string name,

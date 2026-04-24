@@ -218,17 +218,17 @@ namespace MoonlightMagicHouse
 
         void ApplyProportionPass()
         {
-            Scale(_head, Vector3.one * 0.80f);
-            Scale(_leftUpLeg, new Vector3(0.94f, 1.10f, 0.94f));
-            Scale(_rightUpLeg, new Vector3(0.94f, 1.10f, 0.94f));
-            Scale(_leftLeg, new Vector3(0.94f, 1.08f, 0.94f));
-            Scale(_rightLeg, new Vector3(0.94f, 1.08f, 0.94f));
-            Scale(_leftFoot, Vector3.one * 0.92f);
-            Scale(_rightFoot, Vector3.one * 0.92f);
+            Scale(_head, Vector3.one * 0.76f);
+            Scale(_leftUpLeg, new Vector3(0.90f, 1.16f, 0.90f));
+            Scale(_rightUpLeg, new Vector3(0.90f, 1.16f, 0.90f));
+            Scale(_leftLeg, new Vector3(0.90f, 1.12f, 0.90f));
+            Scale(_rightLeg, new Vector3(0.90f, 1.12f, 0.90f));
+            Scale(_leftFoot, Vector3.one * 0.88f);
+            Scale(_rightFoot, Vector3.one * 0.88f);
 
             if (_ribbons == null) return;
             for (int i = 0; i < _ribbons.Length; i++)
-                Scale(_ribbons[i], Vector3.one * 0.72f);
+                Scale(_ribbons[i], Vector3.one * 0.60f);
         }
 
         void CacheBasePoses()
