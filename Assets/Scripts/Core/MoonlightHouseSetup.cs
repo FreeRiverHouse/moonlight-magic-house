@@ -215,14 +215,32 @@ namespace MoonlightMagicHouse
             mlGO.AddComponent<MoonlightMoodParticles>();
             mlGO.AddComponent<MoonlightAnimator>();
 
-            // Stylised primitive character — guaranteed visible, toon-shaded with outline
-            var visual = BuildFallbackCharacter(mlGO.transform);
+            // Mixamo "Kaya" — stylized-human rigged humanoid with baked face textures.
+            // Adobe/Mixamo license permits royalty-free commercial use when embedded in the game.
+            var visual = SpawnMixamoCharacter(mlGO.transform, "Kenney/Sara", "Kenney/SaraSkin");
+            if (visual == null) visual = BuildFallbackCharacter(mlGO.transform);
             // Face the camera (camera is at -Z; character's face is at +Z by default)
             visual.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            // Subtle hip-tilt weight-shift (Ghibli-ish contrapposto read)
+            visual.transform.localRotation = visual.transform.localRotation * Quaternion.Euler(0f, 0f, 1.8f);
+            // Activate SSS + stronger wrap on skin parts (face, neck, ears, hands, forearms) — human warmth
+            string[] skinParts = { "Head", "Neck", "EarL", "EarR", "HandL", "HandR", "ForearmL", "ForearmR", "Nose", "CheekL", "CheekR" };
+            foreach (var pn in skinParts)
+            {
+                var t = visual.transform.Find(pn);
+                if (t == null) continue;
+                var mr = t.GetComponent<MeshRenderer>();
+                if (mr == null) continue;
+                var mat = mr.material;
+                if (mat.HasProperty("_SSSStrength")) mat.SetFloat("_SSSStrength", 0.45f);
+                if (mat.HasProperty("_Wrap"))        mat.SetFloat("_Wrap", 0.65f);
+                if (mat.HasProperty("_SSSColor"))    mat.SetColor("_SSSColor", new Color(1.00f, 0.45f, 0.38f));
+            }
             // Scale-punch on button presses
             var puncher = visual.AddComponent<ScalePuncher>();
             // Gentle idle micro-motion (head tilt, arm sway, body squash)
             visual.AddComponent<IdleMicroMotion>();
+            visual.AddComponent<BreathingMotion>();
 
             // Floating name tag above the character (3D TextMesh — billboarded)
             var tagGO = new GameObject("NameTag");
@@ -231,7 +249,7 @@ namespace MoonlightMagicHouse
             tagGO.transform.localScale    = Vector3.one * 0.25f;
             tagGO.AddComponent<BillboardToCamera>();
             var tm = tagGO.AddComponent<TextMesh>();
-            tm.text       = "Moonbud";
+            tm.text       = "Moonlight";
             tm.fontSize   = 48;
             tm.fontStyle  = FontStyle.Bold;
             tm.anchor     = TextAnchor.MiddleCenter;
@@ -339,6 +357,341 @@ namespace MoonlightMagicHouse
             return mlGO;
         }
 
+        // Mixamo character — FBX with baked face textures (Adobe license permits commercial game embedding).
+        // We keep each imported material's own _MainTex and only overlay ToonShader params for cel look + outline.
+        static GameObject SpawnMixamoCharacter(Transform parent, string resourcePath, string skinPath = null)
+        {
+            var prefab = Resources.Load<GameObject>(resourcePath);
+            if (prefab == null) { Debug.LogWarning($"[Mixamo] Missing Resources/{resourcePath}"); return null; }
+
+            var instance = Object.Instantiate(prefab, parent);
+            instance.name = "Visual";
+
+            // Kill Mixamo face-anim overlays — they use a sprite-atlas sampled across the whole UV
+            // so without an animator driving frames they render all expressions at once = horror face.
+            foreach (var r in instance.GetComponentsInChildren<Renderer>(true))
+            {
+                string n = r.gameObject.name;
+                if (n.Contains("AnimGeo") || n.Contains("Brows") || n.Contains("Eyes") || n.Contains("Mouth"))
+                    r.gameObject.SetActive(false);
+            }
+
+            var rends = instance.GetComponentsInChildren<Renderer>(false);
+            if (rends.Length == 0) { Object.Destroy(instance); return null; }
+
+            Bounds b = rends[0].bounds;
+            foreach (var r in rends) b.Encapsulate(r.bounds);
+            float height = Mathf.Max(0.1f, b.size.y);
+            instance.transform.localScale    = Vector3.one * (1.8f / height);
+            instance.transform.localRotation = Quaternion.identity;
+
+            b = rends[0].bounds;
+            foreach (var r in rends) b.Encapsulate(r.bounds);
+            instance.transform.localPosition = new Vector3(0f, -b.min.y, 0f);
+
+            // Use Unity's Standard shader — ToonShader's outline+rim make realistic human faces look zombie-like.
+            var standard = Shader.Find("Standard");
+            Texture2D skinOverride = !string.IsNullOrEmpty(skinPath) ? Resources.Load<Texture2D>(skinPath) : null;
+            if (skinOverride != null) { skinOverride.filterMode = FilterMode.Point; }
+            foreach (var r in rends)
+            {
+                var sharedMats = r.sharedMaterials;
+                var newMats = new Material[sharedMats.Length];
+                for (int i = 0; i < sharedMats.Length; i++)
+                {
+                    var src = sharedMats[i];
+                    var mat = new Material(standard);
+                    Texture srcTex = null;
+                    if (src != null)
+                    {
+                        if (src.HasProperty("_MainTex")) srcTex = src.GetTexture("_MainTex");
+                        if (srcTex == null && src.HasProperty("_BaseMap"))    srcTex = src.GetTexture("_BaseMap");
+                        if (srcTex == null && src.HasProperty("_BaseColorMap")) srcTex = src.GetTexture("_BaseColorMap");
+                        if (srcTex == null && src.mainTexture != null)        srcTex = src.mainTexture;
+                    }
+                    if (skinOverride != null) srcTex = skinOverride;
+                    if (srcTex != null) { mat.SetTexture("_MainTex", srcTex); mat.mainTexture = srcTex; }
+                    mat.SetFloat("_Glossiness", 0.15f);
+                    mat.SetFloat("_Metallic",   0f);
+                    Debug.Log($"[Mixamo] slot={r.gameObject.name}:{i} src={src?.name} tex={srcTex?.name ?? "<none>"}");
+                    newMats[i] = mat;
+                }
+                r.sharedMaterials = newMats;
+            }
+
+            // Play the embedded Mixamo idle clip (imported as Legacy — see BuildAll.ExtractMixamoTextures).
+            var clips = Resources.LoadAll<AnimationClip>(resourcePath);
+            if (clips != null && clips.Length > 0)
+            {
+                foreach (var existing in instance.GetComponentsInChildren<Animator>(true)) Object.Destroy(existing);
+                var anim = instance.GetComponent<Animation>() ?? instance.AddComponent<Animation>();
+                var clip = clips[0];
+                clip.legacy = true;
+                clip.wrapMode = WrapMode.Loop;
+                anim.AddClip(clip, clip.name);
+                anim.clip = clip;
+                anim.playAutomatically = true;
+                anim.Play(clip.name);
+                Debug.Log($"[Mixamo] Playing legacy clip '{clip.name}' ({clip.length:F2}s)");
+            }
+            else
+            {
+                Debug.LogWarning($"[Mixamo] No AnimationClips found for {resourcePath}");
+            }
+
+            return instance;
+        }
+
+        // SD Unity-Chan — © Unity Technologies Japan / UCL. Commercial OK w/ attribution.
+        // The FBX preserves baked face textures so Unity's default importer gives a proper anime face.
+        static GameObject SpawnUnityChanSD(Transform parent)
+        {
+            var prefab = Resources.Load<GameObject>("UnityChan/SD_unitychan_humanoid");
+            if (prefab == null) { Debug.LogWarning("[SDUnityChan] Missing Resources/UnityChan/SD_unitychan_humanoid"); return null; }
+
+            var instance = Object.Instantiate(prefab, parent);
+            instance.name = "Visual";
+
+            // Auto-scale so the character is ~1.4m tall (SD = "super-deformed" chibi proportions; kept a touch tall for cozy read)
+            var rends = instance.GetComponentsInChildren<Renderer>(true);
+            if (rends.Length == 0) { Object.Destroy(instance); return null; }
+            Bounds b = rends[0].bounds;
+            foreach (var r in rends) b.Encapsulate(r.bounds);
+            float height = Mathf.Max(0.1f, b.size.y);
+            float targetHeight = 1.55f;
+            instance.transform.localScale    = Vector3.one * (targetHeight / height);
+            instance.transform.localRotation = Quaternion.identity;
+
+            // Recompute bounds after scaling, then foot-offset to stand on the pedestal.
+            b = rends[0].bounds;
+            foreach (var r in rends) b.Encapsulate(r.bounds);
+            instance.transform.localPosition = new Vector3(0f, -b.min.y, 0f);
+
+            // Load the SD Unity-Chan albedo atlas directly — the .meta stripping above disconnects
+            // imported-material texture references, so we re-bind the single shared atlas by name.
+            var atlas = Resources.Load<Texture2D>("UnityChan/Textures/utc_all2");
+            // The "mouth" material uses a separate atlas region on the same texture, the default FBX slot
+            // for eyes/mouth still points at utc_all2 via UV island — so assigning utc_all2 to every slot
+            // gives the correct face read for free.
+            foreach (var r in rends)
+            {
+                var sharedMats = r.sharedMaterials;
+                var newMats = new Material[sharedMats.Length];
+                for (int i = 0; i < sharedMats.Length; i++)
+                {
+                    var mat = new Material(ToonShader);
+                    if (atlas != null) mat.SetTexture("_MainTex", atlas);
+                    mat.SetColor("_Color",           Color.white);
+                    mat.SetColor("_ShadowColor",     new Color(0.86f, 0.72f, 0.88f));
+                    mat.SetColor("_MidShadow",       new Color(0.93f, 0.85f, 0.94f));
+                    mat.SetFloat("_ShadowThreshold", 0.38f);
+                    mat.SetFloat("_OutlineWidth",    0.006f);
+                    mat.SetColor("_OutlineColor",    new Color(0.08f, 0.04f, 0.14f));
+                    mat.SetFloat("_Wrap",            0.55f);
+                    mat.SetFloat("_SSSStrength",     0.25f);
+                    mat.SetColor("_SSSColor",        new Color(1.00f, 0.55f, 0.48f));
+                    mat.SetColor("_RimColor",        new Color(1.00f, 0.80f, 0.95f));
+                    mat.SetFloat("_RimPower",        3.0f);
+                    newMats[i] = mat;
+                }
+                r.sharedMaterials = newMats;
+            }
+
+            return instance;
+        }
+
+        // OGA CC-BY 3.0 — Sara by Mandi Paugh, opengameart.org/content/sara-3d-model (unused path; kept for reference)
+        static GameObject SpawnOGASara(Transform parent)
+        {
+            var prefab = Resources.Load<GameObject>("Models/OGA/Sara");
+            if (prefab == null) { Debug.LogWarning("[Sara] Missing Resources/Models/OGA/Sara"); return null; }
+
+            var instance = Object.Instantiate(prefab, parent);
+            instance.name = "Visual";
+            // Compute world bbox to compute feet offset + auto-scale.
+            var rends = instance.GetComponentsInChildren<Renderer>(true);
+            if (rends.Length == 0) { Object.Destroy(instance); return null; }
+            Bounds b = rends[0].bounds;
+            foreach (var r in rends) b.Encapsulate(r.bounds);
+            float height = Mathf.Max(0.1f, b.size.y);
+            float targetHeight = 1.85f;
+            float scale = targetHeight / height;
+            instance.transform.localScale    = Vector3.one * scale;
+            instance.transform.localRotation = Quaternion.identity;
+
+            // Recompute bounds after scaling to find foot offset
+            b = rends[0].bounds;
+            foreach (var r in rends) b.Encapsulate(r.bounds);
+            float footOffset = -b.min.y;
+            instance.transform.localPosition = new Vector3(0f, footOffset, 0f);
+
+            // Retint with toon shader — palette: warm skin, Ghibli purple dress, dark hair
+            Color skin  = new Color(1.00f, 0.86f, 0.76f);
+            Color hair  = new Color(0.22f, 0.08f, 0.48f);
+            Color dress = new Color(0.70f, 0.45f, 0.92f);
+            Color tights= new Color(0.92f, 0.86f, 1.00f);
+            Color belt  = new Color(1.00f, 0.85f, 0.40f);
+            Color shoes = new Color(0.30f, 0.14f, 0.45f);
+
+            for (int i = 0; i < rends.Length; i++)
+            {
+                var r = rends[i];
+                string n = r.gameObject.name.ToLower();
+                // Sara.blend has materials "Material.001"..."Material.008" — infer by mesh Y-position
+                float cy = r.bounds.center.y - b.min.y; // height in character frame (0=feet)
+                float ny = cy / b.size.y;                // 0..1
+                Color c;
+                bool isSkin = false;
+                if      (n.Contains("hair") || ny > 0.93f)                 c = hair;          // top of head
+                else if (n.Contains("belt") || (ny > 0.55f && ny < 0.62f)) c = belt;
+                else if (n.Contains("shoe") || n.Contains("foot") || ny < 0.05f) c = shoes;
+                else if (n.Contains("leg")  || n.Contains("tight") || n.Contains("pant")
+                      || (ny >= 0.05f && ny < 0.48f))                       c = tights;
+                else if (n.Contains("hand") || n.Contains("arm") || n.Contains("head")
+                      || n.Contains("face") || n.Contains("skin") || n.Contains("body")
+                      || (ny >= 0.85f && ny <= 0.93f))
+                    { c = skin; isSkin = true; }
+                else                                                        c = dress;
+
+                var mat = new Material(ToonShader);
+                mat.SetColor("_Color",             c);
+                mat.SetColor("_ShadowColor",       new Color(c.r * 0.55f, c.g * 0.45f, c.b * 0.70f));
+                mat.SetFloat("_ShadowThreshold",   0.32f);
+                mat.SetFloat("_OutlineWidth",      0.010f);
+                mat.SetColor("_OutlineColor",      new Color(0.06f, 0.03f, 0.12f));
+                mat.SetFloat("_Wrap",              isSkin ? 0.65f : 0.45f);
+                if (isSkin)
+                {
+                    mat.SetFloat("_SSSStrength", 0.45f);
+                    mat.SetColor("_SSSColor",    new Color(1.00f, 0.45f, 0.38f));
+                }
+                r.material = mat;
+            }
+
+            // Sara's FBX has no baked face features — paint them procedurally on top of the head.
+            AddFaceOverlay(instance, b);
+            return instance;
+        }
+
+        static void AddFaceOverlay(GameObject visual, Bounds worldBounds)
+        {
+            // Find the actual head renderer: the topmost-centered mesh (should be near ny ~ 0.95)
+            Renderer headR = null; float bestY = float.NegativeInfinity;
+            foreach (var r in visual.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r.bounds.center.y > bestY) { bestY = r.bounds.center.y; headR = r; }
+            }
+            Bounds headB = headR != null ? headR.bounds : worldBounds;
+            float headTop    = headB.max.y;
+            float headBottom = headB.min.y;
+            float headSize   = Mathf.Max(headB.size.x, headB.size.z);
+
+            // Caller applies a Y-180° rotation to `visual` so its face ends up at world -Z (camera side).
+            // Children we spawn here live in `visual`'s local frame (pre-rotation), so local +Z maps to world -Z.
+            float headCYWorld = (headTop + headBottom) * 0.5f;
+            float eyeYW   = Mathf.Lerp(headBottom, headTop, 0.55f);
+            float mouthYW = Mathf.Lerp(headBottom, headTop, 0.28f);
+            float noseYW  = Mathf.Lerp(headBottom, headTop, 0.42f);
+            float browYW  = Mathf.Lerp(headBottom, headTop, 0.70f);
+            float frontZW = headSize * 0.46f;
+            float eyeDXW  = headSize * 0.16f;
+
+            // Convert world-space face anchor points into visual's un-scaled local frame.
+            // (visual has no rotation yet; caller applies the Y-180 after.)
+            float invS = 1f / Mathf.Max(0.0001f, visual.transform.localScale.x);
+            Vector3 hc = new Vector3(headB.center.x, 0f, headB.center.z);
+            Vector3 vp = visual.transform.position;
+            float headCXlocal = (hc.x - vp.x) * invS;
+            float headCZlocal = (hc.z - vp.z) * invS;
+            float eyeY  = (eyeYW   - vp.y) * invS;
+            float mouY  = (mouthYW - vp.y) * invS;
+            float nosY  = (noseYW  - vp.y) * invS;
+            float brwY  = (browYW  - vp.y) * invS;
+            float frnZ  = headCZlocal + frontZW * invS;
+            float eyDX  = eyeDXW  * invS;
+            float hS    = headSize * invS;
+
+            Color white = new Color(0.97f, 0.96f, 0.94f);
+            Color iris  = new Color(0.28f, 0.18f, 0.38f);
+            Color dark  = new Color(0.10f, 0.04f, 0.18f);
+            Color nose  = new Color(1.00f, 0.80f, 0.72f);
+            Color lip   = new Color(0.72f, 0.28f, 0.32f);
+            Color blush = new Color(1.00f, 0.62f, 0.62f);
+
+            // Small dark ovals for eyes (Ghibli-style simple dots, no separate whites/pupils).
+            SpawnFacePart(visual, "EyeL",      PrimitiveType.Sphere, new Vector3(headCXlocal - eyDX,eyeY, frnZ),               new Vector3(hS * 0.07f, hS * 0.10f, hS * 0.05f), dark, 0.40f, null);
+            SpawnFacePart(visual, "EyeR",      PrimitiveType.Sphere, new Vector3(headCXlocal + eyDX, eyeY, frnZ),               new Vector3(hS * 0.07f, hS * 0.10f, hS * 0.05f), dark, 0.40f, null);
+            // Tiny white catchlight
+            SpawnFacePart(visual, "GlintL",    PrimitiveType.Sphere, new Vector3(headCXlocal - eyDX + hS * 0.015f, eyeY + hS * 0.025f, frnZ + hS * 0.03f), Vector3.one * hS * 0.025f, Color.white, 0.30f, null);
+            SpawnFacePart(visual, "GlintR",    PrimitiveType.Sphere, new Vector3(headCXlocal + eyDX + hS * 0.015f, eyeY + hS * 0.025f, frnZ + hS * 0.03f), Vector3.one * hS * 0.025f, Color.white, 0.30f, null);
+            // Soft mouth — small curved smile
+            SpawnFacePart(visual, "Mouth",     PrimitiveType.Cube,   new Vector3(headCXlocal, mouY, frnZ),                  new Vector3(hS * 0.10f, hS * 0.018f, hS * 0.03f), lip,  0.45f, null);
+            // Cheek blush — small & low opacity via soft color
+            SpawnFacePart(visual, "BlushL",    PrimitiveType.Sphere, new Vector3(headCXlocal - eyDX - hS * 0.02f, mouY + hS * 0.06f, frnZ - hS * 0.02f), new Vector3(hS * 0.07f, hS * 0.05f, hS * 0.04f), blush, 0.75f, null);
+            SpawnFacePart(visual, "BlushR",    PrimitiveType.Sphere, new Vector3(headCXlocal + eyDX + hS * 0.02f, mouY + hS * 0.06f, frnZ - hS * 0.02f), new Vector3(hS * 0.07f, hS * 0.05f, hS * 0.04f), blush, 0.75f, null);
+        }
+
+        static void SpawnFacePart(GameObject parent, string name, PrimitiveType type,
+                                  Vector3 localPos, Vector3 localScale, Color c, float wrap,
+                                  Quaternion? localRot)
+        {
+            var go = GameObject.CreatePrimitive(type);
+            go.name = name;
+            var col = go.GetComponent<Collider>();
+            if (col) Object.DestroyImmediate(col);
+            go.transform.SetParent(parent.transform, false);
+            go.transform.localPosition = localPos;
+            go.transform.localRotation = localRot ?? Quaternion.identity;
+            go.transform.localScale    = localScale;
+
+            var mat = new Material(ToonShader);
+            mat.SetColor("_Color", c);
+            mat.SetColor("_ShadowColor", new Color(c.r * 0.55f, c.g * 0.45f, c.b * 0.70f));
+            mat.SetFloat("_ShadowThreshold", 0.32f);
+            mat.SetFloat("_OutlineWidth", 0.004f);
+            mat.SetColor("_OutlineColor", new Color(0.06f, 0.03f, 0.12f));
+            mat.SetFloat("_Wrap", wrap);
+            go.GetComponent<Renderer>().material = mat;
+        }
+
+        static GameObject SpawnKenneyCharacter(Transform parent)
+        {
+            var prefab = Resources.Load<GameObject>("Kenney/Characters/character-female-a");
+            if (prefab == null) return null;
+
+            var instance = Object.Instantiate(prefab, parent);
+            instance.name = "Visual";
+            instance.transform.localPosition = Vector3.zero;
+            instance.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            instance.transform.localScale    = Vector3.one * 1.5f;
+
+            Color skin  = new Color(1.00f, 0.88f, 0.80f);
+            Color hair  = new Color(0.22f, 0.08f, 0.48f);
+            Color dress = new Color(0.70f, 0.45f, 0.92f);
+
+            var renderers = instance.GetComponentsInChildren<MeshRenderer>(true);
+            foreach (var r in renderers)
+            {
+                string n = r.gameObject.name.ToLower();
+                Color c;
+                if (n.Contains("hair") || n.Contains("head-hair"))                   c = hair;
+                else if (n.Contains("skin") || n.Contains("head") || n.Contains("body")
+                      || n.Contains("arm")  || n.Contains("leg")  || n.Contains("hand")
+                      || n.Contains("face") || n.Contains("foot") || n.Contains("neck")) c = skin;
+                else                                                                 c = dress;
+
+                var mat = new Material(ToonShader);
+                mat.SetColor("_Color",             c);
+                mat.SetColor("_EmissionColor",     c * 0.3f);
+                mat.SetFloat("_EmissionIntensity", 0.25f);
+                mat.SetFloat("_OutlineWidth",      0.012f);
+                mat.SetColor("_OutlineColor",      Color.black);
+                r.material = mat;
+            }
+
+            return instance;
+        }
+
         static GameObject BuildFallbackCharacter(Transform parent)
         {
             var visual = new GameObject("Visual");
@@ -377,12 +730,12 @@ namespace MoonlightMagicHouse
             MakePart(visual.transform, PrimitiveType.Sphere, "PuffR",
                 new Vector3( 0.33f, 1.22f, 0f), new Vector3(0.22f, 0.20f, 0.22f),
                 new Color(0.70f, 0.45f, 0.92f));
-            // Hands — small pale spheres at arm tips (ArmL rotated +25°, tip points down-outward)
+            // Hands — at forearm tips, near hips (forearm tilts 18° forward, ends ~0.20 forward of shoulder)
             MakePart(visual.transform, PrimitiveType.Sphere, "HandL",
-                new Vector3(-0.58f, 0.62f, 0f), Vector3.one * 0.11f,
+                new Vector3(-0.24f, 0.52f, 0.22f), Vector3.one * 0.105f,
                 new Color(1.00f, 0.88f, 0.80f));
             MakePart(visual.transform, PrimitiveType.Sphere, "HandR",
-                new Vector3( 0.58f, 0.62f, 0f), Vector3.one * 0.11f,
+                new Vector3( 0.24f, 0.52f, 0.22f), Vector3.one * 0.105f,
                 new Color(1.00f, 0.88f, 0.80f));
             MakePart(visual.transform, PrimitiveType.Sphere, "Head",
                 new Vector3(0f, 1.85f, 0f), Vector3.one * 0.42f,
@@ -409,17 +762,17 @@ namespace MoonlightMagicHouse
                 new Vector3(-0.063f, 1.90f, 0.232f), Vector3.one * 0.022f, Color.white, 2.0f);
             MakeEmissive(visual.transform, "ShineR",
                 new Vector3( 0.097f, 1.90f, 0.232f), Vector3.one * 0.022f, Color.white, 2.0f);
-            // Eyelashes — tiny tilted cubes above each eye
+            // Eyelashes — lighter, less angled (was making her look sad/heavy)
             MakePartRotated(visual.transform, PrimitiveType.Cube, "LashL",
-                new Vector3(-0.08f, 1.94f, 0.215f),
-                Quaternion.Euler(0f, 0f, 15f),
-                new Vector3(0.10f, 0.012f, 0.018f),
-                new Color(0.10f, 0.05f, 0.20f));
+                new Vector3(-0.08f, 1.935f, 0.215f),
+                Quaternion.Euler(0f, 0f, 6f),
+                new Vector3(0.075f, 0.008f, 0.014f),
+                new Color(0.14f, 0.07f, 0.24f));
             MakePartRotated(visual.transform, PrimitiveType.Cube, "LashR",
-                new Vector3( 0.08f, 1.94f, 0.215f),
-                Quaternion.Euler(0f, 0f, -15f),
-                new Vector3(0.10f, 0.012f, 0.018f),
-                new Color(0.10f, 0.05f, 0.20f));
+                new Vector3( 0.08f, 1.935f, 0.215f),
+                Quaternion.Euler(0f, 0f, -6f),
+                new Vector3(0.075f, 0.008f, 0.014f),
+                new Color(0.14f, 0.07f, 0.24f));
             var blinker = visual.AddComponent<EyeBlinker>();
             blinker.Bind(
                 visual.transform.Find("EyeL"),
@@ -430,16 +783,19 @@ namespace MoonlightMagicHouse
             MakePart(visual.transform, PrimitiveType.Sphere, "Nose",
                 new Vector3(0f, 1.84f, 0.215f), Vector3.one * 0.035f,
                 new Color(1.0f, 0.75f, 0.78f));
-            // Curved mouth — three small cubes arranged as a smile arc
+            // Curved mouth — smile curves UP at corners (positive expression, was downturned)
             MakePartRotated(visual.transform, PrimitiveType.Cube, "SmileL",
-                new Vector3(-0.035f, 1.795f, 0.205f),
-                Quaternion.Euler(0f, 0f,  12f),
-                new Vector3(0.045f, 0.014f, 0.014f),
+                new Vector3(-0.040f, 1.790f, 0.208f),
+                Quaternion.Euler(0f, 0f, -18f),
+                new Vector3(0.048f, 0.013f, 0.013f),
                 new Color(0.78f, 0.28f, 0.42f));
             MakePartRotated(visual.transform, PrimitiveType.Cube, "SmileR",
-                new Vector3( 0.035f, 1.795f, 0.205f),
-                Quaternion.Euler(0f, 0f, -12f),
-                new Vector3(0.045f, 0.014f, 0.014f),
+                new Vector3( 0.040f, 1.790f, 0.208f),
+                Quaternion.Euler(0f, 0f,  18f),
+                new Vector3(0.048f, 0.013f, 0.013f),
+                new Color(0.78f, 0.28f, 0.42f));
+            MakePart(visual.transform, PrimitiveType.Sphere, "SmileCenter",
+                new Vector3(0f, 1.788f, 0.212f), new Vector3(0.020f, 0.010f, 0.010f),
                 new Color(0.78f, 0.28f, 0.42f));
             // Front bangs — two cute hair tufts over forehead
             MakePartRotated(visual.transform, PrimitiveType.Sphere, "BangL",
@@ -470,33 +826,44 @@ namespace MoonlightMagicHouse
             MakePart(visual.transform, PrimitiveType.Sphere, "CheekR",
                 new Vector3( 0.14f, 1.82f, 0.17f), Vector3.one * 0.05f,
                 new Color(1.0f, 0.6f, 0.7f));
-            // Arms — tilted outward so they hang down from shoulders
+            // Arms — relaxed at sides, slight outward tilt + forward bend at elbow (natural, not T-pose)
             MakePartRotated(visual.transform, PrimitiveType.Capsule, "ArmL",
-                new Vector3(-0.38f, 0.95f, 0f),
-                Quaternion.Euler(0f, 0f, 25f),
-                new Vector3(0.15f, 0.38f, 0.15f),
+                new Vector3(-0.30f, 0.96f, 0.02f),
+                Quaternion.Euler(10f, 0f, 8f),
+                new Vector3(0.13f, 0.36f, 0.13f),
                 new Color(0.78f, 0.68f, 0.92f));
             MakePartRotated(visual.transform, PrimitiveType.Capsule, "ArmR",
-                new Vector3( 0.38f, 0.95f, 0f),
-                Quaternion.Euler(0f, 0f, -25f),
-                new Vector3(0.15f, 0.38f, 0.15f),
+                new Vector3( 0.30f, 0.96f, 0.02f),
+                Quaternion.Euler(10f, 0f, -8f),
+                new Vector3(0.13f, 0.36f, 0.13f),
                 new Color(0.78f, 0.68f, 0.92f));
-            // Dress — three stacked flared cylinders (ruffled)
+            // Forearms — subtle forward bend, hands rest near hip
+            MakePartRotated(visual.transform, PrimitiveType.Capsule, "ForearmL",
+                new Vector3(-0.27f, 0.68f, 0.09f),
+                Quaternion.Euler(18f, 0f, 5f),
+                new Vector3(0.115f, 0.22f, 0.115f),
+                new Color(1.00f, 0.88f, 0.80f));
+            MakePartRotated(visual.transform, PrimitiveType.Capsule, "ForearmR",
+                new Vector3( 0.27f, 0.68f, 0.09f),
+                Quaternion.Euler(18f, 0f, -5f),
+                new Vector3(0.115f, 0.22f, 0.115f),
+                new Color(1.00f, 0.88f, 0.80f));
+            // Dress — narrower A-line (was cone-wide), stops above knees so legs visible
             MakePart(visual.transform, PrimitiveType.Cylinder, "DressTop",
-                new Vector3(0f, 0.78f, 0f), new Vector3(0.48f, 0.14f, 0.48f),
+                new Vector3(0f, 0.80f, 0f), new Vector3(0.40f, 0.12f, 0.40f),
                 new Color(0.62f, 0.35f, 0.90f));
             MakePart(visual.transform, PrimitiveType.Cylinder, "DressMid",
-                new Vector3(0f, 0.55f, 0f), new Vector3(0.62f, 0.12f, 0.62f),
+                new Vector3(0f, 0.62f, 0f), new Vector3(0.46f, 0.10f, 0.46f),
                 new Color(0.55f, 0.30f, 0.82f));
             MakePart(visual.transform, PrimitiveType.Cylinder, "DressHem",
-                new Vector3(0f, 0.36f, 0f), new Vector3(0.75f, 0.10f, 0.75f),
+                new Vector3(0f, 0.48f, 0f), new Vector3(0.52f, 0.08f, 0.52f),
                 new Color(0.48f, 0.25f, 0.74f));
             // Lace trim — thin emissive cylinder at dress hem
             var trim = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             trim.name = "DressTrim";
             trim.transform.SetParent(visual.transform, false);
-            trim.transform.localPosition = new Vector3(0f, 0.28f, 0f);
-            trim.transform.localScale    = new Vector3(0.76f, 0.03f, 0.76f);
+            trim.transform.localPosition = new Vector3(0f, 0.42f, 0f);
+            trim.transform.localScale    = new Vector3(0.53f, 0.025f, 0.53f);
             var trimMat = new Material(ToonShader);
             trimMat.SetColor("_Color",             new Color(1.00f, 0.85f, 0.95f));
             trimMat.SetColor("_EmissionColor",     new Color(1.00f, 0.85f, 0.95f));
@@ -506,7 +873,7 @@ namespace MoonlightMagicHouse
             Object.Destroy(trim.GetComponent<Collider>());
             // Belt
             MakePart(visual.transform, PrimitiveType.Cylinder, "Belt",
-                new Vector3(0f, 0.90f, 0f), new Vector3(0.42f, 0.05f, 0.42f),
+                new Vector3(0f, 0.93f, 0f), new Vector3(0.38f, 0.04f, 0.38f),
                 new Color(1.0f, 0.85f, 0.40f));
             // ── LEGS: thigh + knee + calf ──
             var tights = new Color(0.92f, 0.86f, 1.00f);
@@ -578,15 +945,9 @@ namespace MoonlightMagicHouse
                 new Vector3( 0.32f, 1.70f, -0.05f), Quaternion.Euler(10,0,0),
                 new Vector3(0.16f, 0.30f, 0.16f), hairDark);
 
-            // ── DRESS EXTRA FRILLS: extra hem ruffle + underskirt peek ──
-            MakePart(visual.transform, PrimitiveType.Cylinder, "DressRuffle",
-                new Vector3(0f, 0.24f, 0f), new Vector3(0.82f, 0.05f, 0.82f),
-                new Color(0.70f, 0.45f, 0.90f));
-            MakePart(visual.transform, PrimitiveType.Cylinder, "DressUnder",
-                new Vector3(0f, 0.19f, 0f), new Vector3(0.68f, 0.06f, 0.68f),
-                new Color(0.95f, 0.88f, 1.00f));
+            // ── DRESS APRON — small white apron accent on front of skirt only (no floor ruffles: legs visible) ──
             MakePart(visual.transform, PrimitiveType.Cylinder, "DressApron",
-                new Vector3(0f, 0.50f, 0.08f), new Vector3(0.50f, 0.20f, 0.20f),
+                new Vector3(0f, 0.62f, 0.14f), new Vector3(0.28f, 0.12f, 0.14f),
                 new Color(0.98f, 0.94f, 1.00f));
 
             // ── SPARKLE ACCENTS on dress ──
@@ -1284,7 +1645,7 @@ namespace MoonlightMagicHouse
             }
 
             // Info labels (stage, mood, coins, xp, days) — legacy Text so they always show
-            var stageLblGO = MakeLegacyLabel("StageLabel", hud.transform, new Vector2(-420f, -145f), new Vector2(220f, 30f), "Moonbud", 20, Color.white, FontStyle.Bold);
+            var stageLblGO = MakeLegacyLabel("StageLabel", hud.transform, new Vector2(-420f, -145f), new Vector2(220f, 30f), "Moonlight", 20, Color.white, FontStyle.Bold);
             var moodLblGO  = MakeLegacyLabel("MoodLabel",  hud.transform, new Vector2(-200f, -145f), new Vector2(120f, 30f), "HAPPY",   18, new Color(1f, 0.7f, 0.9f), FontStyle.Bold);
             var coinsLblGO = MakeLegacyLabel("CoinsLabel", hud.transform, new Vector2(  40f, -145f), new Vector2(180f, 30f), "COINS 30", 20, new Color(1f, 0.9f, 0.3f), FontStyle.Bold);
             var xpLblGO    = MakeLegacyLabel("XPLabel",    hud.transform, new Vector2( 240f, -145f), new Vector2(160f, 30f), "XP 0",    18, new Color(0.75f, 0.55f, 1f), FontStyle.Bold);
@@ -1294,7 +1655,7 @@ namespace MoonlightMagicHouse
             // Create hidden TMP labels that mirror nothing but satisfy the signature — OR swap Wire signature.
             // Simpler: create invisible TMP labels purely for Wire(), and the visible info is the legacy labels above.
             // MoonlightUI will update the invisible TMP labels; we also write their text to the legacy ones via a small sync component.
-            var stageLabel = MakeTMPLabelAnchored("StageLabelTMP", hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "Moonbud",  1, new Color(0,0,0,0));
+            var stageLabel = MakeTMPLabelAnchored("StageLabelTMP", hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "Moonlight",  1, new Color(0,0,0,0));
             var moodLabel  = MakeTMPLabelAnchored("MoodLabelTMP",  hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "HAPPY",    1, new Color(0,0,0,0));
             var coinsLabel = MakeTMPLabelAnchored("CoinsLabelTMP", hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "30",       1, new Color(0,0,0,0));
             var xpLabel    = MakeTMPLabelAnchored("XPLabelTMP",    hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "XP 0",     1, new Color(0,0,0,0));
@@ -1308,20 +1669,46 @@ namespace MoonlightMagicHouse
                         xpLabel,    xpLblGO,    "",
                         daysLabel,  daysLblGO,  "");
 
-            // Action buttons (bottom)
+            // Action buttons (bottom) — 2×3 grid of 6 actions w/ emoji icons and softer chrome.
             var btnPanel = Panel("ActionBar", canvasGO.transform,
                 new Vector2(0f, 0f), new Vector2(1f, 0f),
-                new Vector2(0f, 0f), new Vector2(0f, 160f),
-                new Color(0f, 0f, 0f, 0.55f));
+                new Vector2(0f, 0f), new Vector2(0f, 260f),
+                new Color(0.06f, 0.03f, 0.14f, 0.78f));
 
-            var feedBtn   = MakeButton("FeedBtn",   btnPanel.transform, new Vector2(-280f, 60f), "FEED",   new Color(0.9f, 0.6f, 0.2f));
-            var cuddleBtn = MakeButton("CuddleBtn", btnPanel.transform, new Vector2(   0f, 60f), "CUDDLE", new Color(0.9f, 0.4f, 0.7f));
-            var sleepBtn  = MakeButton("SleepBtn",  btnPanel.transform, new Vector2( 280f, 60f), "SLEEP",  new Color(0.3f, 0.5f, 0.9f));
+            var feedBtn   = MakeButton("FeedBtn",   btnPanel.transform, new Vector2(-300f, 170f), "FEED",   new Color(0.96f, 0.58f, 0.26f));
+            var cuddleBtn = MakeButton("CuddleBtn", btnPanel.transform, new Vector2(   0f, 170f), "CUDDLE", new Color(0.95f, 0.40f, 0.68f));
+            var sleepBtn  = MakeButton("SleepBtn",  btnPanel.transform, new Vector2( 300f, 170f), "SLEEP",  new Color(0.36f, 0.50f, 0.92f));
+            var playBtn   = MakeButton("PlayBtn",   btnPanel.transform, new Vector2(-300f,  70f), "PLAY",   new Color(0.98f, 0.78f, 0.24f));
+            var bathBtn   = MakeButton("BathBtn",   btnPanel.transform, new Vector2(   0f,  70f), "BATH",   new Color(0.45f, 0.85f, 0.95f));
+            var danceBtn  = MakeButton("DanceBtn",  btnPanel.transform, new Vector2( 300f,  70f), "DANCE",  new Color(0.78f, 0.42f, 0.94f));
 
             // Visual feedback: particle bursts on button click (finds Moonlight by name at click time)
             AttachBurst(feedBtn,   new Color(1.0f, 0.75f, 0.35f), 14);
             AttachBurst(cuddleBtn, new Color(1.0f, 0.45f, 0.70f), 20);
             AttachBurst(sleepBtn,  new Color(0.55f, 0.70f, 1.0f), 12);
+            AttachBurst(playBtn,   new Color(1.0f, 0.85f, 0.35f), 18);
+            AttachBurst(bathBtn,   new Color(0.60f, 0.90f, 1.00f), 16);
+            AttachBurst(danceBtn,  new Color(0.85f, 0.55f, 1.00f), 22);
+
+            // Hook up the extra actions directly — MoonlightUI only wires the original three.
+            playBtn.onClick.AddListener(() =>
+            {
+                MoonlightGameManager.Instance?.moonlight?.Play();
+                var ui = Object.FindAnyObjectByType<MoonlightUI>();
+                if (ui != null && MoonlightGameManager.Instance?.moonlight != null) ui.Refresh(MoonlightGameManager.Instance.moonlight);
+            });
+            bathBtn.onClick.AddListener(() =>
+            {
+                MoonlightGameManager.Instance?.moonlight?.Bathe();
+                var ui = Object.FindAnyObjectByType<MoonlightUI>();
+                if (ui != null && MoonlightGameManager.Instance?.moonlight != null) ui.Refresh(MoonlightGameManager.Instance.moonlight);
+            });
+            danceBtn.onClick.AddListener(() =>
+            {
+                MoonlightGameManager.Instance?.moonlight?.Dance();
+                var ui = Object.FindAnyObjectByType<MoonlightUI>();
+                if (ui != null && MoonlightGameManager.Instance?.moonlight != null) ui.Refresh(MoonlightGameManager.Instance.moonlight);
+            });
 
             // Feed menu overlay
             var feedMenu = Panel("FeedMenu", canvasGO.transform,
@@ -1539,11 +1926,17 @@ namespace MoonlightMagicHouse
             btnGO.transform.SetParent(parent, false);
             var rt = btnGO.GetComponent<RectTransform>();
             rt.anchoredPosition = pos;
-            rt.sizeDelta        = new Vector2(200f, 70f);
+            rt.sizeDelta        = new Vector2(240f, 80f);
             var img = btnGO.GetComponent<Image>();
             if (img) img.color = tint;
             var lbl = btnGO.GetComponentInChildren<Text>();
-            if (lbl) { lbl.text = label; lbl.fontSize = 24; lbl.fontStyle = FontStyle.Bold; lbl.color = Color.white; }
+            if (lbl)
+            {
+                lbl.text      = label;
+                lbl.fontSize  = 26;
+                lbl.fontStyle = FontStyle.Bold;
+                lbl.color     = Color.white;
+            }
             return btnGO.GetComponent<Button>();
         }
 

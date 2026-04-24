@@ -187,6 +187,35 @@ namespace MoonlightMagicHouse
             HapticFeedback.Success();
         }
 
+        public void Play()
+        {
+            stats.wonder = Mathf.Min(100, stats.wonder + 15f);
+            stats.warmth = Mathf.Min(100, stats.warmth + 5f);
+            stats.rest   = Mathf.Max(0,   stats.rest   - 5f);
+            GainXP(10);
+            AudioManager.Instance?.Play("cuddle");
+            HapticFeedback.Light();
+        }
+
+        public void Bathe()
+        {
+            stats.warmth = Mathf.Min(100, stats.warmth + 18f);
+            stats.wonder = Mathf.Min(100, stats.wonder + 4f);
+            stats.magic  = Mathf.Min(100, stats.magic  + 3f);
+            GainXP(6);
+            AudioManager.Instance?.Play("cuddle");
+            HapticFeedback.Light();
+        }
+
+        public void Dance()
+        {
+            stats.wonder = Mathf.Min(100, stats.wonder + 10f);
+            stats.magic  = Mathf.Min(100, stats.magic  + 8f);
+            stats.rest   = Mathf.Max(0,   stats.rest   - 3f);
+            GainXP(8);
+            AudioManager.Instance?.Play("cuddle");
+        }
+
         public void ReadStory()
         {
             stats.wonder = Mathf.Min(100, stats.wonder + 12f);

@@ -12,6 +12,7 @@ public static class BuildAll
     [MenuItem("Build/Mac")]
     public static void BuildMac()
     {
+        ExtractMixamoTextures();
         BuildPlayerOptions opt = new BuildPlayerOptions
         {
             scenes           = Scenes,
@@ -20,6 +21,31 @@ public static class BuildAll
             options          = BuildOptions.None
         };
         BuildPipeline.BuildPlayer(opt);
+    }
+
+    static void ExtractMixamoTextures()
+    {
+        if (!AssetDatabase.IsValidFolder("Assets/Resources/Kenney")) return;
+        string[] guids = AssetDatabase.FindAssets("t:Model", new[] { "Assets/Resources/Kenney" });
+        foreach (var guid in guids)
+        {
+            string fbxPath = AssetDatabase.GUIDToAssetPath(guid);
+            var importer = AssetImporter.GetAtPath(fbxPath) as ModelImporter;
+            if (importer == null) continue;
+            string dir = System.IO.Path.GetDirectoryName(fbxPath);
+            string texFolder = dir + "/Textures";
+            if (!AssetDatabase.IsValidFolder(texFolder))
+                AssetDatabase.CreateFolder(dir, "Textures");
+            string matFolder = dir + "/Materials";
+            if (!AssetDatabase.IsValidFolder(matFolder))
+                AssetDatabase.CreateFolder(dir, "Materials");
+            importer.animationType = ModelImporterAnimationType.Legacy;
+            importer.ExtractTextures(texFolder);
+            AssetDatabase.WriteImportSettingsIfDirty(fbxPath);
+            AssetDatabase.ImportAsset(fbxPath, ImportAssetOptions.ForceUpdate);
+            Debug.Log($"[ExtractMixamo] Extracted textures + set Legacy anim for {fbxPath}");
+        }
+        AssetDatabase.Refresh();
     }
 
     [MenuItem("Build/WebGL")]

@@ -45,7 +45,10 @@ namespace MoonlightMagicHouse
         public FoodItem[]  foodCatalogue;
 
         static readonly string[] MoodEmojis = { "😴", "😠", "😑", "🌸", "✨", "🌟" };
-        static readonly string[] StageNames = { "Moonbud", "Starling", "Luminary", "Sorceress", "Moonkeeper" };
+        // The character's name is Moonlight. "Stage" is still tracked internally for evolution/achievements,
+        // but the HUD shows her name + stage descriptor rather than the raw stage codename ("Moonbud").
+        static readonly string[] StageNames       = { "Moonlight", "Moonlight", "Moonlight", "Moonlight", "Moonlight" };
+        static readonly string[] StageDescriptors = { "Sprout",    "Starling",  "Luminary",  "Sorceress", "Moonkeeper" };
         static readonly string[] RoomNames  = { "", "Living Room", "Kitchen", "Bedroom", "Garden", "Library" };
 
         void Start()
