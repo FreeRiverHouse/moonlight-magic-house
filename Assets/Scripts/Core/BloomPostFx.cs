@@ -31,6 +31,15 @@ namespace MoonlightMagicHouse
             if (_mat != null) { DestroyImmediate(_mat); _mat = null; }
         }
 
+        public void Configure(float newThreshold, float newIntensity, float newVignette, Color newTint, int newIterations)
+        {
+            threshold = newThreshold;
+            intensity = newIntensity;
+            vignette = newVignette;
+            tint = newTint;
+            iterations = Mathf.Max(1, newIterations);
+        }
+
         void OnRenderImage(RenderTexture src, RenderTexture dst)
         {
             if (_mat == null) { Graphics.Blit(src, dst); return; }

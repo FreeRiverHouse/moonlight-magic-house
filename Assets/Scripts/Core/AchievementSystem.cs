@@ -29,12 +29,15 @@ namespace MoonlightMagicHouse
         {
             if (Instance != null) { Destroy(gameObject); return; }
             Instance = this;
+            if (achievements == null) achievements = new List<Achievement>();
+            if (onUnlocked == null) onUnlocked = new UnityEvent<Achievement>();
             foreach (var a in achievements)
                 a.unlocked = PlayerPrefs.GetInt(PREFIX + a.id, 0) == 1;
         }
 
         public void Check(string id)
         {
+            if (achievements == null) return;
             var ach = achievements.Find(a => a.id == id);
             if (ach == null || ach.unlocked) return;
             ach.unlocked = true;

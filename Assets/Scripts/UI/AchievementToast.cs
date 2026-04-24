@@ -21,6 +21,12 @@ namespace MoonlightMagicHouse
 
         void Awake()
         {
+            if (root == null)
+            {
+                enabled = false;
+                return;
+            }
+
             _rect = root.GetComponent<RectTransform>();
             _shownPos  = _rect.anchoredPosition;
             _hiddenPos = _shownPos + new Vector2(500f, 0f);

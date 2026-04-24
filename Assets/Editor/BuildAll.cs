@@ -25,25 +25,37 @@ public static class BuildAll
 
     static void ExtractMixamoTextures()
     {
-        if (!AssetDatabase.IsValidFolder("Assets/Resources/Kenney")) return;
-        string[] guids = AssetDatabase.FindAssets("t:Model", new[] { "Assets/Resources/Kenney" });
-        foreach (var guid in guids)
+        string[] folders = { "Assets/Resources/Kenney", "Assets/Resources/Mixamo" };
+        foreach (var folder in folders)
         {
-            string fbxPath = AssetDatabase.GUIDToAssetPath(guid);
-            var importer = AssetImporter.GetAtPath(fbxPath) as ModelImporter;
-            if (importer == null) continue;
-            string dir = System.IO.Path.GetDirectoryName(fbxPath);
-            string texFolder = dir + "/Textures";
-            if (!AssetDatabase.IsValidFolder(texFolder))
-                AssetDatabase.CreateFolder(dir, "Textures");
-            string matFolder = dir + "/Materials";
-            if (!AssetDatabase.IsValidFolder(matFolder))
-                AssetDatabase.CreateFolder(dir, "Materials");
-            importer.animationType = ModelImporterAnimationType.Legacy;
-            importer.ExtractTextures(texFolder);
-            AssetDatabase.WriteImportSettingsIfDirty(fbxPath);
-            AssetDatabase.ImportAsset(fbxPath, ImportAssetOptions.ForceUpdate);
-            Debug.Log($"[ExtractMixamo] Extracted textures + set Legacy anim for {fbxPath}");
+            if (!AssetDatabase.IsValidFolder(folder)) continue;
+            string[] guids = AssetDatabase.FindAssets("t:Model", new[] { folder });
+            foreach (var guid in guids)
+            {
+                string fbxPath = AssetDatabase.GUIDToAssetPath(guid);
+                var importer = AssetImporter.GetAtPath(fbxPath) as ModelImporter;
+                if (importer == null) continue;
+                string dir = System.IO.Path.GetDirectoryName(fbxPath);
+                string texFolder = dir + "/Textures";
+                if (!AssetDatabase.IsValidFolder(texFolder))
+                    AssetDatabase.CreateFolder(dir, "Textures");
+                string matFolder = dir + "/Materials";
+                if (!AssetDatabase.IsValidFolder(matFolder))
+                    AssetDatabase.CreateFolder(dir, "Materials");
+                importer.animationType = ModelImporterAnimationType.Legacy;
+                importer.importAnimation = true;
+                try
+                {
+                    importer.ExtractTextures(texFolder);
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogWarning($"[ExtractMixamo] Texture extract skipped for {fbxPath}: {ex.Message}");
+                }
+                AssetDatabase.WriteImportSettingsIfDirty(fbxPath);
+                AssetDatabase.ImportAsset(fbxPath, ImportAssetOptions.ForceUpdate);
+                Debug.Log($"[ExtractMixamo] Prepared textures + Legacy anim for {fbxPath}");
+            }
         }
         AssetDatabase.Refresh();
     }

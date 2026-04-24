@@ -23,7 +23,15 @@ namespace MoonlightMagicHouse
 
         public void Equip(int id)
         {
-            foreach (var o in outfits) o.root.SetActive(o.id == id);
+            if (outfits == null)
+            {
+                _current = id;
+                return;
+            }
+
+            foreach (var o in outfits)
+                if (o.root != null)
+                    o.root.SetActive(o.id == id);
             _current = id;
         }
 

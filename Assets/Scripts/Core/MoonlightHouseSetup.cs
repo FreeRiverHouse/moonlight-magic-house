@@ -11,6 +11,8 @@ namespace MoonlightMagicHouse
     [DefaultExecutionOrder(-100)]
     public class MoonlightHouseSetup : MonoBehaviour
     {
+        static readonly bool PhotorealMode = true;
+
         void Awake()
         {
             Debug.Log("🌙 MOONLIGHT MAGIC HOUSE — Building scene...");
@@ -25,6 +27,8 @@ namespace MoonlightMagicHouse
             var ml   = mlGO.GetComponent<MoonlightCharacter>();
 
             var rm = CreateRooms();
+            if (PhotorealMode)
+                new GameObject("MoonlightSceneDirector").AddComponent<MoonlightSceneDirector>();
 
             var (uiGO, ui) = CreateUI();
 
@@ -62,31 +66,58 @@ namespace MoonlightMagicHouse
                 cam = camGO.AddComponent<Camera>();
                 camGO.AddComponent<AudioListener>();
             }
-            cam.clearFlags      = CameraClearFlags.Skybox;
-            cam.backgroundColor = new Color(0.04f, 0.02f, 0.10f);
-            if (!gameObject.GetComponent<SkyboxSetup>())
+            cam.clearFlags      = PhotorealMode ? CameraClearFlags.SolidColor : CameraClearFlags.Skybox;
+            cam.backgroundColor = PhotorealMode ? new Color(0.86f, 0.72f, 0.62f) : new Color(0.04f, 0.02f, 0.10f);
+            if (!PhotorealMode && !gameObject.GetComponent<SkyboxSetup>())
                 gameObject.AddComponent<SkyboxSetup>();
-            cam.farClipPlane    = 80f;
-            cam.fieldOfView     = 60f;
-            cam.transform.position = new Vector3(0f, 2.8f, -6.2f);
-            cam.transform.LookAt(new Vector3(0f, 1.2f, 0.5f));
+            cam.farClipPlane    = PhotorealMode ? 40f : 80f;
+            cam.fieldOfView     = PhotorealMode ? 39f : 60f;
+            cam.transform.position = PhotorealMode ? new Vector3(0f, 1.24f, -4.7f) : new Vector3(0f, 2.8f, -6.2f);
+            cam.transform.LookAt(PhotorealMode ? new Vector3(0.03f, 0.98f, 0.06f) : new Vector3(0f, 1.2f, 0.5f));
             cam.allowHDR = true;
+            cam.depthTextureMode |= DepthTextureMode.DepthNormals;
 
-            if (!cam.GetComponent<CameraController>())
+            if (!PhotorealMode && !cam.GetComponent<CameraController>())
                 cam.gameObject.AddComponent<CameraController>();
-            if (!cam.GetComponent<AmbientCycle>())
+            if (!PhotorealMode && !cam.GetComponent<AmbientCycle>())
                 cam.gameObject.AddComponent<AmbientCycle>();
             if (!cam.GetComponent<GodRaysPostFx>())
                 cam.gameObject.AddComponent<GodRaysPostFx>();
-            if (!cam.GetComponent<BloomPostFx>())
-                cam.gameObject.AddComponent<BloomPostFx>();
-            if (!cam.GetComponent<CelOutlinePostFx>())
+            var bloom = cam.GetComponent<BloomPostFx>();
+            if (!bloom) bloom = cam.gameObject.AddComponent<BloomPostFx>();
+            if (PhotorealMode)
+                bloom.Configure(1.18f, 0.34f, 0.20f, new Color(1.03f, 0.95f, 0.86f), 2);
+            if (!PhotorealMode && !cam.GetComponent<CelOutlinePostFx>())
                 cam.gameObject.AddComponent<CelOutlinePostFx>();
         }
 
         // ── Atmosphere ───────────────────────────────────────────────────────
         void SetupAtmosphere()
         {
+            if (PhotorealMode)
+            {
+                RenderSettings.ambientMode  = AmbientMode.Flat;
+                RenderSettings.ambientLight = new Color(0.56f, 0.43f, 0.36f);
+                RenderSettings.fog          = false;
+                RenderSettings.defaultReflectionMode = DefaultReflectionMode.Custom;
+                RenderSettings.reflectionIntensity   = 0.42f;
+
+                MakeLight("WindowSunWarm", LightType.Directional,
+                    new Color(1.00f, 0.72f, 0.48f), 0.92f,
+                    Quaternion.Euler(36f, -128f, 0f), LightShadows.Soft, 0.32f);
+
+                MakeLight("SoftRoomFill", LightType.Directional,
+                    new Color(1.00f, 0.86f, 0.72f), 0.28f,
+                    Quaternion.Euler(18f, 42f, 0f), LightShadows.None, 0f);
+
+                MakeLight("StorybookRim", LightType.Directional,
+                    new Color(1.00f, 0.58f, 0.80f), 0.12f,
+                    Quaternion.Euler(20f, 168f, 0f), LightShadows.None, 0f);
+
+                CreatePhotorealDustMotes();
+                return;
+            }
+
             RenderSettings.ambientMode    = AmbientMode.Flat;
             RenderSettings.ambientLight   = new Color(0.18f, 0.12f, 0.30f);
             RenderSettings.fog            = true;
@@ -143,6 +174,31 @@ namespace MoonlightMagicHouse
             var dustMat     = new Material(Shader.Find("Sprites/Default"));
             dustMat.mainTexture = MakeSoftCircleTex(32);
             dpsr.material   = dustMat;
+        }
+
+        void CreatePhotorealDustMotes()
+        {
+            var dustGO = new GameObject("PhotorealWarmDust");
+            dustGO.transform.position = new Vector3(0f, 1.7f, -0.1f);
+            var dps = dustGO.AddComponent<ParticleSystem>();
+            var main = dps.main;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(4f, 7f);
+            main.startSpeed    = new ParticleSystem.MinMaxCurve(0.02f, 0.08f);
+            main.startSize     = new ParticleSystem.MinMaxCurve(0.018f, 0.055f);
+            main.startColor    = new ParticleSystem.MinMaxGradient(
+                new Color(1f, 0.84f, 0.58f, 0.20f), new Color(1f, 0.66f, 0.86f, 0.16f));
+            main.maxParticles  = 90;
+            main.gravityModifier = -0.01f;
+            var emission = dps.emission;
+            emission.rateOverTime = 10f;
+            var shape = dps.shape;
+            shape.shapeType = ParticleSystemShapeType.Box;
+            shape.scale = new Vector3(4.8f, 2.2f, 1.1f);
+            var renderer = dustGO.GetComponent<ParticleSystemRenderer>();
+            renderer.renderMode = ParticleSystemRenderMode.Billboard;
+            var mat = new Material(Shader.Find("Sprites/Default"));
+            mat.mainTexture = MakeSoftCircleTex(48);
+            renderer.material = mat;
         }
 
         static Texture2D _softCircleTex;
@@ -205,24 +261,35 @@ namespace MoonlightMagicHouse
         GameObject CreateMoonlightCharacter()
         {
             var mlGO = new GameObject("Moonlight");
-            mlGO.transform.position = Vector3.zero;
+            mlGO.transform.position = PhotorealMode ? new Vector3(0.78f, 0.02f, -0.92f) : Vector3.zero;
 
             mlGO.AddComponent<MoonlightCharacter>();
-            mlGO.AddComponent<MoonlightIdleBehavior>();
+            if (!PhotorealMode)
+                mlGO.AddComponent<MoonlightIdleBehavior>();
             mlGO.AddComponent<MoonlightWardrobe>();
             mlGO.AddComponent<MoonlightStageVFX>();
-            mlGO.AddComponent<MoonlightGlowController>();
+            if (!PhotorealMode)
+                mlGO.AddComponent<MoonlightGlowController>();
             mlGO.AddComponent<MoonlightMoodParticles>();
-            mlGO.AddComponent<MoonlightAnimator>();
+            if (!PhotorealMode)
+                mlGO.AddComponent<MoonlightAnimator>();
 
-            // Mixamo "Kaya" — stylized-human rigged humanoid with baked face textures.
-            // Adobe/Mixamo license permits royalty-free commercial use when embedded in the game.
-            var visual = SpawnMixamoCharacter(mlGO.transform, "Kenney/Sara", "Kenney/SaraSkin");
+            GameObject visual;
+            if (PhotorealMode)
+            {
+                visual = SpawnPhotorealMoonlightChild(mlGO.transform);
+            }
+            else
+            {
+                // Mixamo "Kaya" — stylized-human rigged humanoid with baked face textures.
+                // Adobe/Mixamo license permits royalty-free commercial use when embedded in the game.
+                visual = SpawnMixamoCharacter(mlGO.transform, "Kenney/Sara", "Kenney/SaraSkin");
+            }
             if (visual == null) visual = BuildFallbackCharacter(mlGO.transform);
             // Face the camera (camera is at -Z; character's face is at +Z by default)
-            visual.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            visual.transform.localRotation = PhotorealMode ? Quaternion.Euler(0f, 180f, 0f) : Quaternion.Euler(0f, 180f, 0f);
             // Subtle hip-tilt weight-shift (Ghibli-ish contrapposto read)
-            visual.transform.localRotation = visual.transform.localRotation * Quaternion.Euler(0f, 0f, 1.8f);
+            visual.transform.localRotation = visual.transform.localRotation * Quaternion.Euler(0f, 0f, PhotorealMode ? 0.6f : 1.8f);
             // Activate SSS + stronger wrap on skin parts (face, neck, ears, hands, forearms) — human warmth
             string[] skinParts = { "Head", "Neck", "EarL", "EarR", "HandL", "HandR", "ForearmL", "ForearmR", "Nose", "CheekL", "CheekR" };
             foreach (var pn in skinParts)
@@ -238,55 +305,64 @@ namespace MoonlightMagicHouse
             }
             // Scale-punch on button presses
             var puncher = visual.AddComponent<ScalePuncher>();
-            // Gentle idle micro-motion (head tilt, arm sway, body squash)
-            visual.AddComponent<IdleMicroMotion>();
-            visual.AddComponent<BreathingMotion>();
+            if (PhotorealMode)
+            {
+                visual.AddComponent<MoonlightKidAnimator>();
+            }
+            else
+            {
+                // Gentle idle micro-motion (head tilt, arm sway, body squash)
+                visual.AddComponent<IdleMicroMotion>();
+                visual.AddComponent<BreathingMotion>();
+            }
 
             // Floating name tag above the character (3D TextMesh — billboarded)
             var tagGO = new GameObject("NameTag");
             tagGO.transform.SetParent(mlGO.transform, false);
-            tagGO.transform.localPosition = new Vector3(0f, 2.5f, 0f);
-            tagGO.transform.localScale    = Vector3.one * 0.25f;
+            tagGO.transform.localPosition = PhotorealMode ? new Vector3(0f, 1.32f, 0f) : new Vector3(0f, 2.5f, 0f);
+            tagGO.transform.localScale    = Vector3.one * (PhotorealMode ? 0.10f : 0.25f);
             tagGO.AddComponent<BillboardToCamera>();
             var tm = tagGO.AddComponent<TextMesh>();
             tm.text       = "Moonlight";
-            tm.fontSize   = 48;
+            tm.fontSize   = PhotorealMode ? 42 : 48;
             tm.fontStyle  = FontStyle.Bold;
             tm.anchor     = TextAnchor.MiddleCenter;
             tm.alignment  = TextAlignment.Center;
-            tm.color      = new Color(1f, 0.9f, 1f);
+            tm.color      = PhotorealMode ? new Color(1f, 0.96f, 0.86f) : new Color(1f, 0.9f, 1f);
             tm.characterSize = 0.1f;
             var tmr = tagGO.GetComponent<MeshRenderer>();
             tmr.sortingOrder = 5;
 
             // Procedural idle bob — no Animator required
-            mlGO.AddComponent<MoonlightBobber>();
+            if (!PhotorealMode)
+                mlGO.AddComponent<MoonlightBobber>();
 
             // Collider
             var col = mlGO.AddComponent<CapsuleCollider>();
-            col.height = 2.2f;
-            col.radius = 0.38f;
-            col.center = new Vector3(0f, 1.1f, 0f);
+            col.height = PhotorealMode ? 1.22f : 2.2f;
+            col.radius = PhotorealMode ? 0.22f : 0.38f;
+            col.center = PhotorealMode ? new Vector3(0f, 0.62f, 0f) : new Vector3(0f, 1.1f, 0f);
             mlGO.AddComponent<MoonlightInteractable>();
 
             // Sparkle particle system (ambient magic around character)
             var sparkGO = new GameObject("Sparkles");
             sparkGO.transform.SetParent(mlGO.transform, false);
-            sparkGO.transform.localPosition = new Vector3(0f, 1.2f, 0f);
+            sparkGO.transform.localPosition = PhotorealMode ? new Vector3(0f, 0.68f, 0f) : new Vector3(0f, 1.2f, 0f);
             var ps = sparkGO.AddComponent<ParticleSystem>();
             var main = ps.main;
-            main.startLifetime = 2.2f;
-            main.startSpeed    = 0.35f;
-            main.startSize     = 0.06f;
+            main.startLifetime = PhotorealMode ? 1.8f : 2.2f;
+            main.startSpeed    = PhotorealMode ? 0.18f : 0.35f;
+            main.startSize     = PhotorealMode ? 0.035f : 0.06f;
             main.startColor    = new ParticleSystem.MinMaxGradient(
-                new Color(1f, 0.90f, 0.55f), new Color(0.75f, 0.55f, 1f));
-            main.maxParticles  = 40;
+                PhotorealMode ? new Color(1f, 0.78f, 0.42f, 0.70f) : new Color(1f, 0.90f, 0.55f),
+                PhotorealMode ? new Color(1f, 0.56f, 0.78f, 0.55f) : new Color(0.75f, 0.55f, 1f));
+            main.maxParticles  = PhotorealMode ? 24 : 40;
             main.simulationSpace = ParticleSystemSimulationSpace.Local;
             var emission = ps.emission;
-            emission.rateOverTime = 8f;
+            emission.rateOverTime = PhotorealMode ? 4f : 8f;
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Sphere;
-            shape.radius    = 0.9f;
+            shape.radius    = PhotorealMode ? 0.38f : 0.9f;
             var colOverLife = ps.colorOverLifetime;
             colOverLife.enabled = true;
             var grad = new Gradient();
@@ -299,6 +375,13 @@ namespace MoonlightMagicHouse
             var sparkMat   = new Material(Shader.Find("Sprites/Default"));
             sparkMat.mainTexture = MakeSoftCircleTex(32);
             psr.material   = sparkMat;
+
+            if (PhotorealMode)
+            {
+                AddPhotorealContactShadow(mlGO.transform);
+                AddPhotorealCompanionLight(mlGO.transform);
+                return mlGO;
+            }
 
             // Ground halo — pulsing disc beneath the character
             var haloGO = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
@@ -355,6 +438,194 @@ namespace MoonlightMagicHouse
             glow.range     = 6f;
 
             return mlGO;
+        }
+
+        static GameObject SpawnPhotorealMoonlightChild(Transform parent)
+        {
+            var prefab = Resources.Load<GameObject>("UnityChan/SD_unitychan_humanoid");
+            if (prefab == null)
+            {
+                Debug.LogWarning("[Photoreal] Missing Resources/UnityChan/SD_unitychan_humanoid, falling back to Sophie");
+                return SpawnPhotorealSophie(parent);
+            }
+
+            var instance = Object.Instantiate(prefab, parent);
+            instance.name = "Visual";
+
+            foreach (var animator in instance.GetComponentsInChildren<Animator>(true))
+                Object.Destroy(animator);
+            foreach (var animation in instance.GetComponentsInChildren<Animation>(true))
+                Object.Destroy(animation);
+
+            var renderers = instance.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0)
+            {
+                Object.Destroy(instance);
+                return SpawnPhotorealSophie(parent);
+            }
+
+            Bounds b = renderers[0].bounds;
+            foreach (var r in renderers) b.Encapsulate(r.bounds);
+            float height = Mathf.Max(0.1f, b.size.y);
+            float childScale = 1.06f / height;
+            instance.transform.localScale = new Vector3(childScale * 0.92f, childScale * 1.10f, childScale * 0.92f);
+            instance.transform.localRotation = Quaternion.identity;
+
+            b = renderers[0].bounds;
+            foreach (var r in renderers) b.Encapsulate(r.bounds);
+            instance.transform.localPosition = new Vector3(0f, -b.min.y, 0f);
+
+            var standard = Shader.Find("Standard");
+            var atlas = Resources.Load<Texture>("UnityChan/Textures/utc_all2");
+            var normal = Resources.Load<Texture>("UnityChan/Textures/utc_nomal");
+            foreach (var r in renderers)
+            {
+                r.shadowCastingMode = ShadowCastingMode.On;
+                r.receiveShadows = true;
+
+                var srcMats = r.sharedMaterials;
+                var mats = new Material[srcMats.Length];
+                for (int i = 0; i < srcMats.Length; i++)
+                {
+                    var src = srcMats[i];
+                    var mat = standard != null ? new Material(standard) : new Material(Shader.Find("Diffuse"));
+                    Texture main = atlas;
+                    string matName = src != null ? src.name.ToLowerInvariant() : string.Empty;
+
+                    if (src != null)
+                    {
+                        if (src.HasProperty("_MainTex") && src.GetTexture("_MainTex") != null)
+                            main = src.GetTexture("_MainTex");
+                        else if (src.mainTexture != null)
+                            main = src.mainTexture;
+                    }
+
+                    mat.name = $"Moonlight_{(string.IsNullOrEmpty(matName) ? "standard" : matName)}";
+                    mat.mainTexture = main;
+                    if (normal != null && mat.HasProperty("_BumpMap") && !matName.Contains("mouth"))
+                    {
+                        mat.SetTexture("_BumpMap", normal);
+                        mat.EnableKeyword("_NORMALMAP");
+                        if (mat.HasProperty("_BumpScale")) mat.SetFloat("_BumpScale", 0.34f);
+                    }
+
+                    var tint = Color.white;
+                    if (matName.Contains("skin")) tint = new Color(1.00f, 0.82f, 0.70f, 1f);
+                    else if (matName.Contains("hair")) tint = new Color(0.82f, 0.70f, 0.60f, 1f);
+                    else if (matName.Contains("mouth")) tint = new Color(1.00f, 0.78f, 0.82f, 1f);
+                    else tint = new Color(0.92f, 0.86f, 0.82f, 1f);
+
+                    mat.color = tint;
+                    if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", matName.Contains("skin") ? 0.32f : 0.20f);
+                    if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", 0f);
+                    if (mat.HasProperty("_EmissionColor")) mat.SetColor("_EmissionColor", Color.black);
+                    mat.DisableKeyword("_EMISSION");
+                    mats[i] = mat;
+                }
+                r.sharedMaterials = mats;
+            }
+
+            Debug.Log("[Photoreal] Using UnityChan SD child-proportioned Moonlight avatar");
+            return instance;
+        }
+
+        static GameObject SpawnPhotorealSophie(Transform parent)
+        {
+            var prefab = Resources.Load<GameObject>("Mixamo/SophieHappyIdle");
+            if (prefab == null) { Debug.LogWarning("[Photoreal] Missing Resources/Mixamo/SophieHappyIdle"); return null; }
+
+            var instance = Object.Instantiate(prefab, parent);
+            instance.name = "Visual";
+
+            var renderers = instance.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0) { Object.Destroy(instance); return null; }
+
+            Bounds b = renderers[0].bounds;
+            foreach (var r in renderers) b.Encapsulate(r.bounds);
+            float height = Mathf.Max(0.1f, b.size.y);
+            instance.transform.localScale = Vector3.one * (1.06f / height);
+            instance.transform.localRotation = Quaternion.identity;
+
+            b = renderers[0].bounds;
+            foreach (var r in renderers) b.Encapsulate(r.bounds);
+            instance.transform.localPosition = new Vector3(0f, -b.min.y, 0f);
+
+            var standard = Shader.Find("Standard");
+            foreach (var r in renderers)
+            {
+                r.shadowCastingMode = ShadowCastingMode.On;
+                r.receiveShadows = true;
+                var srcMats = r.sharedMaterials;
+                var mats = new Material[srcMats.Length];
+                for (int i = 0; i < srcMats.Length; i++)
+                {
+                    var src = srcMats[i];
+                    var mat = new Material(standard);
+                    Texture tex = null;
+                    Color color = Color.white;
+                    if (src != null)
+                    {
+                        if (src.HasProperty("_MainTex")) tex = src.GetTexture("_MainTex");
+                        if (tex == null && src.mainTexture != null) tex = src.mainTexture;
+                        if (src.HasProperty("_Color")) color = src.color;
+                    }
+                    mat.color = Color.Lerp(color, new Color(0.76f, 0.70f, 0.64f, 1f), 0.18f);
+                    if (tex != null)
+                    {
+                        mat.SetTexture("_MainTex", tex);
+                        mat.mainTexture = tex;
+                    }
+                    mat.SetFloat("_Metallic", 0f);
+                    mat.SetFloat("_Glossiness", 0.34f);
+                    mats[i] = mat;
+                }
+                r.sharedMaterials = mats;
+            }
+
+            var clips = Resources.LoadAll<AnimationClip>("Mixamo/SophieHappyIdle");
+            if (clips != null && clips.Length > 0)
+            {
+                foreach (var existing in instance.GetComponentsInChildren<Animator>(true)) Object.Destroy(existing);
+                var anim = instance.GetComponent<Animation>() ?? instance.AddComponent<Animation>();
+                var clip = clips[0];
+                clip.legacy = true;
+                clip.wrapMode = WrapMode.Loop;
+                anim.AddClip(clip, clip.name);
+                anim.clip = clip;
+                anim.playAutomatically = true;
+                anim.Play(clip.name);
+                Debug.Log($"[Photoreal] Playing Sophie clip '{clip.name}' ({clip.length:F2}s)");
+            }
+
+            return instance;
+        }
+
+        static void AddPhotorealContactShadow(Transform parent)
+        {
+            var shadow = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            shadow.name = "SoftContactShadow";
+            shadow.transform.SetParent(parent, false);
+            shadow.transform.localPosition = new Vector3(0.02f, 0.015f, 0.02f);
+            shadow.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            shadow.transform.localScale = new Vector3(0.72f, 0.26f, 1f);
+            Object.Destroy(shadow.GetComponent<Collider>());
+            var mat = new Material(TransparentSpriteShader);
+            mat.mainTexture = MakeSoftCircleTex(96);
+            mat.color = new Color(0.18f, 0.10f, 0.08f, 0.28f);
+            shadow.GetComponent<MeshRenderer>().material = mat;
+        }
+
+        static void AddPhotorealCompanionLight(Transform parent)
+        {
+            var lgo = new GameObject("MoonlightWarmFaceLight");
+            lgo.transform.SetParent(parent, false);
+            lgo.transform.localPosition = new Vector3(-0.28f, 0.82f, -0.42f);
+            var l = lgo.AddComponent<Light>();
+            l.type = LightType.Point;
+            l.color = new Color(1.0f, 0.70f, 0.52f);
+            l.intensity = 0.38f;
+            l.range = 1.45f;
+            l.shadows = LightShadows.None;
         }
 
         // Mixamo character — FBX with baked face textures (Adobe license permits commercial game embedding).
@@ -1060,6 +1331,17 @@ namespace MoonlightMagicHouse
             var rmGO = new GameObject("RoomManager");
             var rm   = rmGO.AddComponent<RoomManager>();
 
+            if (PhotorealMode)
+            {
+                var photorealRoom = BuildPhotorealBedroom();
+                photorealRoom.AddComponent<FeedingStation>();
+                photorealRoom.AddComponent<PlayArea>();
+                photorealRoom.AddComponent<SleepArea>();
+                rm.startRoom = RoomType.LivingRoom;
+                rm.AddRoom(RoomType.LivingRoom, photorealRoom);
+                return rm;
+            }
+
             var lr = BuildRoom("LivingRoom", Vector3.zero,
                 new Color(0.12f, 0.07f, 0.22f), true,
                 new[]{ "Models/Props/LivingRoom/Sofa",
@@ -1131,6 +1413,187 @@ namespace MoonlightMagicHouse
             rm.AddRoom(RoomType.Library,    lb);
 
             return rm;
+        }
+
+        GameObject BuildPhotorealBedroom()
+        {
+            var root = new GameObject("PhotorealBedroom");
+            root.transform.position = Vector3.zero;
+
+            var amb = root.AddComponent<RoomAmbience>();
+            amb.ambientColor = new Color(0.92f, 0.64f, 0.52f);
+
+            CreateRoomPhotoBackdrop(root.transform);
+            CreatePhotorealFloorBlend(root.transform);
+            CreatePhotoMatchedFairyLights(root.transform);
+            CreateDollhouseMagicGlow(root.transform);
+
+            var lamp = new GameObject("ReferenceBunnyLampGlow");
+            lamp.transform.SetParent(root.transform, false);
+            lamp.transform.localPosition = new Vector3(2.15f, 0.88f, 0.00f);
+            var lampLight = lamp.AddComponent<Light>();
+            lampLight.type = LightType.Point;
+            lampLight.color = new Color(1.0f, 0.78f, 0.48f);
+            lampLight.intensity = 1.7f;
+            lampLight.range = 3.8f;
+
+            root.SetActive(true);
+            return root;
+        }
+
+        static void CreateRoomPhotoBackdrop(Transform parent)
+        {
+            var tex = Resources.Load<Texture2D>("Photoreal/room-generated");
+            if (tex == null)
+            {
+                Debug.LogWarning("[Photoreal] Missing generated room backdrop");
+                return;
+            }
+
+            var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            quad.name = "PhotorealRoomBackdrop";
+            quad.transform.SetParent(parent, false);
+            quad.transform.localPosition = new Vector3(0f, 1.52f, 2.35f);
+            quad.transform.localRotation = Quaternion.identity;
+            float aspect = (float)tex.width / Mathf.Max(1, tex.height);
+            float height = 10.20f;
+            quad.transform.localScale = new Vector3(height * aspect, height, 1f);
+            Object.Destroy(quad.GetComponent<Collider>());
+
+            var mat = new Material(TransparentSpriteShader);
+            mat.mainTexture = tex;
+            mat.color = Color.white;
+            quad.GetComponent<MeshRenderer>().material = mat;
+        }
+
+        static void CreatePhotorealFloorBlend(Transform parent)
+        {
+            var floor = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            floor.name = "WarmFloorSheen";
+            floor.transform.SetParent(parent, false);
+            floor.transform.localPosition = new Vector3(0.32f, 0.006f, -0.98f);
+            floor.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            floor.transform.localScale = new Vector3(4.2f, 1.35f, 1f);
+            Object.Destroy(floor.GetComponent<Collider>());
+            var mat = new Material(TransparentSpriteShader);
+            mat.mainTexture = MakeSoftCircleTex(128);
+            mat.color = new Color(1.0f, 0.62f, 0.42f, 0.06f);
+            floor.GetComponent<MeshRenderer>().material = mat;
+        }
+
+        static void CreatePhotoMatchedFairyLights(Transform parent)
+        {
+            Vector3[] points =
+            {
+                new Vector3(-0.84f, 2.58f, 0.70f),
+                new Vector3(-0.48f, 2.75f, 0.70f),
+                new Vector3(-0.12f, 2.84f, 0.70f),
+                new Vector3( 0.28f, 2.73f, 0.70f),
+                new Vector3( 0.66f, 2.65f, 0.70f),
+                new Vector3( 1.05f, 2.72f, 0.70f),
+                new Vector3( 1.42f, 2.62f, 0.70f)
+            };
+
+            for (int i = 0; i < points.Length; i++)
+            {
+                var bulb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                bulb.name = $"PhotoFairyBulb{i}";
+                bulb.transform.SetParent(parent, false);
+                bulb.transform.localPosition = points[i];
+                bulb.transform.localScale = Vector3.one * 0.045f;
+                Object.Destroy(bulb.GetComponent<Collider>());
+                var mat = new Material(Shader.Find("Standard"));
+                Color c = i % 3 == 0 ? new Color(1f, 0.70f, 0.48f) : new Color(1f, 0.88f, 0.58f);
+                mat.color = c;
+                mat.EnableKeyword("_EMISSION");
+                mat.SetColor("_EmissionColor", c * 2.2f);
+                mat.SetFloat("_Glossiness", 0.55f);
+                bulb.GetComponent<MeshRenderer>().material = mat;
+            }
+        }
+
+        static void CreateDollhouseMagicGlow(Transform parent)
+        {
+            Vector3[] glowPoints =
+            {
+                new Vector3(-0.42f, 0.52f, -0.62f),
+                new Vector3(-0.05f, 0.45f, -0.66f),
+                new Vector3( 0.25f, 0.62f, -0.62f)
+            };
+
+            foreach (var p in glowPoints)
+            {
+                var lgo = new GameObject("DollhouseWindowGlow");
+                lgo.transform.SetParent(parent, false);
+                lgo.transform.localPosition = p;
+                var l = lgo.AddComponent<Light>();
+                l.type = LightType.Point;
+                l.color = new Color(1.0f, 0.58f, 0.32f);
+                l.intensity = 0.9f;
+                l.range = 1.4f;
+
+                var sparkle = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                sparkle.name = "TinyDollhouseSparkle";
+                sparkle.transform.SetParent(parent, false);
+                sparkle.transform.localPosition = p;
+                sparkle.transform.localScale = Vector3.one * 0.022f;
+                Object.Destroy(sparkle.GetComponent<Collider>());
+                var sm = new Material(Shader.Find("Standard"));
+                sm.color = new Color(1f, 0.75f, 0.42f);
+                sm.EnableKeyword("_EMISSION");
+                sm.SetColor("_EmissionColor", new Color(1f, 0.52f, 0.22f) * 1.8f);
+                sparkle.GetComponent<MeshRenderer>().material = sm;
+            }
+        }
+
+        static void CreateGlossyKidTreats(Transform parent)
+        {
+            MakePhotorealToy(parent, PrimitiveType.Sphere, "StrawberryMacaron",
+                new Vector3(1.62f, 0.13f, -1.18f), new Vector3(0.18f, 0.07f, 0.18f),
+                new Color(1.00f, 0.46f, 0.62f), 0.62f);
+            MakePhotorealToy(parent, PrimitiveType.Sphere, "LemonMacaron",
+                new Vector3(1.90f, 0.12f, -1.05f), new Vector3(0.15f, 0.06f, 0.15f),
+                new Color(1.00f, 0.84f, 0.32f), 0.58f);
+            MakePhotorealToy(parent, PrimitiveType.Sphere, "BlueberryMacaron",
+                new Vector3(2.14f, 0.11f, -1.28f), new Vector3(0.14f, 0.055f, 0.14f),
+                new Color(0.42f, 0.62f, 1.00f), 0.60f);
+
+            var wand = MakePhotorealToy(parent, PrimitiveType.Cylinder, "LittleMagicWand",
+                new Vector3(-1.54f, 0.08f, -1.12f), new Vector3(0.026f, 0.42f, 0.026f),
+                new Color(1.00f, 0.68f, 0.90f), 0.35f);
+            wand.transform.localRotation = Quaternion.Euler(74f, 0f, -32f);
+            MakePhotorealToy(parent, PrimitiveType.Sphere, "WandStarGlow",
+                new Vector3(-1.72f, 0.26f, -1.28f), Vector3.one * 0.08f,
+                new Color(1.00f, 0.86f, 0.30f), 0.8f, true);
+
+            MakePhotorealToy(parent, PrimitiveType.Sphere, "PocketPlushBody",
+                new Vector3(-1.96f, 0.20f, -0.98f), new Vector3(0.18f, 0.22f, 0.15f),
+                new Color(0.96f, 0.82f, 0.70f), 0.22f);
+            MakePhotorealToy(parent, PrimitiveType.Sphere, "PocketPlushHead",
+                new Vector3(-1.96f, 0.43f, -1.02f), Vector3.one * 0.13f,
+                new Color(0.98f, 0.86f, 0.76f), 0.24f);
+        }
+
+        static GameObject MakePhotorealToy(Transform parent, PrimitiveType type, string name,
+            Vector3 pos, Vector3 scale, Color color, float gloss, bool emissive = false)
+        {
+            var go = GameObject.CreatePrimitive(type);
+            go.name = name;
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = pos;
+            go.transform.localScale = scale;
+            Object.Destroy(go.GetComponent<Collider>());
+            var mat = new Material(Shader.Find("Standard"));
+            mat.color = color;
+            mat.SetFloat("_Metallic", 0f);
+            mat.SetFloat("_Glossiness", gloss);
+            if (emissive)
+            {
+                mat.EnableKeyword("_EMISSION");
+                mat.SetColor("_EmissionColor", color * 1.6f);
+            }
+            go.GetComponent<MeshRenderer>().material = mat;
+            return go;
         }
 
         GameObject BuildRoom(string roomName, Vector3 pos, Color ambColor, bool active,
@@ -1581,6 +2044,9 @@ namespace MoonlightMagicHouse
         // ── UI ───────────────────────────────────────────────────────────────
         (GameObject go, MoonlightUI ui) CreateUI()
         {
+            if (PhotorealMode)
+                return CreatePhotorealUI();
+
             // Root Canvas
             var canvasGO = new GameObject("UICanvas");
             var canvas = canvasGO.AddComponent<Canvas>();
@@ -1809,7 +2275,189 @@ namespace MoonlightMagicHouse
             return (canvasGO, ui);
         }
 
+        (GameObject go, MoonlightUI ui) CreatePhotorealUI()
+        {
+            var canvasGO = new GameObject("UICanvas");
+            var canvas = canvasGO.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 20;
+
+            var scaler = canvasGO.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
+            canvasGO.AddComponent<GraphicRaycaster>();
+
+            var hud = Panel("PhotoHUD", canvasGO.transform,
+                new Vector2(0f, 1f), new Vector2(0f, 1f),
+                new Vector2(28f, -144f), new Vector2(430f, -26f),
+                new Color(1f, 0.92f, 0.84f, 0.62f));
+
+            var stageLabel = MakeLegacyLabel("StageLabel", hud.transform, new Vector2(0f, -34f), new Vector2(320f, 34f), "Moonlight", 26, new Color(0.34f, 0.18f, 0.18f), FontStyle.Bold);
+            var moodLabel  = MakeLegacyLabel("MoodLabel",  hud.transform, new Vector2(-96f, -76f), new Vector2(150f, 28f), "HAPPY", 18, new Color(0.72f, 0.30f, 0.46f), FontStyle.Bold);
+            var coinsLabel = MakeLegacyLabel("CoinsLabel", hud.transform, new Vector2( 82f, -76f), new Vector2(150f, 28f), "COINS 30", 18, new Color(0.54f, 0.34f, 0.05f), FontStyle.Bold);
+            var xpLabel    = MakeLegacyLabel("XPLabel",    hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "XP 0", 1, Color.clear, FontStyle.Normal);
+            var daysLabel  = MakeLegacyLabel("DaysLabel",  hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "DAY 1", 1, Color.clear, FontStyle.Normal);
+
+            var sliders = new Slider[5];
+            for (int i = 0; i < sliders.Length; i++)
+                sliders[i] = MakeHiddenSlider(canvasGO.transform, i);
+
+            var btnPanel = Panel("CandyActionBar", canvasGO.transform,
+                new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
+                new Vector2(-670f, 0f), new Vector2(90f, 126f),
+                new Color(1f, 0.88f, 0.78f, 0.10f));
+
+            var feedBtn   = MakePhotorealButton("FeedBtn",   btnPanel.transform, new Vector2(-224f, 82f), "SNACK", new Color(1.00f, 0.58f, 0.42f, 0.90f));
+            var cuddleBtn = MakePhotorealButton("CuddleBtn", btnPanel.transform, new Vector2(   0f, 82f), "HUG",   new Color(1.00f, 0.48f, 0.70f, 0.90f));
+            var sleepBtn  = MakePhotorealButton("SleepBtn",  btnPanel.transform, new Vector2( 224f, 82f), "NAP",   new Color(0.52f, 0.70f, 1.00f, 0.90f));
+            var playBtn   = MakePhotorealButton("PlayBtn",   btnPanel.transform, new Vector2(-224f, 26f), "PLAY",  new Color(1.00f, 0.78f, 0.36f, 0.90f));
+            var bathBtn   = MakePhotorealButton("BathBtn",   btnPanel.transform, new Vector2(   0f, 26f), "BATH",  new Color(0.50f, 0.88f, 0.94f, 0.90f));
+            var danceBtn  = MakePhotorealButton("DanceBtn",  btnPanel.transform, new Vector2( 224f, 26f), "DANCE", new Color(0.78f, 0.56f, 1.00f, 0.90f));
+
+            AttachBurst(feedBtn,   new Color(1.0f, 0.72f, 0.40f), 18);
+            AttachBurst(cuddleBtn, new Color(1.0f, 0.42f, 0.66f), 24);
+            AttachBurst(sleepBtn,  new Color(0.54f, 0.72f, 1.0f), 14);
+            AttachBurst(playBtn,   new Color(1.0f, 0.84f, 0.35f), 22);
+            AttachBurst(bathBtn,   new Color(0.58f, 0.92f, 1.0f), 18);
+            AttachBurst(danceBtn,  new Color(0.86f, 0.56f, 1.0f), 28);
+
+            var moonCookie = ScriptableObject.CreateInstance<FoodItem>();
+            moonCookie.itemName = "Moon Cookie";
+            moonCookie.cost = 1;
+            moonCookie.hungerBoost = 72f;
+            moonCookie.warmthBoost = 10f;
+            moonCookie.wonderBoost = 6f;
+            moonCookie.magicBoost = 6f;
+            moonCookie.xpReward = 8;
+            moonCookie.hideFlags = HideFlags.HideAndDontSave;
+
+            feedBtn.onClick.AddListener(() =>
+            {
+                TriggerKidAction("Snack");
+                MoonlightGameManager.Instance?.moonlight?.Feed(moonCookie);
+                var ui = Object.FindAnyObjectByType<MoonlightUI>();
+                if (ui != null && MoonlightGameManager.Instance?.moonlight != null) ui.Refresh(MoonlightGameManager.Instance.moonlight);
+            });
+            cuddleBtn.onClick.AddListener(() => TriggerKidAction("Hug"));
+            sleepBtn.onClick.AddListener(() => TriggerKidAction("Nap"));
+            playBtn.onClick.AddListener(() =>
+            {
+                TriggerKidAction("Play");
+                MoonlightGameManager.Instance?.moonlight?.Play();
+                var ui = Object.FindAnyObjectByType<MoonlightUI>();
+                if (ui != null && MoonlightGameManager.Instance?.moonlight != null) ui.Refresh(MoonlightGameManager.Instance.moonlight);
+            });
+            bathBtn.onClick.AddListener(() =>
+            {
+                TriggerKidAction("Bath");
+                MoonlightGameManager.Instance?.moonlight?.Bathe();
+                var ui = Object.FindAnyObjectByType<MoonlightUI>();
+                if (ui != null && MoonlightGameManager.Instance?.moonlight != null) ui.Refresh(MoonlightGameManager.Instance.moonlight);
+            });
+            danceBtn.onClick.AddListener(() =>
+            {
+                TriggerKidAction("Dance");
+                MoonlightGameManager.Instance?.moonlight?.Dance();
+                var ui = Object.FindAnyObjectByType<MoonlightUI>();
+                if (ui != null && MoonlightGameManager.Instance?.moonlight != null) ui.Refresh(MoonlightGameManager.Instance.moonlight);
+            });
+
+            var feedMenu = Panel("FeedMenu", canvasGO.transform,
+                new Vector2(0.18f, 0.18f), new Vector2(0.82f, 0.82f),
+                Vector2.zero, Vector2.zero,
+                new Color(1f, 0.90f, 0.84f, 0.94f));
+            feedMenu.SetActive(false);
+            var closeBtn = MakePhotorealButton("CloseBtn", feedMenu.transform, new Vector2(0f, -210f), "Close", new Color(0.70f, 0.36f, 0.38f, 0.94f));
+            closeBtn.onClick.AddListener(() => feedMenu.SetActive(false));
+
+            var contentGO = new GameObject("FeedContent");
+            contentGO.transform.SetParent(feedMenu.transform, false);
+            contentGO.AddComponent<RectTransform>().anchoredPosition = Vector2.zero;
+
+            var stgPanel = Panel("StagePanel", canvasGO.transform,
+                new Vector2(0.22f, 0.34f), new Vector2(0.78f, 0.66f),
+                Vector2.zero, Vector2.zero,
+                new Color(1f, 0.78f, 0.90f, 0.92f));
+            stgPanel.SetActive(false);
+            var stgLabel = MakeLegacyLabel("StgLabel", stgPanel.transform, new Vector2(0f, -76f), new Vector2(760f, 90f), "Moonlight shines brighter!", 34, new Color(0.38f, 0.18f, 0.34f), FontStyle.Bold);
+
+            var roomPanel = Panel("RoomPanel", canvasGO.transform,
+                new Vector2(0.24f, 0.36f), new Vector2(0.76f, 0.64f),
+                Vector2.zero, Vector2.zero,
+                new Color(0.86f, 0.96f, 1f, 0.92f));
+            roomPanel.SetActive(false);
+            var roomLabel = MakeLegacyLabel("RoomLabel", roomPanel.transform, new Vector2(0f, -70f), new Vector2(760f, 80f), "A new room is glowing!", 30, new Color(0.18f, 0.30f, 0.42f), FontStyle.Bold);
+
+            var offlinePanel = Panel("OfflinePanel", canvasGO.transform,
+                new Vector2(0.26f, 0.42f), new Vector2(0.74f, 0.58f),
+                Vector2.zero, Vector2.zero,
+                new Color(1f, 0.88f, 0.72f, 0.92f));
+            offlinePanel.SetActive(false);
+            MakeLegacyLabel("OfflineLbl", offlinePanel.transform, new Vector2(0f, -58f), new Vector2(720f, 60f), "Moonlight missed you!", 28, new Color(0.42f, 0.22f, 0.14f), FontStyle.Bold);
+
+            var sleepOvr = Panel("SleepOverlay", canvasGO.transform,
+                Vector2.zero, Vector2.one,
+                Vector2.zero, Vector2.zero,
+                new Color(0.04f, 0.03f, 0.08f, 0.50f));
+            sleepOvr.SetActive(false);
+            MakeLegacyLabel("SleepLbl", sleepOvr.transform, new Vector2(0f, -140f), new Vector2(460f, 80f), "Sweet dreams", 42, new Color(1f, 0.90f, 0.70f), FontStyle.Bold);
+
+            var quitBtn = MakePhotorealButton("QuitBtn", canvasGO.transform, Vector2.zero, "X", new Color(0.54f, 0.20f, 0.24f, 0.82f));
+            var quitRt = quitBtn.GetComponent<RectTransform>();
+            quitRt.anchorMin = new Vector2(1f, 1f);
+            quitRt.anchorMax = new Vector2(1f, 1f);
+            quitRt.pivot = new Vector2(1f, 1f);
+            quitRt.anchoredPosition = new Vector2(-20f, -20f);
+            quitRt.sizeDelta = new Vector2(54f, 54f);
+            quitBtn.onClick.AddListener(() =>
+            {
+#if UNITY_EDITOR
+                UnityEditor.EditorApplication.isPlaying = false;
+#else
+                Application.Quit();
+#endif
+            });
+
+            if (!FindAnyObjectByType<UnityEngine.EventSystems.EventSystem>())
+            {
+                var esGO = new GameObject("EventSystem");
+                esGO.AddComponent<UnityEngine.EventSystems.EventSystem>();
+                esGO.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
+            }
+
+            var ui = canvasGO.AddComponent<MoonlightUI>();
+            ui.feedOpensMenu = false;
+            ui.WireLegacy(
+                sliders[0], sliders[1], sliders[2], sliders[3], sliders[4],
+                stageLabel, coinsLabel, xpLabel, moodLabel, daysLabel,
+                feedBtn, cuddleBtn, sleepBtn,
+                stgPanel, stgLabel,
+                roomPanel, roomLabel,
+                offlinePanel, sleepOvr,
+                feedMenu, contentGO.transform);
+
+            return (canvasGO, ui);
+        }
+
         // ── UI Helpers ───────────────────────────────────────────────────────
+        static Slider MakeHiddenSlider(Transform parent, int index)
+        {
+            var res = new DefaultControls.Resources();
+            var go = DefaultControls.CreateSlider(res);
+            go.name = $"HiddenStat{index}";
+            go.transform.SetParent(parent, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 0f);
+            rt.anchorMax = new Vector2(0f, 0f);
+            rt.anchoredPosition = new Vector2(-9999f, -9999f);
+            rt.sizeDelta = new Vector2(1f, 1f);
+            var slider = go.GetComponent<Slider>();
+            slider.value = 0.8f;
+            slider.interactable = false;
+            return slider;
+        }
+
         static GameObject Panel(string name, Transform parent,
             Vector2 anchorMin, Vector2 anchorMax,
             Vector2 offsetMin, Vector2 offsetMax,
@@ -1918,6 +2566,16 @@ namespace MoonlightMagicHouse
             if (initial != null) burst.Configure(initial.transform, color, count);
         }
 
+        static void TriggerKidAction(string action)
+        {
+            var director = MoonlightSceneDirector.Instance ?? Object.FindAnyObjectByType<MoonlightSceneDirector>();
+            if (director != null && director.PlayAction(action)) return;
+
+            var target = GameObject.Find("Moonlight");
+            var kid = target != null ? target.GetComponentInChildren<MoonlightKidAnimator>() : null;
+            if (kid != null) kid.Play(action);
+        }
+
         static Button MakeButton(string name, Transform parent, Vector2 pos, string label, Color tint)
         {
             var res   = new DefaultControls.Resources();
@@ -1937,6 +2595,33 @@ namespace MoonlightMagicHouse
                 lbl.fontStyle = FontStyle.Bold;
                 lbl.color     = Color.white;
             }
+            return btnGO.GetComponent<Button>();
+        }
+
+        static Button MakePhotorealButton(string name, Transform parent, Vector2 pos, string label, Color tint)
+        {
+            var res = new DefaultControls.Resources();
+            var btnGO = DefaultControls.CreateButton(res);
+            btnGO.name = name;
+            btnGO.transform.SetParent(parent, false);
+            var rt = btnGO.GetComponent<RectTransform>();
+            rt.anchoredPosition = pos;
+            rt.sizeDelta = new Vector2(156f, 44f);
+            var img = btnGO.GetComponent<Image>();
+            if (img) img.color = tint;
+            var lbl = btnGO.GetComponentInChildren<Text>();
+            if (lbl)
+            {
+                lbl.text = label;
+                lbl.fontSize = label.Length <= 3 ? 24 : 21;
+                lbl.fontStyle = FontStyle.Bold;
+                lbl.color = new Color(0.26f, 0.12f, 0.10f);
+                lbl.alignment = TextAnchor.MiddleCenter;
+            }
+            var colors = btnGO.GetComponent<Button>().colors;
+            colors.highlightedColor = Color.Lerp(tint, Color.white, 0.35f);
+            colors.pressedColor = Color.Lerp(tint, new Color(0.75f, 0.45f, 0.40f), 0.30f);
+            btnGO.GetComponent<Button>().colors = colors;
             return btnGO.GetComponent<Button>();
         }
 
@@ -1970,6 +2655,10 @@ namespace MoonlightMagicHouse
         static Shader _toonShader;
         static Shader ToonShader =>
             _toonShader ??= Shader.Find("MoonlightHouse/Toon") ?? Shader.Find("Standard");
+
+        static Shader _transparentSpriteShader;
+        static Shader TransparentSpriteShader =>
+            _transparentSpriteShader ??= Shader.Find("Sprites/Default") ?? Shader.Find("Unlit/Texture") ?? Shader.Find("Standard");
 
         static void SetMat(GameObject go, Color color, Color emissive = default)
         {

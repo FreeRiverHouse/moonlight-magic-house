@@ -13,6 +13,12 @@ namespace MoonlightMagicHouse
 
         void Start()
         {
+            if (root == null)
+            {
+                enabled = false;
+                return;
+            }
+
             root.SetActive(false);
             StreakTracker.Instance?.onDailyLogin.AddListener(Show);
         }

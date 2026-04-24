@@ -78,6 +78,15 @@ namespace MoonlightMagicHouse
         MoonlightMood _lastMood;
 
         // ── Lifecycle ──────────────────────────────────────────────────────
+        void Awake()
+        {
+            if (onStageUp == null)      onStageUp      = new UnityEvent<MoonlightStage>();
+            if (onMoodChange == null)   onMoodChange   = new UnityEvent<MoonlightMood>();
+            if (onXPGained == null)     onXPGained     = new UnityEvent<int>();
+            if (onCoinsChanged == null) onCoinsChanged = new UnityEvent<int>();
+            if (onRoomUnlocked == null) onRoomUnlocked = new UnityEvent<int>();
+        }
+
         void Start()
         {
             _lastMood = stats.GetMood();

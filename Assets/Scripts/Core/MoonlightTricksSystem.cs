@@ -29,6 +29,9 @@ namespace MoonlightMagicHouse
         {
             if (Instance != null) { Destroy(gameObject); return; }
             Instance = this;
+            if (tricks == null) tricks = new List<MoonlightTrick>();
+            if (onTrickLearned == null) onTrickLearned = new UnityEvent<MoonlightTrick>();
+            if (onTrickPerformed == null) onTrickPerformed = new UnityEvent<MoonlightTrick>();
         }
 
         void Start()
@@ -39,6 +42,7 @@ namespace MoonlightMagicHouse
 
         void CheckNewTricks(int xp)
         {
+            if (tricks == null) return;
             foreach (var trick in tricks)
             {
                 string pref = $"trick_learned_{trick.id}";
@@ -54,6 +58,7 @@ namespace MoonlightMagicHouse
 
         public void Perform(string id)
         {
+            if (tricks == null) return;
             if (!IsLearned(id)) return;
             var trick = tricks.Find(t => t.id == id);
             if (trick == null) return;
@@ -70,6 +75,6 @@ namespace MoonlightMagicHouse
             PlayerPrefs.GetInt($"trick_learned_{id}", 0) == 1;
 
         public List<MoonlightTrick> LearnedTricks() =>
-            tricks.FindAll(t => IsLearned(t.id));
+            tricks != null ? tricks.FindAll(t => IsLearned(t.id)) : new List<MoonlightTrick>();
     }
 }

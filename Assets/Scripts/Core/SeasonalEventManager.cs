@@ -36,6 +36,7 @@ namespace MoonlightMagicHouse
 
         SeasonalEvent FindActive()
         {
+            if (events == null) return null;
             var now = DateTime.Now;
             foreach (var ev in events)
             {

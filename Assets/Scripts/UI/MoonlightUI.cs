@@ -21,6 +21,11 @@ namespace MoonlightMagicHouse
         public TMP_Text xpLabel;
         public TMP_Text moodEmoji;
         public TMP_Text daysLabel;
+        public Text legacyStageLabel;
+        public Text legacyCoinsLabel;
+        public Text legacyXPLabel;
+        public Text legacyMoodLabel;
+        public Text legacyDaysLabel;
 
         // Action buttons
         public Button feedBtn;
@@ -30,19 +35,23 @@ namespace MoonlightMagicHouse
         // Overlays
         public GameObject stagePanel;
         public TMP_Text   stagePanelLabel;
+        public Text       legacyStagePanelLabel;
         public GameObject roomUnlockPanel;
         public TMP_Text   roomUnlockLabel;
+        public Text       legacyRoomUnlockLabel;
         public GameObject offlinePanel;
         public GameObject sleepOverlay;
 
         // Prompt
         public GameObject promptRoot;
         public TMP_Text   promptLabel;
+        public Text       legacyPromptLabel;
 
         // Feed menu
         public GameObject  feedMenuRoot;
         public Transform   feedMenuContent;
         public FoodItem[]  foodCatalogue;
+        public bool        feedOpensMenu = true;
 
         static readonly string[] MoodEmojis = { "😴", "😠", "😑", "🌸", "✨", "🌟" };
         // The character's name is Moonlight. "Stage" is still tracked internally for evolution/achievements,
@@ -66,7 +75,7 @@ namespace MoonlightMagicHouse
                 if (MoonlightGameManager.Instance?.moonlight != null)
                     Refresh(MoonlightGameManager.Instance.moonlight);
             });
-            if (feedBtn) feedBtn.onClick.AddListener(OpenFeedMenu);
+            if (feedBtn && feedOpensMenu) feedBtn.onClick.AddListener(OpenFeedMenu);
         }
 
         // Called by MoonlightHouseSetup to inject all UI refs programmatically
@@ -90,10 +99,30 @@ namespace MoonlightMagicHouse
             feedMenuRoot = feedRoot; feedMenuContent = feedContent;
         }
 
+        public void WireLegacy(
+            Slider wonder, Slider warmth, Slider rest, Slider magic, Slider hunger,
+            Text stage, Text coins, Text xp, Text mood, Text days,
+            Button feed, Button cuddle, Button sleep,
+            GameObject stgPanel, Text stgLabel,
+            GameObject roomPanel, Text roomLabel,
+            GameObject offline, GameObject sleepOvr,
+            GameObject feedRoot, Transform feedContent)
+        {
+            wonderBar = wonder; warmthBar = warmth; restBar = rest;
+            magicBar  = magic;  hungerBar = hunger;
+            legacyStageLabel = stage; legacyCoinsLabel = coins; legacyXPLabel = xp;
+            legacyMoodLabel  = mood;  legacyDaysLabel  = days;
+            feedBtn = feed; cuddleBtn = cuddle; sleepBtn = sleep;
+            stagePanel = stgPanel; legacyStagePanelLabel = stgLabel;
+            roomUnlockPanel = roomPanel; legacyRoomUnlockLabel = roomLabel;
+            offlinePanel = offline; sleepOverlay = sleepOvr;
+            feedMenuRoot = feedRoot; feedMenuContent = feedContent;
+        }
+
         public void ShowPrompt(string text)
         {
             if (promptRoot == null) return;
-            if (promptLabel) promptLabel.text = text;
+            SetText(promptLabel, legacyPromptLabel, text);
             promptRoot.SetActive(true);
         }
 
@@ -107,35 +136,35 @@ namespace MoonlightMagicHouse
             if (magicBar)  magicBar.value  = m.stats.magic  / 100f;
             if (hungerBar) hungerBar.value = m.stats.hunger / 100f;
 
-            if (stageLabel) stageLabel.text = StageNames[(int)m.stage];
-            if (coinsLabel) coinsLabel.text = $"⭐ {m.coins}";
-            if (xpLabel)    xpLabel.text    = $"XP {m.xp}";
-            if (daysLabel)  daysLabel.text  = $"Day {Mathf.FloorToInt(m.daysInHouse) + 1}";
-            if (moodEmoji)  moodEmoji.text  = MoodEmojis[(int)m.stats.GetMood()];
+            SetText(stageLabel, legacyStageLabel, StageNames[(int)m.stage]);
+            SetText(coinsLabel, legacyCoinsLabel, $"COINS {m.coins}");
+            SetText(xpLabel, legacyXPLabel, $"XP {m.xp}");
+            SetText(daysLabel, legacyDaysLabel, $"Day {Mathf.FloorToInt(m.daysInHouse) + 1}");
+            SetText(moodEmoji, legacyMoodLabel, MoodEmojis[(int)m.stats.GetMood()]);
         }
 
         public void OnMoodChange(MoonlightMood mood)
         {
-            if (moodEmoji) moodEmoji.text = MoodEmojis[(int)mood];
+            SetText(moodEmoji, legacyMoodLabel, MoodEmojis[(int)mood]);
         }
-        public void UpdateCoins(int coins) { if (coinsLabel) coinsLabel.text = $"⭐ {coins}"; }
-        public void UpdateXP(int xp)       { if (xpLabel) xpLabel.text = $"XP {xp}"; }
+        public void UpdateCoins(int coins) => SetText(coinsLabel, legacyCoinsLabel, $"COINS {coins}");
+        public void UpdateXP(int xp)       => SetText(xpLabel, legacyXPLabel, $"XP {xp}");
 
         public void ShowStageCelebration(MoonlightStage stage)
         {
-            if (stagePanelLabel) stagePanelLabel.text = $"Moonlight became a {StageNames[(int)stage]}! ✨";
+            SetText(stagePanelLabel, legacyStagePanelLabel, $"Moonlight shines brighter!");
             if (stagePanel) StartCoroutine(ShowThenHide(stagePanel, 4f));
         }
 
         public void ShowRoomUnlocked(int count)
         {
-            if (roomUnlockLabel) roomUnlockLabel.text = $"New room unlocked: {RoomNames[Mathf.Min(count, RoomNames.Length-1)]}! 🌙";
+            SetText(roomUnlockLabel, legacyRoomUnlockLabel, $"New room unlocked: {RoomNames[Mathf.Min(count, RoomNames.Length-1)]}!");
             if (roomUnlockPanel) StartCoroutine(ShowThenHide(roomUnlockPanel, 3f));
         }
 
         public void ShowOfflineNotice()
         {
-            if (offlinePanel) StartCoroutine(ShowThenHide(offlinePanel, 3f));
+            if (offlinePanel) StartCoroutine(ShowThenHide(offlinePanel, 1.1f));
         }
 
         public void OpenFeedMenuWith(List<FoodItem> overrideCatalogue)
@@ -194,6 +223,12 @@ namespace MoonlightMagicHouse
             panel.SetActive(true);
             yield return new WaitForSeconds(dur);
             panel.SetActive(false);
+        }
+
+        static void SetText(TMP_Text tmp, Text legacy, string value)
+        {
+            if (tmp) tmp.text = value;
+            if (legacy) legacy.text = value;
         }
     }
 }
