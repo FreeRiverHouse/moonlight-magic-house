@@ -86,7 +86,7 @@ namespace MoonlightMagicHouse
             var bloom = cam.GetComponent<BloomPostFx>();
             if (!bloom) bloom = cam.gameObject.AddComponent<BloomPostFx>();
             if (PhotorealMode)
-                bloom.Configure(0.66f, 0.70f, 0.20f, new Color(1.05f, 0.98f, 0.90f), 5);
+                bloom.Configure(0.58f, 0.78f, 0.24f, new Color(1.08f, 1.00f, 0.94f), 6);
             if (!PhotorealMode && !cam.GetComponent<CelOutlinePostFx>())
                 cam.gameObject.AddComponent<CelOutlinePostFx>();
         }
@@ -1516,6 +1516,7 @@ namespace MoonlightMagicHouse
             BuildBedroomBathAndSnack(parent);
             BuildBedroomFairyLights(parent);
             BuildBedroomMagicDetails(parent);
+            BuildBedroomProductionDetails(parent);
         }
 
         static void BuildBedroomWindow(Transform parent)
@@ -1719,6 +1720,100 @@ namespace MoonlightMagicHouse
                     new Color(1.0f, 0.82f, 0.42f), 0.48f, true, 0.55f);
                 star.AddComponent<StarTwinkle>();
             }
+        }
+
+        static void BuildBedroomProductionDetails(Transform parent)
+        {
+            // Production-read details: scale cues, contact depth, and warm fairytale light.
+            Color seam = new Color(0.42f, 0.24f, 0.16f);
+            for (int i = 0; i < 9; i++)
+            {
+                float z = -3.02f + i * 0.52f;
+                var floorLine = PhotoPrim(PrimitiveType.Cube, $"FloorboardSeam{i}", parent,
+                    new Vector3(0.25f, 0.010f, z), new Vector3(5.10f, 0.010f, 0.010f),
+                    seam, 0.16f);
+                floorLine.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            }
+
+            for (int i = 0; i < 5; i++)
+            {
+                float x = -2.05f + i * 1.12f;
+                var plankTint = i % 2 == 0 ? new Color(0.78f, 0.52f, 0.34f, 1f) : new Color(0.66f, 0.43f, 0.28f, 1f);
+                var plank = PhotoPrim(PrimitiveType.Cube, $"FloorboardWarmVariation{i}", parent,
+                    new Vector3(x, 0.003f, -0.72f), new Vector3(0.025f, 0.008f, 5.00f),
+                    plankTint, 0.20f);
+                plank.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            }
+
+            PhotoGlowQuad("WindowSunbeamLongFloor", parent, new Vector3(-0.04f, 0.050f, -1.08f),
+                Quaternion.Euler(90f, 0f, -17f), new Vector3(2.90f, 0.48f, 1f),
+                new Color(1.00f, 0.70f, 0.34f, 0.105f));
+            PhotoGlowQuad("WindowSunbeamShortFloor", parent, new Vector3(-0.86f, 0.055f, -0.18f),
+                Quaternion.Euler(90f, 0f, -18f), new Vector3(1.65f, 0.28f, 1f),
+                new Color(1.00f, 0.82f, 0.46f, 0.080f));
+            PhotoGlowQuad("WindowAirGlowColumn", parent, new Vector3(-0.56f, 1.33f, 0.66f),
+                Quaternion.Euler(13f, 0f, -10f), new Vector3(0.56f, 1.86f, 1f),
+                new Color(1.00f, 0.76f, 0.46f, 0.085f));
+
+            for (int i = 0; i < 6; i++)
+            {
+                float y = 1.10f + i * 0.19f;
+                PhotoPrim(PrimitiveType.Cube, $"CurtainLeftFold{i}", parent,
+                    new Vector3(-1.66f + Mathf.Sin(i * 1.7f) * 0.018f, y, 1.355f),
+                    new Vector3(0.030f, 0.125f, 0.030f),
+                    new Color(0.86f, 0.32f, 0.52f), 0.48f, true, 0.08f);
+                PhotoPrim(PrimitiveType.Cube, $"CurtainRightFold{i}", parent,
+                    new Vector3(0.36f + Mathf.Sin(i * 1.3f) * 0.018f, y, 1.355f),
+                    new Vector3(0.030f, 0.125f, 0.030f),
+                    new Color(0.86f, 0.32f, 0.52f), 0.48f, true, 0.08f);
+            }
+
+            Color shelfWood = new Color(0.62f, 0.38f, 0.24f);
+            PhotoPrim(PrimitiveType.Cube, "MiniWallShelf", parent,
+                new Vector3(-1.72f, 1.18f, 1.42f), new Vector3(0.82f, 0.045f, 0.12f),
+                shelfWood, 0.34f);
+            for (int i = 0; i < 5; i++)
+            {
+                Color c = i % 3 == 0 ? new Color(0.44f, 0.76f, 1.00f) :
+                    i % 3 == 1 ? new Color(1.00f, 0.62f, 0.42f) : new Color(0.82f, 0.58f, 0.96f);
+                PhotoPrim(PrimitiveType.Cube, $"MiniShelfBook{i}", parent,
+                    new Vector3(-2.04f + i * 0.14f, 1.27f, 1.36f),
+                    new Vector3(0.07f, 0.17f + (i % 2) * 0.035f, 0.065f),
+                    c, 0.30f, true, 0.06f);
+            }
+
+            Color decal = new Color(1f, 0.82f, 0.42f);
+            for (int i = 0; i < 9; i++)
+            {
+                float x = -0.15f + Mathf.Sin(i * 2.31f) * 1.70f;
+                float y = 1.50f + Mathf.Abs(Mathf.Cos(i * 1.73f)) * 0.76f;
+                var star = MakePhotoRotated(PrimitiveType.Cube, $"WallpaperTinyStar{i}", parent,
+                    new Vector3(x, y, 1.415f), Quaternion.Euler(0f, 0f, 45f),
+                    Vector3.one * (0.034f + (i % 3) * 0.006f), decal, 0.44f, true, 0.32f);
+                star.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+                star.AddComponent<StarTwinkle>();
+            }
+
+            var lampShade = PhotoPrim(PrimitiveType.Cylinder, "BedsideWarmLampShade", parent,
+                new Vector3(1.42f, 0.78f, 0.24f), new Vector3(0.16f, 0.10f, 0.16f),
+                new Color(1.00f, 0.74f, 0.42f), 0.62f, true, 0.55f);
+            lampShade.transform.localRotation = Quaternion.Euler(0f, 0f, 0f);
+            PhotoPrim(PrimitiveType.Cylinder, "BedsideWarmLampStem", parent,
+                new Vector3(1.42f, 0.54f, 0.24f), new Vector3(0.025f, 0.18f, 0.025f),
+                new Color(0.64f, 0.42f, 0.28f), 0.36f);
+            PhotoGlowQuad("BedsideLampBloom", parent, new Vector3(1.42f, 0.80f, 0.19f),
+                Quaternion.identity, new Vector3(0.56f, 0.56f, 1f),
+                new Color(1.00f, 0.66f, 0.34f, 0.13f));
+
+            var warm = new GameObject("BedsidePracticalWarmLight");
+            warm.transform.SetParent(parent, false);
+            warm.transform.localPosition = new Vector3(1.40f, 0.84f, 0.05f);
+            var l = warm.AddComponent<Light>();
+            l.type = LightType.Point;
+            l.color = new Color(1.00f, 0.64f, 0.38f);
+            l.intensity = 0.76f;
+            l.range = 2.05f;
+            l.shadows = LightShadows.None;
         }
 
         static void BuildTinyWallFrame(Transform parent, Vector3 center, Color frame, Color fill, string prefix)

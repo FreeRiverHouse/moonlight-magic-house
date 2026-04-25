@@ -1,5 +1,34 @@
 # Moonlight Magic House Devlog
 
+## 2026-04-25 - SOTA Graphics Study + Bedroom Production Detail Pass
+
+Reason for this pass:
+- The user compared the current prototype against what people are shipping with Claude/AI workflows and against Pizza Gelato Rush.
+- The key critique is still valid: the game only becomes premium when visuals, proportions, camera, movement, and scene construction all agree.
+- I reviewed the supplied X references plus current Unity/asset/animation pipeline docs and documented the takeaways in `Docs/GraphicsSOTAStudy-2026-04-25.md`.
+- I added the repeatable iteration loop in `Docs/NextLevelGraphicsLoop-2026-04-25.md` so future passes do not stop at concept work.
+
+Reference takeaways:
+- AI image/video tools are useful for cinematic previs and art direction, especially GPT Image/Seedream-style stills plus Seedance 2 animated previs, but the playable game needs a coherent runtime 3D scene.
+- The strongest demos combine world data or authored scene systems with camera/motion polish.
+- For Moonlight, the right target is fairytale photoreal toy room for children: warm, readable, charming, spatially coherent, and action-based.
+
+Implementation in this pass:
+- Tuned photoreal bloom for a richer but less blown-out filmic response.
+- Added floorboard seams and plank color variation so the room has scale.
+- Added warm window sunbeams, atmospheric glow, curtain folds, a mini shelf/books cluster, star decals, and a bedside practical lamp.
+- Added a small local lamp light to improve contact warmth around the bed/action area.
+
+Latest verification:
+- Built successfully with Unity 6000.3.2f1 in headless batchmode.
+- Ran `Moonlight Magic House.app -mmhPlaytest`.
+- Player log reached `[Playtest][PASS] xp=2520 coins=25 mood=Happy wonder=100 warmth=58 rest=37 magic=64 hunger=72`.
+- Visually inspected `00_initial`, `03_SleepBtn`, and `04_PlayBtn` after the loop documentation pass.
+
+Current honesty:
+- This is an incremental runtime-quality pass, not the final premium leap.
+- The real next jump is still: URP migration, better authored room assets, a better child avatar/rig, and real action animation clips.
+
 ## 2026-04-24 - Fairytale Photoreal Direction
 
 Reference note from playtest: the generated meadow backdrop has the right emotional target for Moonlight. It feels photoreal, warm, safe, and fairytale-like without becoming noisy or dark.
