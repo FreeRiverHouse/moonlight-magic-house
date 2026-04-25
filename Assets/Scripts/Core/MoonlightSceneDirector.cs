@@ -13,6 +13,8 @@ namespace MoonlightMagicHouse
         Texture _roomTexture;
         Texture _meadowTexture;
         Color _roomBackdropColor = Color.white;
+        GameObject _bedroomRoot;
+        GameObject _meadowRoot;
 
         Camera _camera;
         Vector3 _cameraPos;
@@ -90,6 +92,11 @@ namespace MoonlightMagicHouse
             if (_meadowTexture == null)
                 _meadowTexture = Resources.Load<Texture2D>("Photoreal/meadow-generated");
 
+            if (_bedroomRoot == null)
+                _bedroomRoot = GameObject.Find("Moonlight3DBedroomVisuals");
+            if (_meadowRoot == null)
+                _meadowRoot = FindSceneObject("Moonlight3DMeadow");
+
             if (_camera == null)
             {
                 _camera = Camera.main;
@@ -116,13 +123,13 @@ namespace MoonlightMagicHouse
                     yield return OutdoorRunRoutine();
                     break;
                 case "Snack":
-                    yield return MoveAndGesture(_home + new Vector3(-0.18f, 0f, 0.02f), "Snack", 0.42f, 0f, false);
+                    yield return MoveAndGesture(_home + new Vector3(-0.58f, 0f, -0.38f), "Snack", 0.46f, 6f, false);
                     break;
                 case "Hug":
                     yield return MoveAndGesture(_home + new Vector3(0.02f, 0f, 0.04f), "Hug", 0.36f, 0f, false);
                     break;
                 case "Bath":
-                    yield return MoveAndGesture(_home + new Vector3(0.44f, 0f, 0.12f), "Bath", 0.46f, -8f, false);
+                    yield return MoveAndGesture(_home + new Vector3(0.70f, 0f, 0.92f), "Bath", 0.56f, -10f, false);
                     break;
                 case "Dance":
                     yield return MoveAndGesture(_home + new Vector3(0.18f, 0f, -0.08f), "Dance", 0.42f, 0f, false);
@@ -144,9 +151,9 @@ namespace MoonlightMagicHouse
 
         IEnumerator NapRoutine()
         {
-            Vector3 bedApproach = _home + new Vector3(0.82f, 0f, 0.08f);
-            Vector3 bedRestSpot = _home + new Vector3(1.58f, 0.99f, 0.08f);
-            StartCameraMove(new Vector3(0.10f, 1.27f, -4.60f), _home + new Vector3(1.22f, 1.10f, 0.08f), 35f, 0.65f);
+            Vector3 bedApproach = _home + new Vector3(0.86f, 0f, 0.38f);
+            Vector3 bedRestSpot = _home + new Vector3(1.42f, 0.47f, 0.38f);
+            StartCameraMove(new Vector3(0.02f, 1.22f, -4.55f), _home + new Vector3(1.44f, 0.72f, 0.34f), 34f, 0.65f);
             yield return MoveMoonlight(bedApproach, 0.52f, -12f, false);
             _kid.SetWalking(false);
             _kid.SetFacingYaw(0f);
@@ -262,7 +269,9 @@ namespace MoonlightMagicHouse
                 _backdrop.material.mainTexture = _meadowTexture;
                 _backdrop.material.color = Color.white;
             }
-            RenderSettings.ambientLight = new Color(0.72f, 0.66f, 0.48f);
+            if (_bedroomRoot != null) _bedroomRoot.SetActive(false);
+            if (_meadowRoot != null) _meadowRoot.SetActive(true);
+            RenderSettings.ambientLight = new Color(0.76f, 0.70f, 0.52f);
             SetRoomOnlyProps(false);
             _outside = true;
         }
@@ -274,7 +283,9 @@ namespace MoonlightMagicHouse
                 _backdrop.material.mainTexture = _roomTexture;
                 _backdrop.material.color = _roomBackdropColor;
             }
-            RenderSettings.ambientLight = new Color(0.56f, 0.43f, 0.36f);
+            if (_bedroomRoot != null) _bedroomRoot.SetActive(true);
+            if (_meadowRoot != null) _meadowRoot.SetActive(false);
+            RenderSettings.ambientLight = new Color(0.68f, 0.56f, 0.47f);
             SetRoomOnlyProps(true);
             if (_doorRoot != null) _doorRoot.SetActive(false);
             if (_doorPivot != null) _doorPivot.localRotation = Quaternion.identity;
@@ -346,7 +357,7 @@ namespace MoonlightMagicHouse
             if (_bedRestRoot != null || _moonlight == null) return;
 
             _bedRestRoot = new GameObject("MoonBedRestOcclusion");
-            _bedRestRoot.transform.position = _home + new Vector3(1.60f, 0.94f, -0.16f);
+            _bedRestRoot.transform.position = _home + new Vector3(1.48f, 0.84f, 0.38f);
             _bedRestRoot.transform.rotation = Quaternion.identity;
 
             var shadowMat = MakeSpriteMat(new Color(0.12f, 0.055f, 0.05f, 0.26f), MoonlightHouseSetup.MakeSoftCircleTex(128));
@@ -398,7 +409,7 @@ namespace MoonlightMagicHouse
             var knobMat = MakeStandard(new Color(1.0f, 0.86f, 0.38f), 0.62f);
 
             _doorRoot = new GameObject("MoonDoorPortal");
-            _doorRoot.transform.position = _home + new Vector3(1.22f, 0.56f, 0.16f);
+            _doorRoot.transform.position = _home + new Vector3(1.36f, 0.56f, 0.24f);
             _doorRoot.transform.rotation = Quaternion.Euler(0f, -2f, 0f);
 
             var auraMat = MakeSpriteMat(new Color(1f, 0.70f, 0.36f, 0.28f), MoonlightHouseSetup.MakeSoftCircleTex(128));
@@ -438,6 +449,22 @@ namespace MoonlightMagicHouse
             MakeQuad("MoonDoorWindow", _doorPivot, new Vector3(0.25f, 0.24f, -0.014f), new Vector3(0.22f, 0.20f, 1f), MakeSpriteMat(new Color(1f, 0.90f, 0.56f, 0.72f), MoonlightHouseSetup.MakeSoftCircleTex(64)));
             MakeCube("MoonDoorKnob", _doorPivot, new Vector3(0.42f, -0.06f, -0.038f), Vector3.one * 0.040f, knobMat);
             _doorRoot.SetActive(false);
+        }
+
+        static GameObject FindSceneObject(string name)
+        {
+            var active = GameObject.Find(name);
+            if (active != null) return active;
+
+            var all = Resources.FindObjectsOfTypeAll<GameObject>();
+            for (int i = 0; i < all.Length; i++)
+            {
+                var go = all[i];
+                if (go == null || go.name != name) continue;
+                if (!go.scene.IsValid()) continue;
+                return go;
+            }
+            return null;
         }
 
         static GameObject MakeQuad(string name, Transform parent, Vector3 localPos, Vector3 scale, Material material)

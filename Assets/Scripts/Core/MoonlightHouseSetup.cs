@@ -67,13 +67,13 @@ namespace MoonlightMagicHouse
                 camGO.AddComponent<AudioListener>();
             }
             cam.clearFlags      = PhotorealMode ? CameraClearFlags.SolidColor : CameraClearFlags.Skybox;
-            cam.backgroundColor = PhotorealMode ? new Color(0.86f, 0.72f, 0.62f) : new Color(0.04f, 0.02f, 0.10f);
+            cam.backgroundColor = PhotorealMode ? new Color(0.70f, 0.78f, 0.84f) : new Color(0.04f, 0.02f, 0.10f);
             if (!PhotorealMode && !gameObject.GetComponent<SkyboxSetup>())
                 gameObject.AddComponent<SkyboxSetup>();
             cam.farClipPlane    = PhotorealMode ? 40f : 80f;
             cam.fieldOfView     = PhotorealMode ? 39f : 60f;
-            cam.transform.position = PhotorealMode ? new Vector3(0f, 1.24f, -4.7f) : new Vector3(0f, 2.8f, -6.2f);
-            cam.transform.LookAt(PhotorealMode ? new Vector3(0.03f, 0.98f, 0.06f) : new Vector3(0f, 1.2f, 0.5f));
+            cam.transform.position = PhotorealMode ? new Vector3(-0.05f, 1.26f, -4.85f) : new Vector3(0f, 2.8f, -6.2f);
+            cam.transform.LookAt(PhotorealMode ? new Vector3(0.52f, 0.78f, -0.44f) : new Vector3(0f, 1.2f, 0.5f));
             cam.allowHDR = true;
             cam.depthTextureMode |= DepthTextureMode.DepthNormals;
 
@@ -86,7 +86,7 @@ namespace MoonlightMagicHouse
             var bloom = cam.GetComponent<BloomPostFx>();
             if (!bloom) bloom = cam.gameObject.AddComponent<BloomPostFx>();
             if (PhotorealMode)
-                bloom.Configure(1.18f, 0.34f, 0.20f, new Color(1.03f, 0.95f, 0.86f), 2);
+                bloom.Configure(0.66f, 0.70f, 0.20f, new Color(1.05f, 0.98f, 0.90f), 5);
             if (!PhotorealMode && !cam.GetComponent<CelOutlinePostFx>())
                 cam.gameObject.AddComponent<CelOutlinePostFx>();
         }
@@ -97,21 +97,21 @@ namespace MoonlightMagicHouse
             if (PhotorealMode)
             {
                 RenderSettings.ambientMode  = AmbientMode.Flat;
-                RenderSettings.ambientLight = new Color(0.56f, 0.43f, 0.36f);
+                RenderSettings.ambientLight = new Color(0.68f, 0.56f, 0.47f);
                 RenderSettings.fog          = false;
                 RenderSettings.defaultReflectionMode = DefaultReflectionMode.Custom;
                 RenderSettings.reflectionIntensity   = 0.42f;
 
                 MakeLight("WindowSunWarm", LightType.Directional,
-                    new Color(1.00f, 0.72f, 0.48f), 0.92f,
-                    Quaternion.Euler(36f, -128f, 0f), LightShadows.Soft, 0.32f);
+                    new Color(1.00f, 0.78f, 0.58f), 1.18f,
+                    Quaternion.Euler(34f, -132f, 0f), LightShadows.Soft, 0.40f);
 
                 MakeLight("SoftRoomFill", LightType.Directional,
-                    new Color(1.00f, 0.86f, 0.72f), 0.28f,
+                    new Color(1.00f, 0.90f, 0.78f), 0.44f,
                     Quaternion.Euler(18f, 42f, 0f), LightShadows.None, 0f);
 
                 MakeLight("StorybookRim", LightType.Directional,
-                    new Color(1.00f, 0.58f, 0.80f), 0.12f,
+                    new Color(1.00f, 0.58f, 0.80f), 0.18f,
                     Quaternion.Euler(20f, 168f, 0f), LightShadows.None, 0f);
 
                 CreatePhotorealDustMotes();
@@ -261,7 +261,7 @@ namespace MoonlightMagicHouse
         GameObject CreateMoonlightCharacter()
         {
             var mlGO = new GameObject("Moonlight");
-            mlGO.transform.position = PhotorealMode ? new Vector3(0.78f, 0.02f, -0.92f) : Vector3.zero;
+            mlGO.transform.position = PhotorealMode ? new Vector3(0.52f, 0.02f, -0.92f) : Vector3.zero;
 
             mlGO.AddComponent<MoonlightCharacter>();
             if (!PhotorealMode)
@@ -1314,13 +1314,37 @@ namespace MoonlightMagicHouse
             go.transform.localPosition = pos;
             go.transform.localRotation = Quaternion.Euler(eulerRot);
             go.transform.localScale    = Vector3.one * scale;
-            // Retint using toon shader for stylistic consistency
+            // Runtime Resources props: use the active visual language so existing
+            // Kenney CC0 furniture reads like part of the same room.
             foreach (var r in go.GetComponentsInChildren<Renderer>())
             {
-                var m = new Material(ToonShader);
-                m.SetColor("_Color", tint);
-                m.SetFloat("_OutlineWidth", 0.003f);
-                r.sharedMaterial = m;
+                Texture tex = null;
+                var src = r.sharedMaterial;
+                if (src != null)
+                {
+                    if (src.HasProperty("_MainTex")) tex = src.GetTexture("_MainTex");
+                    if (tex == null && src.mainTexture != null) tex = src.mainTexture;
+                }
+
+                if (PhotorealMode)
+                {
+                    var m = MakePhotoMaterial(tint, 0.38f, false, 0f);
+                    if (tex != null)
+                    {
+                        m.mainTexture = tex;
+                        if (m.HasProperty("_MainTex")) m.SetTexture("_MainTex", tex);
+                    }
+                    r.sharedMaterial = m;
+                    r.shadowCastingMode = ShadowCastingMode.On;
+                    r.receiveShadows = true;
+                }
+                else
+                {
+                    var m = new Material(ToonShader);
+                    m.SetColor("_Color", tint);
+                    m.SetFloat("_OutlineWidth", 0.003f);
+                    r.sharedMaterial = m;
+                }
             }
             return go;
         }
@@ -1421,26 +1445,431 @@ namespace MoonlightMagicHouse
             root.transform.position = Vector3.zero;
 
             var amb = root.AddComponent<RoomAmbience>();
-            amb.ambientColor = new Color(0.92f, 0.64f, 0.52f);
+            amb.ambientColor = new Color(0.98f, 0.70f, 0.58f);
 
-            CreateRoomPhotoBackdrop(root.transform);
-            CreatePhotorealFloorBlend(root.transform);
-            CreatePhotoMatchedFairyLights(root.transform);
-            CreateDollhouseMagicGlow(root.transform);
-            CreateDreamyRoomVignette(root.transform);
-            CreateGlossyKidTreats(root.transform);
+            var bedroom = new GameObject("Moonlight3DBedroomVisuals");
+            bedroom.transform.SetParent(root.transform, false);
+            BuildFairytaleBedroom3D(bedroom.transform);
+            CreateGlossyKidTreats(bedroom.transform);
+            BuildFairytaleMeadow3D(root.transform);
 
-            var lamp = new GameObject("ReferenceBunnyLampGlow");
+            var lamp = new GameObject("StorybookRoomGlow");
             lamp.transform.SetParent(root.transform, false);
-            lamp.transform.localPosition = new Vector3(2.15f, 0.88f, 0.00f);
+            lamp.transform.localPosition = new Vector3(-1.92f, 1.42f, -0.40f);
             var lampLight = lamp.AddComponent<Light>();
             lampLight.type = LightType.Point;
-            lampLight.color = new Color(1.0f, 0.78f, 0.48f);
-            lampLight.intensity = 1.7f;
-            lampLight.range = 3.8f;
+            lampLight.color = new Color(1.0f, 0.76f, 0.46f);
+            lampLight.intensity = 1.45f;
+            lampLight.range = 3.6f;
+
+            var probeGO = new GameObject("BedroomReflectionProbe");
+            probeGO.transform.SetParent(root.transform, false);
+            probeGO.transform.localPosition = new Vector3(0.35f, 1.1f, -0.35f);
+            var probe = probeGO.AddComponent<ReflectionProbe>();
+            probe.size = new Vector3(5.4f, 3.2f, 4.1f);
+            probe.intensity = 0.36f;
 
             root.SetActive(true);
             return root;
+        }
+
+        static void BuildFairytaleBedroom3D(Transform parent)
+        {
+            var floor = PhotoPrim(PrimitiveType.Cube, "PGR_HoneyWoodFloor", parent,
+                new Vector3(0.25f, -0.055f, -0.75f), new Vector3(5.30f, 0.10f, 5.30f),
+                new Color(0.72f, 0.48f, 0.31f), 0.34f);
+            ApplyTiledTexture(floor, ProcTextures.LightWood(), new Vector2(2.2f, 2.1f));
+
+            var back = PhotoPrim(PrimitiveType.Cube, "PGR_BackWallpaper", parent,
+                new Vector3(0.25f, 1.35f, 1.56f), new Vector3(5.30f, 2.82f, 0.10f),
+                new Color(1.00f, 0.86f, 0.88f), 0.22f);
+            ApplyTiledTexture(back, MakeStripeTex(192, 192, new Color(1.00f, 0.78f, 0.84f), new Color(0.74f, 0.56f, 0.86f)), new Vector2(2.0f, 1.0f));
+            var left = PhotoPrim(PrimitiveType.Cube, "PGR_LeftWall", parent,
+                new Vector3(-2.40f, 1.35f, -0.75f), new Vector3(0.10f, 2.82f, 5.30f),
+                new Color(0.88f, 0.96f, 0.96f), 0.20f);
+            ApplyTiledTexture(left, MakeStripeTex(192, 192, new Color(0.78f, 0.92f, 0.96f), new Color(0.98f, 0.82f, 0.88f)), new Vector2(1.2f, 1.0f));
+            var right = PhotoPrim(PrimitiveType.Cube, "PGR_RightWall", parent,
+                new Vector3(2.90f, 1.35f, -0.75f), new Vector3(0.10f, 2.82f, 5.30f),
+                new Color(0.96f, 0.86f, 0.98f), 0.20f);
+            ApplyTiledTexture(right, MakeStripeTex(192, 192, new Color(0.92f, 0.76f, 0.96f), new Color(1.00f, 0.86f, 0.80f)), new Vector2(1.2f, 1.0f));
+            PhotoPrim(PrimitiveType.Cube, "PGR_CeilingWarmth", parent,
+                new Vector3(0.25f, 2.78f, -0.75f), new Vector3(5.30f, 0.10f, 5.30f),
+                new Color(0.95f, 0.82f, 0.72f), 0.18f);
+
+            Color trim = new Color(0.96f, 0.80f, 0.62f);
+            PhotoPrim(PrimitiveType.Cube, "PGR_BackSkirt", parent, new Vector3(0.25f, 0.10f, 1.48f), new Vector3(5.20f, 0.18f, 0.08f), trim, 0.30f);
+            PhotoPrim(PrimitiveType.Cube, "PGR_LeftSkirt", parent, new Vector3(-2.34f, 0.10f, -0.75f), new Vector3(0.08f, 0.18f, 5.00f), trim, 0.30f);
+            PhotoPrim(PrimitiveType.Cube, "PGR_RightSkirt", parent, new Vector3(2.84f, 0.10f, -0.75f), new Vector3(0.08f, 0.18f, 5.00f), trim, 0.30f);
+
+            var rug = PhotoPrim(PrimitiveType.Cube, "PGR_DanceRug", parent,
+                new Vector3(0.70f, 0.008f, -1.05f), new Vector3(2.25f, 0.024f, 1.05f),
+                new Color(0.94f, 0.50f, 0.66f), 0.48f);
+            ApplyTiledTexture(rug, ProcTextures.Rug(), new Vector2(1.0f, 0.8f));
+            PhotoGlowQuad("PGR_RugSoftBloom", parent, new Vector3(0.70f, 0.035f, -1.05f),
+                Quaternion.Euler(90f, 0f, 0f), new Vector3(2.70f, 1.20f, 1f),
+                new Color(1.0f, 0.45f, 0.56f, 0.08f));
+
+            BuildBedroomWindow(parent);
+            BuildBedroomBed(parent);
+            BuildBedroomDollhouse(parent);
+            BuildBedroomPlayProps(parent);
+            BuildBedroomBathAndSnack(parent);
+            BuildBedroomFairyLights(parent);
+        }
+
+        static void BuildBedroomWindow(Transform parent)
+        {
+            PhotoGlowQuad("PGR_WindowWarmBloom", parent, new Vector3(-0.65f, 1.70f, 1.49f),
+                Quaternion.identity, new Vector3(1.95f, 1.30f, 1f), new Color(1f, 0.72f, 0.44f, 0.16f));
+            var sky = PhotoPrim(PrimitiveType.Cube, "PGR_WindowMeadowSky", parent,
+                new Vector3(-0.65f, 1.70f, 1.50f), new Vector3(1.50f, 0.92f, 0.035f),
+                new Color(0.62f, 0.78f, 0.92f), 0.08f, true, 0.25f);
+            sky.GetComponent<MeshRenderer>().material.mainTexture = MakeVerticalGradientTex(96, 96,
+                new Color(0.40f, 0.68f, 0.98f), new Color(1.00f, 0.76f, 0.52f));
+
+            Color frame = new Color(0.98f, 0.84f, 0.58f);
+            PhotoPrim(PrimitiveType.Cube, "PGR_WindowFrameTop", parent, new Vector3(-0.65f, 2.20f, 1.45f), new Vector3(1.72f, 0.07f, 0.08f), frame, 0.34f);
+            PhotoPrim(PrimitiveType.Cube, "PGR_WindowFrameBottom", parent, new Vector3(-0.65f, 1.20f, 1.45f), new Vector3(1.72f, 0.07f, 0.08f), frame, 0.34f);
+            PhotoPrim(PrimitiveType.Cube, "PGR_WindowFrameLeft", parent, new Vector3(-1.52f, 1.70f, 1.45f), new Vector3(0.07f, 1.06f, 0.08f), frame, 0.34f);
+            PhotoPrim(PrimitiveType.Cube, "PGR_WindowFrameRight", parent, new Vector3(0.22f, 1.70f, 1.45f), new Vector3(0.07f, 1.06f, 0.08f), frame, 0.34f);
+            PhotoPrim(PrimitiveType.Cube, "PGR_WindowCrossV", parent, new Vector3(-0.65f, 1.70f, 1.44f), new Vector3(0.045f, 0.98f, 0.06f), frame, 0.34f);
+            PhotoPrim(PrimitiveType.Cube, "PGR_WindowCrossH", parent, new Vector3(-0.65f, 1.70f, 1.435f), new Vector3(1.52f, 0.045f, 0.06f), frame, 0.34f);
+
+            PhotoPrim(PrimitiveType.Cube, "PGR_CurtainL", parent, new Vector3(-1.68f, 1.63f, 1.40f), new Vector3(0.20f, 1.18f, 0.06f), new Color(0.96f, 0.48f, 0.66f), 0.52f);
+            PhotoPrim(PrimitiveType.Cube, "PGR_CurtainR", parent, new Vector3(0.38f, 1.63f, 1.40f), new Vector3(0.20f, 1.18f, 0.06f), new Color(0.96f, 0.48f, 0.66f), 0.52f);
+
+            var sun = PhotoPrim(PrimitiveType.Sphere, "PGR_WindowSunGem", parent,
+                new Vector3(-1.08f, 1.93f, 1.39f), Vector3.one * 0.13f,
+                new Color(1.0f, 0.82f, 0.34f), 0.42f, true, 1.8f);
+            sun.AddComponent<StarTwinkle>();
+        }
+
+        static void BuildBedroomBed(Transform parent)
+        {
+            PhotoPrim(PrimitiveType.Cube, "MoonlightRealBedBase", parent,
+                new Vector3(2.16f, 0.17f, -0.54f), new Vector3(1.38f, 0.24f, 0.78f),
+                new Color(0.82f, 0.48f, 0.42f), 0.38f);
+            PhotoPrim(PrimitiveType.Cube, "MoonlightRealBedHeadboard", parent,
+                new Vector3(2.78f, 0.60f, -0.54f), new Vector3(0.14f, 0.88f, 0.96f),
+                new Color(0.70f, 0.42f, 0.54f), 0.36f);
+            PhotoPrim(PrimitiveType.Sphere, "MoonlightRealMattress", parent,
+                new Vector3(2.05f, 0.38f, -0.54f), new Vector3(0.72f, 0.13f, 0.42f),
+                new Color(1.0f, 0.88f, 0.82f), 0.50f);
+            PhotoPrim(PrimitiveType.Sphere, "MoonlightRealBlanket", parent,
+                new Vector3(2.17f, 0.50f, -0.54f), new Vector3(0.56f, 0.10f, 0.46f),
+                new Color(0.94f, 0.44f, 0.52f), 0.62f);
+            PhotoPrim(PrimitiveType.Sphere, "MoonlightRealPillow", parent,
+                new Vector3(1.48f, 0.51f, -0.54f), new Vector3(0.22f, 0.08f, 0.30f),
+                new Color(1.0f, 0.92f, 0.72f), 0.58f);
+
+            Color post = new Color(0.98f, 0.72f, 0.50f);
+            PhotoPrim(PrimitiveType.Cylinder, "MoonlightBedPostFrontA", parent, new Vector3(1.45f, 0.46f, -0.09f), new Vector3(0.045f, 0.44f, 0.045f), post, 0.42f);
+            PhotoPrim(PrimitiveType.Cylinder, "MoonlightBedPostFrontB", parent, new Vector3(1.45f, 0.46f, -0.99f), new Vector3(0.045f, 0.44f, 0.045f), post, 0.42f);
+            PhotoPrim(PrimitiveType.Sphere, "MoonlightBedPostOrbA", parent, new Vector3(1.45f, 0.91f, -0.09f), Vector3.one * 0.075f, new Color(1.0f, 0.80f, 0.48f), 0.58f, true, 0.35f);
+            PhotoPrim(PrimitiveType.Sphere, "MoonlightBedPostOrbB", parent, new Vector3(1.45f, 0.91f, -0.99f), Vector3.one * 0.075f, new Color(1.0f, 0.80f, 0.48f), 0.58f, true, 0.35f);
+            MakePhotoRotated(PrimitiveType.Cube, "MoonlightBedCanopyRibbon", parent,
+                new Vector3(2.04f, 1.05f, -0.54f), Quaternion.Euler(0f, 0f, -2f),
+                new Vector3(1.12f, 0.040f, 0.78f), new Color(1.0f, 0.66f, 0.80f), 0.46f, true, 0.18f);
+
+            PhotoGlowQuad("MoonlightBedWarmUnderGlow", parent, new Vector3(2.05f, 0.035f, -0.54f),
+                Quaternion.Euler(90f, 0f, 0f), new Vector3(1.62f, 0.88f, 1f),
+                new Color(0.55f, 0.20f, 0.18f, 0.14f));
+        }
+
+        static void BuildBedroomDollhouse(Transform parent)
+        {
+            PhotoPrim(PrimitiveType.Cube, "MoonlightDollhouseBody", parent,
+                new Vector3(-0.78f, 0.40f, -0.62f), new Vector3(0.74f, 0.72f, 0.26f),
+                new Color(0.93f, 0.62f, 0.74f), 0.45f);
+            MakePhotoRotated(PrimitiveType.Cube, "MoonlightDollhouseRoofL", parent,
+                new Vector3(-0.92f, 0.82f, -0.62f), Quaternion.Euler(0f, 0f, 25f),
+                new Vector3(0.48f, 0.12f, 0.30f), new Color(0.64f, 0.36f, 0.58f), 0.42f, false, 0f);
+            MakePhotoRotated(PrimitiveType.Cube, "MoonlightDollhouseRoofR", parent,
+                new Vector3(-0.64f, 0.82f, -0.62f), Quaternion.Euler(0f, 0f, -25f),
+                new Vector3(0.48f, 0.12f, 0.30f), new Color(0.64f, 0.36f, 0.58f), 0.42f, false, 0f);
+            for (int y = 0; y < 2; y++)
+            for (int x = 0; x < 2; x++)
+            {
+                var w = PhotoPrim(PrimitiveType.Cube, $"MoonlightDollhouseWindow{x}_{y}", parent,
+                    new Vector3(-0.94f + x * 0.32f, 0.31f + y * 0.26f, -0.77f),
+                    new Vector3(0.12f, 0.12f, 0.035f), new Color(1.0f, 0.75f, 0.36f), 0.40f, true, 1.4f);
+                w.AddComponent<StarTwinkle>();
+            }
+            CreateDollhouseMagicGlow(parent);
+        }
+
+        static void BuildBedroomPlayProps(Transform parent)
+        {
+            PhotoPrim(PrimitiveType.Sphere, "PGR_PlushBody", parent,
+                new Vector3(-1.44f, 0.20f, -1.03f), new Vector3(0.24f, 0.27f, 0.21f),
+                new Color(0.92f, 0.76f, 0.62f), 0.55f);
+            PhotoPrim(PrimitiveType.Sphere, "PGR_PlushHead", parent,
+                new Vector3(-1.44f, 0.43f, -1.04f), Vector3.one * 0.15f,
+                new Color(0.96f, 0.80f, 0.68f), 0.55f);
+            PhotoPrim(PrimitiveType.Sphere, "PGR_PlushEarL", parent,
+                new Vector3(-1.55f, 0.52f, -1.04f), new Vector3(0.07f, 0.10f, 0.05f),
+                new Color(0.88f, 0.62f, 0.58f), 0.52f);
+            PhotoPrim(PrimitiveType.Sphere, "PGR_PlushEarR", parent,
+                new Vector3(-1.33f, 0.52f, -1.04f), new Vector3(0.07f, 0.10f, 0.05f),
+                new Color(0.88f, 0.62f, 0.58f), 0.52f);
+            PhotoPrim(PrimitiveType.Sphere, "PGR_PlushEyeL", parent,
+                new Vector3(-1.49f, 0.45f, -1.17f), Vector3.one * 0.018f,
+                new Color(0.08f, 0.05f, 0.06f), 0.30f);
+            PhotoPrim(PrimitiveType.Sphere, "PGR_PlushEyeR", parent,
+                new Vector3(-1.39f, 0.45f, -1.17f), Vector3.one * 0.018f,
+                new Color(0.08f, 0.05f, 0.06f), 0.30f);
+
+            SpawnKenney(parent, "Kenney/Furniture/bookcaseOpen",
+                new Vector3(-2.05f, 0.00f, 0.72f), new Vector3(0f, 90f, 0f), 0.105f,
+                new Color(0.70f, 0.46f, 0.32f));
+            SpawnKenney(parent, "Kenney/Furniture/books",
+                new Vector3(-2.00f, 0.31f, 0.72f), new Vector3(0f, 90f, 0f), 0.075f,
+                new Color(0.64f, 0.78f, 1.00f));
+            SpawnKenney(parent, "Kenney/Furniture/plantSmall2",
+                new Vector3(-1.95f, 0.55f, 0.68f), Vector3.zero, 0.070f,
+                new Color(0.52f, 0.90f, 0.54f));
+            SpawnKenney(parent, "Kenney/Furniture/lampRoundFloor",
+                new Vector3(-2.06f, 0.00f, -0.42f), new Vector3(0f, 18f, 0f), 0.105f,
+                new Color(1.0f, 0.78f, 0.48f));
+            SpawnKenney(parent, "Kenney/Furniture/chairCushion",
+                new Vector3(-0.40f, 0.00f, -1.42f), new Vector3(0f, -22f, 0f), 0.090f,
+                new Color(0.82f, 0.62f, 0.92f));
+        }
+
+        static void BuildBedroomBathAndSnack(Transform parent)
+        {
+            PhotoPrim(PrimitiveType.Cube, "SnackTableTop", parent,
+                new Vector3(-0.12f, 0.24f, -1.48f), new Vector3(0.50f, 0.07f, 0.28f),
+                new Color(0.80f, 0.52f, 0.34f), 0.42f);
+            PhotoPrim(PrimitiveType.Cylinder, "SnackTableLeg", parent,
+                new Vector3(-0.12f, 0.11f, -1.48f), new Vector3(0.045f, 0.12f, 0.045f),
+                new Color(0.54f, 0.34f, 0.24f), 0.34f);
+
+            PhotoPrim(PrimitiveType.Cube, "BubbleTubBase", parent,
+                new Vector3(1.24f, 0.16f, 0.06f), new Vector3(0.66f, 0.22f, 0.40f),
+                new Color(0.75f, 0.90f, 0.96f), 0.70f);
+            for (int i = 0; i < 8; i++)
+            {
+                float x = 0.98f + (i % 4) * 0.16f;
+                float z = -0.07f + (i / 4) * 0.20f;
+                PhotoPrim(PrimitiveType.Sphere, $"BubbleBathFoam{i}", parent,
+                    new Vector3(x, 0.36f + Mathf.Sin(i) * 0.025f, z), Vector3.one * (0.055f + (i % 3) * 0.012f),
+                    new Color(0.96f, 1.00f, 1.00f), 0.88f, true, 0.35f);
+            }
+        }
+
+        static void BuildBedroomFairyLights(Transform parent)
+        {
+            Vector3 prev = Vector3.zero;
+            for (int i = 0; i < 11; i++)
+            {
+                float t = i / 10f;
+                Vector3 p = new Vector3(Mathf.Lerp(-1.95f, 2.18f, t), 2.36f + Mathf.Sin(t * Mathf.PI * 2f) * 0.08f, 1.36f);
+                if (i > 0)
+                {
+                    Vector3 mid = (prev + p) * 0.5f;
+                    float len = Vector3.Distance(prev, p);
+                    var strand = PhotoPrim(PrimitiveType.Cube, $"PGR_FairyLightWire{i}", parent,
+                        mid, new Vector3(len, 0.012f, 0.012f), new Color(0.32f, 0.20f, 0.18f), 0.18f);
+                    float angle = Mathf.Atan2(p.y - prev.y, p.x - prev.x) * Mathf.Rad2Deg;
+                    strand.transform.localRotation = Quaternion.Euler(0f, 0f, angle);
+                }
+                Color c = i % 3 == 0 ? new Color(1f, 0.52f, 0.68f) : i % 3 == 1 ? new Color(1f, 0.84f, 0.42f) : new Color(0.54f, 0.90f, 1f);
+                var bulb = PhotoPrim(PrimitiveType.Sphere, $"PGR_FairyBulb{i}", parent, p, Vector3.one * 0.046f, c, 0.55f, true, 1.7f);
+                bulb.AddComponent<StarTwinkle>();
+                prev = p;
+            }
+        }
+
+        static void BuildFairytaleMeadow3D(Transform parent)
+        {
+            var meadow = new GameObject("Moonlight3DMeadow");
+            meadow.transform.SetParent(parent, false);
+
+            var sky = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            sky.name = "PGR_MeadowSkyGradient";
+            sky.transform.SetParent(meadow.transform, false);
+            sky.transform.localPosition = new Vector3(0.35f, 1.48f, 1.95f);
+            sky.transform.localScale = new Vector3(24.0f, 3.8f, 1f);
+            Object.Destroy(sky.GetComponent<Collider>());
+            var skyMat = new Material(Shader.Find("Sprites/Default") ?? Shader.Find("Unlit/Texture"));
+            skyMat.mainTexture = MakeVerticalGradientTex(160, 128, new Color(0.38f, 0.70f, 1.0f), new Color(1.0f, 0.76f, 0.54f));
+            skyMat.color = Color.white;
+            sky.GetComponent<MeshRenderer>().material = skyMat;
+
+            var grass = PhotoPrim(PrimitiveType.Cube, "PGR_MeadowGrass", meadow.transform,
+                new Vector3(0.35f, -0.06f, -0.56f), new Vector3(24.00f, 0.10f, 5.60f),
+                new Color(0.34f, 0.68f, 0.34f), 0.22f);
+            grass.GetComponent<MeshRenderer>().material.mainTexture = MakeSpeckleTex(96, new Color(0.30f, 0.62f, 0.30f), new Color(0.78f, 0.88f, 0.46f), 0.20f);
+            grass.GetComponent<MeshRenderer>().material.mainTextureScale = new Vector2(5f, 4f);
+
+            for (int i = 0; i < 4; i++)
+            {
+                float x = -2.7f + i * 1.8f;
+                float z = 1.02f + Mathf.Sin(i * 1.7f) * 0.18f;
+                PhotoPrim(PrimitiveType.Sphere, $"PGR_MeadowHill{i}", meadow.transform,
+                    new Vector3(x, -0.08f, z), new Vector3(1.30f, 0.30f, 0.62f),
+                    new Color(0.42f, 0.78f, 0.38f), 0.18f);
+            }
+
+            var path = PhotoPrim(PrimitiveType.Cube, "PGR_MeadowPath", meadow.transform,
+                new Vector3(0.72f, -0.035f, -1.00f), new Vector3(1.25f, 0.035f, 2.75f),
+                new Color(0.84f, 0.66f, 0.42f), 0.32f);
+            path.transform.localRotation = Quaternion.Euler(0f, -8f, 0f);
+
+            for (int i = 0; i < 46; i++)
+            {
+                float a = i * 12.9898f;
+                float x = Mathf.Sin(a) * 2.85f + 0.22f;
+                float z = -1.95f + Mathf.Abs(Mathf.Cos(a * 0.71f)) * 2.45f;
+                if (Mathf.Abs(x - 0.72f) < 0.45f && z < 0.25f) x += x < 0.72f ? -0.55f : 0.55f;
+                Color flower = i % 4 == 0 ? new Color(1f, 0.54f, 0.72f) :
+                    i % 4 == 1 ? new Color(1f, 0.86f, 0.34f) :
+                    i % 4 == 2 ? new Color(0.58f, 0.78f, 1f) : new Color(0.96f, 0.90f, 1f);
+                PhotoPrim(PrimitiveType.Cylinder, $"PGR_FlowerStem{i}", meadow.transform,
+                    new Vector3(x, 0.07f, z), new Vector3(0.012f, 0.07f, 0.012f), new Color(0.22f, 0.58f, 0.24f), 0.18f);
+                PhotoPrim(PrimitiveType.Sphere, $"PGR_FlowerHead{i}", meadow.transform,
+                    new Vector3(x, 0.17f, z), Vector3.one * 0.045f, flower, 0.46f, true, 0.35f);
+            }
+
+            for (int i = 0; i < 3; i++)
+            {
+                float x = -2.35f + i * 2.25f;
+                PhotoPrim(PrimitiveType.Cylinder, $"PGR_MeadowTreeTrunk{i}", meadow.transform,
+                    new Vector3(x, 0.35f, 0.70f), new Vector3(0.11f, 0.42f, 0.11f), new Color(0.50f, 0.32f, 0.18f), 0.30f);
+                PhotoPrim(PrimitiveType.Sphere, $"PGR_MeadowTreeCrown{i}", meadow.transform,
+                    new Vector3(x, 0.95f, 0.70f), new Vector3(0.55f, 0.48f, 0.42f), new Color(0.38f, 0.78f, 0.42f), 0.32f);
+                PhotoPrim(PrimitiveType.Sphere, $"PGR_MeadowTreeCrownGlow{i}", meadow.transform,
+                    new Vector3(x + 0.22f, 1.12f, 0.62f), new Vector3(0.28f, 0.24f, 0.22f), new Color(0.74f, 0.90f, 0.44f), 0.36f, true, 0.45f);
+            }
+
+            var sun = PhotoPrim(PrimitiveType.Sphere, "PGR_MeadowSunGem", meadow.transform,
+                new Vector3(-1.90f, 2.05f, 1.70f), Vector3.one * 0.20f,
+                new Color(1f, 0.82f, 0.34f), 0.45f, true, 2.1f);
+            sun.AddComponent<StarTwinkle>();
+            PhotoGlowQuad("PGR_MeadowSunBloom", meadow.transform, new Vector3(-1.90f, 2.05f, 1.69f),
+                Quaternion.identity, new Vector3(0.92f, 0.92f, 1f), new Color(1f, 0.76f, 0.38f, 0.20f));
+
+            var lightGO = new GameObject("PGR_MeadowWarmKey");
+            lightGO.transform.SetParent(meadow.transform, false);
+            lightGO.transform.localPosition = new Vector3(-1.3f, 2.2f, -1.2f);
+            var light = lightGO.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.color = new Color(1f, 0.78f, 0.48f);
+            light.intensity = 2.0f;
+            light.range = 5.0f;
+
+            meadow.SetActive(false);
+        }
+
+        static GameObject PhotoPrim(PrimitiveType type, string name, Transform parent,
+            Vector3 pos, Vector3 scale, Color color, float gloss, bool emissive = false, float emission = 1.2f)
+        {
+            return MakePhotoRotated(type, name, parent, pos, Quaternion.identity, scale, color, gloss, emissive, emission);
+        }
+
+        static GameObject MakePhotoRotated(PrimitiveType type, string name, Transform parent,
+            Vector3 pos, Quaternion rot, Vector3 scale, Color color, float gloss, bool emissive, float emission)
+        {
+            var go = GameObject.CreatePrimitive(type);
+            go.name = name;
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = pos;
+            go.transform.localRotation = rot;
+            go.transform.localScale = scale;
+            Object.Destroy(go.GetComponent<Collider>());
+            var mr = go.GetComponent<MeshRenderer>();
+            mr.shadowCastingMode = ShadowCastingMode.On;
+            mr.receiveShadows = true;
+            mr.material = MakePhotoMaterial(color, gloss, emissive, emission);
+            return go;
+        }
+
+        static Material MakePhotoMaterial(Color color, float gloss, bool emissive, float emission)
+        {
+            var shader = Shader.Find("Standard") ?? Shader.Find("Diffuse");
+            var mat = new Material(shader);
+            mat.color = color;
+            if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", 0f);
+            if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", gloss);
+            if (emissive && mat.HasProperty("_EmissionColor"))
+            {
+                mat.EnableKeyword("_EMISSION");
+                mat.SetColor("_EmissionColor", color * emission);
+            }
+            return mat;
+        }
+
+        static GameObject PhotoGlowQuad(string name, Transform parent, Vector3 pos,
+            Quaternion rot, Vector3 scale, Color color)
+        {
+            var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            quad.name = name;
+            quad.transform.SetParent(parent, false);
+            quad.transform.localPosition = pos;
+            quad.transform.localRotation = rot;
+            quad.transform.localScale = scale;
+            Object.Destroy(quad.GetComponent<Collider>());
+            var mat = new Material(TransparentSpriteShader);
+            mat.mainTexture = MakeSoftCircleTex(128);
+            mat.color = color;
+            mat.renderQueue = 3000;
+            quad.GetComponent<MeshRenderer>().material = mat;
+            return quad;
+        }
+
+        static Texture2D MakeVerticalGradientTex(int width, int height, Color top, Color bottom)
+        {
+            var tex = new Texture2D(width, height, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Clamp;
+            for (int y = 0; y < height; y++)
+            {
+                float t = y / Mathf.Max(1f, height - 1f);
+                Color c = Color.Lerp(bottom, top, Mathf.SmoothStep(0f, 1f, t));
+                for (int x = 0; x < width; x++)
+                    tex.SetPixel(x, y, c);
+            }
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        static Texture2D MakeSpeckleTex(int size, Color baseColor, Color speckleColor, float amount)
+        {
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Repeat;
+            for (int y = 0; y < size; y++)
+            for (int x = 0; x < size; x++)
+            {
+                float n = Mathf.Sin((x * 12.9898f + y * 78.233f) * 0.12f) * 43758.5453f;
+                float f = n - Mathf.Floor(n);
+                Color c = Color.Lerp(baseColor, speckleColor, f > 1f - amount ? 0.38f : 0f);
+                tex.SetPixel(x, y, c);
+            }
+            tex.Apply(false, true);
+            return tex;
+        }
+
+        static Texture2D MakeStripeTex(int width, int height, Color a, Color b)
+        {
+            var tex = new Texture2D(width, height, TextureFormat.RGBA32, false);
+            tex.filterMode = FilterMode.Bilinear;
+            tex.wrapMode = TextureWrapMode.Repeat;
+            for (int y = 0; y < height; y++)
+            for (int x = 0; x < width; x++)
+            {
+                float stripe = Mathf.Sin((x / Mathf.Max(1f, width - 1f)) * Mathf.PI * 8f);
+                float fade = Mathf.InverseLerp(-0.25f, 1f, stripe);
+                float grain = Mathf.Sin((x * 17.17f + y * 9.31f) * 0.08f) * 0.025f;
+                Color c = Color.Lerp(a, b, fade * 0.42f + 0.08f);
+                c.r = Mathf.Clamp01(c.r + grain);
+                c.g = Mathf.Clamp01(c.g + grain);
+                c.b = Mathf.Clamp01(c.b + grain);
+                tex.SetPixel(x, y, c);
+            }
+            tex.Apply(false, true);
+            return tex;
         }
 
         static void CreateRoomPhotoBackdrop(Transform parent)
@@ -2306,12 +2735,12 @@ namespace MoonlightMagicHouse
 
             var hud = Panel("PhotoHUD", canvasGO.transform,
                 new Vector2(0f, 1f), new Vector2(0f, 1f),
-                new Vector2(28f, -144f), new Vector2(430f, -26f),
-                new Color(1f, 0.92f, 0.84f, 0.62f));
+                new Vector2(24f, -112f), new Vector2(330f, -22f),
+                new Color(1f, 0.92f, 0.84f, 0.42f));
 
-            var stageLabel = MakeLegacyLabel("StageLabel", hud.transform, new Vector2(0f, -34f), new Vector2(320f, 34f), "Moonlight", 26, new Color(0.34f, 0.18f, 0.18f), FontStyle.Bold);
-            var moodLabel  = MakeLegacyLabel("MoodLabel",  hud.transform, new Vector2(-96f, -76f), new Vector2(150f, 28f), "HAPPY", 18, new Color(0.72f, 0.30f, 0.46f), FontStyle.Bold);
-            var coinsLabel = MakeLegacyLabel("CoinsLabel", hud.transform, new Vector2( 82f, -76f), new Vector2(150f, 28f), "COINS 30", 18, new Color(0.54f, 0.34f, 0.05f), FontStyle.Bold);
+            var stageLabel = MakeLegacyLabel("StageLabel", hud.transform, new Vector2(0f, -28f), new Vector2(260f, 30f), "Moonlight", 22, new Color(0.34f, 0.18f, 0.18f), FontStyle.Bold);
+            var moodLabel  = MakeLegacyLabel("MoodLabel",  hud.transform, new Vector2(-66f, -62f), new Vector2(124f, 24f), "HAPPY", 15, new Color(0.72f, 0.30f, 0.46f), FontStyle.Bold);
+            var coinsLabel = MakeLegacyLabel("CoinsLabel", hud.transform, new Vector2( 66f, -62f), new Vector2(124f, 24f), "COINS 30", 15, new Color(0.54f, 0.34f, 0.05f), FontStyle.Bold);
             var xpLabel    = MakeLegacyLabel("XPLabel",    hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "XP 0", 1, Color.clear, FontStyle.Normal);
             var daysLabel  = MakeLegacyLabel("DaysLabel",  hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "DAY 1", 1, Color.clear, FontStyle.Normal);
 
@@ -2321,15 +2750,15 @@ namespace MoonlightMagicHouse
 
             var btnPanel = Panel("CandyActionBar", canvasGO.transform,
                 new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
-                new Vector2(-670f, 0f), new Vector2(90f, 126f),
-                new Color(1f, 0.88f, 0.78f, 0.10f));
+                new Vector2(-350f, 10f), new Vector2(350f, 116f),
+                new Color(1f, 0.88f, 0.78f, 0.00f));
 
-            var feedBtn   = MakePhotorealButton("FeedBtn",   btnPanel.transform, new Vector2(-224f, 82f), "SNACK", new Color(1.00f, 0.58f, 0.42f, 0.90f));
-            var cuddleBtn = MakePhotorealButton("CuddleBtn", btnPanel.transform, new Vector2(   0f, 82f), "HUG",   new Color(1.00f, 0.48f, 0.70f, 0.90f));
-            var sleepBtn  = MakePhotorealButton("SleepBtn",  btnPanel.transform, new Vector2( 224f, 82f), "NAP",   new Color(0.52f, 0.70f, 1.00f, 0.90f));
-            var playBtn   = MakePhotorealButton("PlayBtn",   btnPanel.transform, new Vector2(-224f, 26f), "PLAY",  new Color(1.00f, 0.78f, 0.36f, 0.90f));
-            var bathBtn   = MakePhotorealButton("BathBtn",   btnPanel.transform, new Vector2(   0f, 26f), "BATH",  new Color(0.50f, 0.88f, 0.94f, 0.90f));
-            var danceBtn  = MakePhotorealButton("DanceBtn",  btnPanel.transform, new Vector2( 224f, 26f), "DANCE", new Color(0.78f, 0.56f, 1.00f, 0.90f));
+            var feedBtn   = MakePhotorealButton("FeedBtn",   btnPanel.transform, new Vector2(-190f, 72f), "SNACK", new Color(1.00f, 0.58f, 0.42f, 0.88f));
+            var cuddleBtn = MakePhotorealButton("CuddleBtn", btnPanel.transform, new Vector2(   0f, 72f), "HUG",   new Color(1.00f, 0.48f, 0.70f, 0.88f));
+            var sleepBtn  = MakePhotorealButton("SleepBtn",  btnPanel.transform, new Vector2( 190f, 72f), "NAP",   new Color(0.52f, 0.70f, 1.00f, 0.88f));
+            var playBtn   = MakePhotorealButton("PlayBtn",   btnPanel.transform, new Vector2(-190f, 24f), "PLAY",  new Color(1.00f, 0.78f, 0.36f, 0.88f));
+            var bathBtn   = MakePhotorealButton("BathBtn",   btnPanel.transform, new Vector2(   0f, 24f), "BATH",  new Color(0.50f, 0.88f, 0.94f, 0.88f));
+            var danceBtn  = MakePhotorealButton("DanceBtn",  btnPanel.transform, new Vector2( 190f, 24f), "DANCE", new Color(0.78f, 0.56f, 1.00f, 0.88f));
 
             AttachBurst(feedBtn,   new Color(1.0f, 0.72f, 0.40f), 18);
             AttachBurst(cuddleBtn, new Color(1.0f, 0.42f, 0.66f), 24);
@@ -2622,14 +3051,14 @@ namespace MoonlightMagicHouse
             btnGO.transform.SetParent(parent, false);
             var rt = btnGO.GetComponent<RectTransform>();
             rt.anchoredPosition = pos;
-            rt.sizeDelta = new Vector2(156f, 44f);
+            rt.sizeDelta = new Vector2(136f, 38f);
             var img = btnGO.GetComponent<Image>();
             if (img) img.color = tint;
             var lbl = btnGO.GetComponentInChildren<Text>();
             if (lbl)
             {
                 lbl.text = label;
-                lbl.fontSize = label.Length <= 3 ? 24 : 21;
+                lbl.fontSize = label.Length <= 3 ? 21 : 18;
                 lbl.fontStyle = FontStyle.Bold;
                 lbl.color = new Color(0.26f, 0.12f, 0.10f);
                 lbl.alignment = TextAnchor.MiddleCenter;

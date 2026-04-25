@@ -27,10 +27,12 @@ namespace MoonlightMagicHouse
         float _poseDur = 1f;
         float _roomT;
         float _roomDur = 0.45f;
+        float _walkPhase;
         bool _roomMoving;
         bool _walking;
         bool _running;
         float _facingYaw;
+        bool _sdAvatar;
 
         struct BonePose
         {
@@ -66,6 +68,8 @@ namespace MoonlightMagicHouse
                 FindBone("J_R_HeadRibbon_00"), FindBone("J_R_HeadRibbon_01"),
                 FindBone("J_R_HeadRibbon_02"), FindBone("J_R_HeadRibbon_03"),
             };
+            for (int i = 0; i < _ribbons.Length; i++)
+                _sdAvatar |= _ribbons[i] != null;
 
             ApplyProportionPass();
             CacheBasePoses();
@@ -218,13 +222,30 @@ namespace MoonlightMagicHouse
 
         void ApplyProportionPass()
         {
-            Scale(_head, Vector3.one * 0.76f);
-            Scale(_leftUpLeg, new Vector3(0.90f, 1.16f, 0.90f));
-            Scale(_rightUpLeg, new Vector3(0.90f, 1.16f, 0.90f));
-            Scale(_leftLeg, new Vector3(0.90f, 1.12f, 0.90f));
-            Scale(_rightLeg, new Vector3(0.90f, 1.12f, 0.90f));
-            Scale(_leftFoot, Vector3.one * 0.88f);
-            Scale(_rightFoot, Vector3.one * 0.88f);
+            if (_sdAvatar)
+            {
+                Scale(_head, Vector3.one * 0.70f);
+                Scale(_leftUpLeg, new Vector3(0.88f, 1.20f, 0.88f));
+                Scale(_rightUpLeg, new Vector3(0.88f, 1.20f, 0.88f));
+                Scale(_leftLeg, new Vector3(0.88f, 1.15f, 0.88f));
+                Scale(_rightLeg, new Vector3(0.88f, 1.15f, 0.88f));
+                Scale(_leftFoot, Vector3.one * 0.84f);
+                Scale(_rightFoot, Vector3.one * 0.84f);
+            }
+            else
+            {
+                Scale(_head, Vector3.one * 1.07f);
+                Scale(_leftArm, new Vector3(0.95f, 0.94f, 0.95f));
+                Scale(_rightArm, new Vector3(0.95f, 0.94f, 0.95f));
+                Scale(_leftForeArm, new Vector3(0.95f, 0.94f, 0.95f));
+                Scale(_rightForeArm, new Vector3(0.95f, 0.94f, 0.95f));
+                Scale(_leftUpLeg, new Vector3(0.96f, 0.92f, 0.96f));
+                Scale(_rightUpLeg, new Vector3(0.96f, 0.92f, 0.96f));
+                Scale(_leftLeg, new Vector3(0.96f, 0.94f, 0.96f));
+                Scale(_rightLeg, new Vector3(0.96f, 0.94f, 0.96f));
+                Scale(_leftFoot, Vector3.one * 0.88f);
+                Scale(_rightFoot, Vector3.one * 0.88f);
+            }
 
             if (_ribbons == null) return;
             for (int i = 0; i < _ribbons.Length; i++)
@@ -304,15 +325,19 @@ namespace MoonlightMagicHouse
             float speed = _running ? 8.0f : 5.2f;
             float stride = _running ? 30f : 18f;
             float lift = _running ? 0.060f : 0.032f;
-            float s = Mathf.Sin(t * speed);
-            float c = Mathf.Cos(t * speed);
+            _walkPhase += Time.deltaTime * speed;
+            float s = Mathf.Sin(_walkPhase);
+            float c = Mathf.Cos(_walkPhase);
 
             transform.localPosition += Vector3.up * (Mathf.Abs(c) * lift);
+            transform.localRotation *= Quaternion.Euler(Mathf.Abs(s) * -1.4f, 0f, s * 2.2f);
             Add(_spine, -3f, 0f, s * 2.5f);
             Add(_leftUpLeg, stride * s, 0f, 0f);
             Add(_rightUpLeg, -stride * s, 0f, 0f);
             Add(_leftLeg, -stride * 0.55f * Mathf.Max(0f, -s), 0f, 0f);
             Add(_rightLeg, -stride * 0.55f * Mathf.Max(0f, s), 0f, 0f);
+            Add(_leftFoot, stride * 0.22f * Mathf.Max(0f, s), 0f, 0f);
+            Add(_rightFoot, stride * 0.22f * Mathf.Max(0f, -s), 0f, 0f);
             Add(_leftArm, -stride * 0.62f * s, 0f, 9f);
             Add(_rightArm, stride * 0.62f * s, 0f, -9f);
             Add(_head, Mathf.Abs(s) * -1.5f, 0f, s * 2f);

@@ -78,3 +78,62 @@ Latest verification:
 
 Remaining quality bar:
 - The current result is improved and playable, but the avatar remains stylized against photoreal backdrops. The next big visual jump should be a better child avatar/material pass or a more authored 3D bed/action vignette layer.
+
+## 2026-04-24 - Pivot: No More Photo Plane, Build a Coherent 3D Toy World
+
+User feedback was clear: the previous composition still felt fake because it was a character pasted over a photo-like background. The reference direction from `Pizza Gelato Rush` is not "more backdrop"; it is a coherent runtime world with authored/procedural geometry, strong color, controlled lighting, bloom, camera staging, and actions that physically happen in the scene.
+
+What changed in this pass:
+- Replaced the photoreal bedroom image plane as the primary scene with a runtime 3D fairytale bedroom: walls, floor, window, string lights, dollhouse, snack table, bath corner, real bed, plush/toy props, rug, reflection probe, and stronger bloom.
+- Added a runtime 3D meadow instead of relying on the generated meadow texture as the outdoor scene. `PLAY` now hides the bedroom root, enables the meadow root, and keeps Moonlight in the same gameplay space.
+- Kept the child-friendly animated UnityChan avatar for this pass after testing Mixamo Sophie; Sophie had better built-in idle motion but read too adult for the target audience.
+- Tuned child proportions and walk posing: less extreme chibi head, longer legs, foot swing, body tilt, and a cleaner walk/run phase.
+- Fixed the director so it can find inactive scene roots such as `Moonlight3DMeadow`; this keeps the initial room clean while allowing the outdoor scene to activate at runtime.
+- Extended room and meadow geometry so the camera does not reveal raw background at the edges.
+
+How Pizza Gelato Rush informs Moonlight:
+- Use a procedural/assembled 3D scene as the source of truth, not a flat plate.
+- Treat visual quality as pipeline work: camera, lighting, post-process, materials, composition, props, VFX, and animation all have to agree.
+- The "top top" roadmap should include a real render-pipeline pass, not only more primitives: URP/HDRP-grade post-processing, anti-aliasing, authored asset kits, better child rig, blend trees/root motion, and action-specific animation clips.
+
+Near-term roadmap after this pass:
+- Replace blocky primitive bed/furniture with higher-quality authored or marketplace/free assets.
+- Add real animation clips per action: walk-to-bed, climb/rest, door open, run outside, bath, dance.
+- Build a proper camera director with shot presets and less UI obstruction during vignettes.
+- Consider migrating Moonlight to the same URP-style graphics stack used by Pizza Gelato Rush once the gameplay slice is stable.
+
+Verification notes:
+- Built with Unity 6000.3.2f1 batchmode/headless only.
+- Ran the built app with `-mmhPlaytest`.
+- Player log reached `[Playtest][PASS]`.
+- Inspected `00_initial`, `03_SleepBtn`, `04_PlayDoor`, and `04_PlayBtn` screenshots. The pass is a real structural improvement, but still not the final "top top" art bar.
+
+## 2026-04-24 - Polish Pass: Proportions, Props, UI, and QA Reality Check
+
+Reason for this pass:
+- The first 3D-room pass fixed the "character pasted on photo" problem, but the room still read too procedural/blocky.
+- User reference remains `Pizza Gelato Rush`: the quality jump must come from coherent scene construction, camera, lighting, materials, movement, and polish working together.
+
+What changed:
+- Rebalanced the camera and default Moonlight placement so the room reads as a wider toy-bedroom scene rather than a cropped bed close-up.
+- Made the bottom HUD less obstructive: centered action buttons, smaller candy controls, removed the large visible backing plate.
+- Shrunk and softened the bed with rounded mattress/blanket/pillow forms, bed posts, warm canopy ribbon, and better nap target placement.
+- Replaced some primitive-looking room clutter with local Kenney CC0 furniture assets already in the project: shelf, books, floor lamp, plant, and chair.
+- Moved the snack and bath targets so Moonlight now travels toward the actual mini table/tub instead of only shifting in place.
+- Adjusted room light/bloom and prop materials so the scene feels more cohesive with the PGR-style runtime world approach.
+
+Workflow note:
+- The first rebuild attempt failed because the macOS data volume had only about 101 MB free and Unity Package Manager could not open its `/tmp` socket.
+- Freed temporary/cache space only (`/tmp/ondevibe-resign`, user-level regenerable caches such as `pip`, `electron`, `go-build`, `pnpm`) and reran Unity batchmode successfully.
+- No Unity GUI was opened.
+
+Verification:
+- Built successfully with Unity 6000.3.2f1 in headless batchmode.
+- Ran `Moonlight Magic House.app -mmhPlaytest`.
+- Player log reached `[Playtest][PASS] xp=2322 coins=30 mood=Happy`.
+- Visually inspected `00_initial`, `01_FeedBtn`, `03_SleepBtn`, `04_PlayDoor`, `04_PlayBtn`, and `05_BathBtn`.
+
+Current honesty:
+- This is now a coherent playable fairytale toy-room pass, not a final premium art pass.
+- The next true "top top" step is a production art pipeline task: authored high-quality room kit, real root-motion action clips, better child avatar/rig, URP-style post stack, and shot-by-shot camera polish.
+- Linear follow-up created: `FRE-122` Moonlight PGR-quality graphics and animation pipeline.
