@@ -137,3 +137,37 @@ Current honesty:
 - This is now a coherent playable fairytale toy-room pass, not a final premium art pass.
 - The next true "top top" step is a production art pipeline task: authored high-quality room kit, real root-motion action clips, better child avatar/rig, URP-style post stack, and shot-by-shot camera polish.
 - Linear follow-up created: `FRE-122` Moonlight PGR-quality graphics and animation pipeline.
+
+## 2026-04-25 - External APFS Library Migration + Action Camera Polish
+
+Reason for this pass:
+- The local macOS disk had already been pressure-cleaned, and the user asked to keep using the external SSD wherever possible.
+- Moonlight was already on `/Volumes/SSD-FRH-1/Free-River-House/moonlight-magic-house`, but the Unity `Library` still needed a safer external home that avoids exFAT metadata/CoreCLR problems.
+- The last playable build was improved, but actions still needed better staging, less UI obstruction, more readable proportions, and softer movement.
+
+Storage/workflow change:
+- Created an APFS sparsebundle on the external SSD: `/Volumes/SSD-FRH-1/Free-River-House/apfs/FRH-Moonlight-APFS.sparsebundle`.
+- Mounted it at `/Volumes/FRH-Moonlight-APFS`.
+- Migrated the Unity Library to `/Volumes/FRH-Moonlight-APFS/Moonlight/MMH-Library-APFS`.
+- The project `Library` entry now points there as a symlink, and the old internal `/Users/mattiapetrucciani/MMH-Library-APFS` copy was removed after a successful build/playtest pass.
+- Updated `.gitignore` so the `Library` symlink itself is ignored, not only real `Library/` directories.
+- Unity build/playtest now uses APFS external temp/cache locations for `TMPDIR`, `TEMP`, `TMP`, `XDG_CACHE_HOME`, `UPM_CACHE_PATH`, `UPM_NPM_CACHE_PATH`, and `UPM_GIT_CACHE_PATH`.
+- Note: sending Unity temp/package work directly to the exFAT SSD caused licensing/CoreCLR/package registration failures. The APFS sparsebundle on the SSD fixed that while still keeping the heavy Unity data off the internal disk.
+
+Game polish in this pass:
+- Added action shot presets so feed, cuddle, bath, dance, and similar vignettes use a lower/wider camera instead of cropping Moonlight awkwardly.
+- Faded the HUD/action bar during action vignettes so the animation reads more like a small scene and less like a UI overlay.
+- Improved walk/run motion with a reset walk phase, smoother facing yaw interpolation, a small arced path, stronger arm/leg rhythm, and reduced idle wobble while walking.
+- Tuned the stylized child proportions again: smaller head/ribbons and slightly longer legs for a less distorted read.
+- Improved bed/rest staging: Moonlight moves to the bed, the camera frames the rest pose more clearly, and the bed scale is less tiny.
+- Added richer bedroom details: soft floor shadows/glows around key props, tiny wall frames, and a glowing moon/star mobile to push the fairytale atmosphere.
+
+Verification:
+- Built successfully with Unity 6000.3.2f1 in headless batchmode only.
+- Ran the built app with `-mmhPlaytest`.
+- Player log reached `[Playtest][PASS] xp=2426 coins=27 mood=Happy wonder=100 warmth=58 rest=37 magic=47 hunger=72`.
+- Visually inspected `00_initial`, `03_SleepBtn`, `04_PlayBtn`, `05_BathBtn`, and `06_DanceBtn` screenshots after the pass.
+
+Current honesty:
+- This is a cleaner, more coherent fairytale toy-room/action pass and the SSD workflow is now much healthier.
+- It is still not the final `Pizza Gelato Rush` art bar. The next big jump should be production-quality authored room assets, a better child rig/avatar, real action clips/root motion, and a URP-style render/post stack.

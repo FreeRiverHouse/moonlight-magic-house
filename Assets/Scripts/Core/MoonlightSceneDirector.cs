@@ -28,6 +28,9 @@ namespace MoonlightMagicHouse
         GameObject[] _roomOnlyProps;
         Coroutine _active;
         Coroutine _cameraMove;
+        Coroutine _uiFade;
+        CanvasGroup _hudGroup;
+        CanvasGroup _actionGroup;
         Vector3 _home;
         Quaternion _homeRotation = Quaternion.identity;
         Vector3 _homeScale = Vector3.one;
@@ -107,10 +110,14 @@ namespace MoonlightMagicHouse
                     _cameraFov = _camera.fieldOfView;
                 }
             }
+
+            BindUiGroups();
         }
 
         IEnumerator PlayActionRoutine(string action)
         {
+            SetUiVignette(true, 0.22f);
+
             if (action != "Play")
                 RestoreRoomInstant(_outside);
 
@@ -136,24 +143,28 @@ namespace MoonlightMagicHouse
                     break;
                 default:
                     _kid.PlayGesture(action);
+                    yield return new WaitForSeconds(0.9f);
                     break;
             }
+
+            SetUiVignette(false, 0.45f);
         }
 
         IEnumerator MoveAndGesture(Vector3 target, string gesture, float moveDuration, float yaw, bool run)
         {
-            StartCameraMove(_cameraPos, ForwardLook(), _cameraFov, 0.35f);
+            StartCameraMove(ActionCameraPos(target, gesture), ActionLookAt(target, gesture), ActionFov(gesture), 0.45f);
             yield return MoveMoonlight(target, moveDuration, yaw, run);
             _kid.SetWalking(false);
             _kid.SetFacingYaw(0f);
             _kid.PlayGesture(gesture);
+            yield return new WaitForSeconds(gesture == "Dance" ? 1.35f : 1.05f);
         }
 
         IEnumerator NapRoutine()
         {
             Vector3 bedApproach = _home + new Vector3(0.86f, 0f, 0.38f);
-            Vector3 bedRestSpot = _home + new Vector3(1.42f, 0.47f, 0.38f);
-            StartCameraMove(new Vector3(0.02f, 1.22f, -4.55f), _home + new Vector3(1.44f, 0.72f, 0.34f), 34f, 0.65f);
+            Vector3 bedRestSpot = _home + new Vector3(1.40f, 0.53f, 0.38f);
+            StartCameraMove(new Vector3(0.04f, 1.04f, -4.86f), _home + new Vector3(1.38f, 0.58f, 0.34f), 38f, 0.65f);
             yield return MoveMoonlight(bedApproach, 0.52f, -12f, false);
             _kid.SetWalking(false);
             _kid.SetFacingYaw(0f);
@@ -174,7 +185,7 @@ namespace MoonlightMagicHouse
             Quaternion fromRot = _moonlight.rotation;
             Vector3 fromScale = _moonlight.localScale;
             Quaternion bedRot = _homeRotation * Quaternion.Euler(0f, -4f, 78f);
-            Vector3 bedScale = _homeScale * 0.78f;
+            Vector3 bedScale = _homeScale * 0.84f;
 
             float t = 0f;
             while (t < duration)
@@ -197,7 +208,7 @@ namespace MoonlightMagicHouse
             if (_doorRoot != null) _doorRoot.SetActive(true);
 
             Vector3 doorSpot = _home + new Vector3(0.98f, 0f, 0.05f);
-            StartCameraMove(new Vector3(0.08f, 1.16f, -4.52f), doorSpot + new Vector3(0f, 0.72f, 0.06f), 38f, 0.45f);
+            StartCameraMove(new Vector3(0.04f, 1.04f, -4.84f), doorSpot + new Vector3(0f, 0.58f, 0.06f), 41f, 0.45f);
             yield return MoveMoonlight(doorSpot, 0.82f, -16f, false);
             _kid.SetWalking(false);
             _kid.SetFacingYaw(-18f);
@@ -212,7 +223,7 @@ namespace MoonlightMagicHouse
             _moonlight.position = meadowStart;
             _kid.SetFacingYaw(10f);
             _kid.PlayGesture("Play");
-            StartCameraMove(new Vector3(0f, 1.10f, -4.45f), _home + new Vector3(0.18f, 0.74f, -0.10f), 40f, 0.28f);
+            StartCameraMove(new Vector3(0f, 0.98f, -4.92f), _home + new Vector3(0.18f, 0.56f, -0.10f), 44f, 0.28f);
             yield return MoveMoonlight(meadowEnd, 1.35f, 10f, true);
             _kid.SetWalking(false);
             _kid.SetFacingYaw(0f);
@@ -229,6 +240,9 @@ namespace MoonlightMagicHouse
 
             Vector3 from = _moonlight.position;
             target.y = _home.y;
+            Vector3 delta = target - from;
+            Vector3 side = delta.sqrMagnitude > 0.0001f ? Vector3.Cross(Vector3.up, delta.normalized) : Vector3.right;
+            float sideArc = run ? 0.070f : 0.035f;
             _kid.SetWalking(true, run);
             _kid.SetFacingYaw(yaw);
 
@@ -238,7 +252,9 @@ namespace MoonlightMagicHouse
                 t += Time.deltaTime;
                 float k = Mathf.Clamp01(t / Mathf.Max(0.01f, duration));
                 float ease = Mathf.SmoothStep(0f, 1f, k);
-                _moonlight.position = Vector3.Lerp(from, target, ease);
+                Vector3 p = Vector3.Lerp(from, target, ease);
+                p += side * (Mathf.Sin(k * Mathf.PI) * sideArc);
+                _moonlight.position = p;
                 yield return null;
             }
             _moonlight.position = target;
@@ -350,6 +366,75 @@ namespace MoonlightMagicHouse
         Vector3 ForwardLook()
         {
             return _cameraPos + _cameraRot * Vector3.forward * 4.7f;
+        }
+
+        Vector3 ActionCameraPos(Vector3 target, string gesture)
+        {
+            float x = Mathf.Clamp(target.x * 0.18f - 0.03f, -0.34f, 0.28f);
+            float y = gesture == "Snack" ? 1.00f : 0.98f;
+            float z = gesture == "Bath" ? -5.02f : -4.92f;
+            return new Vector3(x, y, z);
+        }
+
+        Vector3 ActionLookAt(Vector3 target, string gesture)
+        {
+            float y = gesture == "Snack" ? 0.60f : gesture == "Bath" ? 0.52f : 0.56f;
+            float z = gesture == "Snack" ? -0.06f : 0.02f;
+            return target + new Vector3(0f, y, z);
+        }
+
+        float ActionFov(string gesture)
+        {
+            switch (gesture)
+            {
+                case "Dance": return 39f;
+                case "Bath": return 39.5f;
+                case "Snack": return 38.5f;
+                default: return 38f;
+            }
+        }
+
+        void BindUiGroups()
+        {
+            if (_hudGroup == null) _hudGroup = FindCanvasGroup("PhotoHUD");
+            if (_actionGroup == null) _actionGroup = FindCanvasGroup("CandyActionBar");
+        }
+
+        static CanvasGroup FindCanvasGroup(string name)
+        {
+            var go = GameObject.Find(name);
+            if (go == null) return null;
+            var group = go.GetComponent<CanvasGroup>();
+            if (group == null) group = go.AddComponent<CanvasGroup>();
+            return group;
+        }
+
+        void SetUiVignette(bool active, float duration)
+        {
+            BindUiGroups();
+            if (_uiFade != null) StopCoroutine(_uiFade);
+            _uiFade = StartCoroutine(FadeUi(active, duration));
+        }
+
+        IEnumerator FadeUi(bool active, float duration)
+        {
+            float hudFrom = _hudGroup != null ? _hudGroup.alpha : 1f;
+            float actionsFrom = _actionGroup != null ? _actionGroup.alpha : 1f;
+            float hudTo = active ? 0.38f : 1f;
+            float actionsTo = active ? 0.08f : 1f;
+            float t = 0f;
+
+            while (t < duration)
+            {
+                t += Time.deltaTime;
+                float k = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / Mathf.Max(0.01f, duration)));
+                if (_hudGroup != null) _hudGroup.alpha = Mathf.Lerp(hudFrom, hudTo, k);
+                if (_actionGroup != null) _actionGroup.alpha = Mathf.Lerp(actionsFrom, actionsTo, k);
+                yield return null;
+            }
+
+            if (_hudGroup != null) _hudGroup.alpha = hudTo;
+            if (_actionGroup != null) _actionGroup.alpha = actionsTo;
         }
 
         void CreateBedRestHelpers()

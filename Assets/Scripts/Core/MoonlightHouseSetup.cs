@@ -1515,6 +1515,7 @@ namespace MoonlightMagicHouse
             BuildBedroomPlayProps(parent);
             BuildBedroomBathAndSnack(parent);
             BuildBedroomFairyLights(parent);
+            BuildBedroomMagicDetails(parent);
         }
 
         static void BuildBedroomWindow(Transform parent)
@@ -1679,6 +1680,62 @@ namespace MoonlightMagicHouse
                 bulb.AddComponent<StarTwinkle>();
                 prev = p;
             }
+        }
+
+        static void BuildBedroomMagicDetails(Transform parent)
+        {
+            PhotoGlowQuad("RoomBedSoftFloorShadow", parent, new Vector3(2.05f, 0.018f, -0.52f),
+                Quaternion.Euler(90f, 0f, 0f), new Vector3(1.90f, 0.92f, 1f),
+                new Color(0.10f, 0.04f, 0.04f, 0.12f));
+            PhotoGlowQuad("RoomDollhouseSoftShadow", parent, new Vector3(-0.82f, 0.018f, -0.64f),
+                Quaternion.Euler(90f, 0f, 0f), new Vector3(1.00f, 0.48f, 1f),
+                new Color(0.10f, 0.04f, 0.04f, 0.10f));
+            PhotoGlowQuad("RoomBathSoftGlow", parent, new Vector3(1.24f, 0.030f, 0.08f),
+                Quaternion.Euler(90f, 0f, 0f), new Vector3(0.92f, 0.62f, 1f),
+                new Color(0.48f, 0.88f, 1.00f, 0.10f));
+
+            Color frame = new Color(1.0f, 0.74f, 0.50f);
+            Color matPink = new Color(0.94f, 0.54f, 0.70f);
+            Color matBlue = new Color(0.54f, 0.78f, 0.96f);
+            BuildTinyWallFrame(parent, new Vector3(1.28f, 1.84f, 1.42f), frame, matBlue, "MoonFrameA");
+            BuildTinyWallFrame(parent, new Vector3(1.74f, 1.66f, 1.42f), frame, matPink, "MoonFrameB");
+
+            PhotoPrim(PrimitiveType.Cylinder, "MoonMobileCord", parent,
+                new Vector3(0.48f, 2.33f, -0.22f), new Vector3(0.010f, 0.28f, 0.010f),
+                new Color(0.88f, 0.72f, 0.55f), 0.20f);
+            var moon = PhotoPrim(PrimitiveType.Sphere, "MoonMobileCrescentGlow", parent,
+                new Vector3(0.48f, 2.02f, -0.22f), new Vector3(0.13f, 0.13f, 0.035f),
+                new Color(1.0f, 0.86f, 0.38f), 0.50f, true, 0.75f);
+            moon.AddComponent<StarTwinkle>();
+            PhotoPrim(PrimitiveType.Sphere, "MoonMobileCrescentCut", parent,
+                new Vector3(0.53f, 2.03f, -0.245f), new Vector3(0.10f, 0.10f, 0.030f),
+                new Color(1.0f, 0.78f, 0.84f), 0.28f);
+            for (int i = 0; i < 4; i++)
+            {
+                float a = i * Mathf.PI * 0.5f;
+                var star = MakePhotoRotated(PrimitiveType.Cube, $"MoonMobileStar{i}", parent,
+                    new Vector3(0.48f + Mathf.Cos(a) * 0.26f, 1.91f + Mathf.Sin(a * 1.7f) * 0.06f, -0.22f + Mathf.Sin(a) * 0.10f),
+                    Quaternion.Euler(0f, 0f, 45f), Vector3.one * 0.050f,
+                    new Color(1.0f, 0.82f, 0.42f), 0.48f, true, 0.55f);
+                star.AddComponent<StarTwinkle>();
+            }
+        }
+
+        static void BuildTinyWallFrame(Transform parent, Vector3 center, Color frame, Color fill, string prefix)
+        {
+            PhotoPrim(PrimitiveType.Cube, $"{prefix}Back", parent,
+                center, new Vector3(0.34f, 0.24f, 0.025f), fill, 0.34f, true, 0.08f);
+            PhotoPrim(PrimitiveType.Cube, $"{prefix}Top", parent,
+                center + new Vector3(0f, 0.135f, -0.012f), new Vector3(0.40f, 0.035f, 0.035f), frame, 0.42f);
+            PhotoPrim(PrimitiveType.Cube, $"{prefix}Bottom", parent,
+                center + new Vector3(0f, -0.135f, -0.012f), new Vector3(0.40f, 0.035f, 0.035f), frame, 0.42f);
+            PhotoPrim(PrimitiveType.Cube, $"{prefix}Left", parent,
+                center + new Vector3(-0.205f, 0f, -0.012f), new Vector3(0.035f, 0.28f, 0.035f), frame, 0.42f);
+            PhotoPrim(PrimitiveType.Cube, $"{prefix}Right", parent,
+                center + new Vector3(0.205f, 0f, -0.012f), new Vector3(0.035f, 0.28f, 0.035f), frame, 0.42f);
+            PhotoPrim(PrimitiveType.Sphere, $"{prefix}GlowDot", parent,
+                center + new Vector3(0f, 0f, -0.030f), Vector3.one * 0.050f,
+                new Color(1f, 0.86f, 0.42f), 0.55f, true, 0.85f).AddComponent<StarTwinkle>();
         }
 
         static void BuildFairytaleMeadow3D(Transform parent)
