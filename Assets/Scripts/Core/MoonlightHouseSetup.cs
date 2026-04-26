@@ -1619,21 +1619,30 @@ namespace MoonlightMagicHouse
         static void BuildBedroomBathAndSnack(Transform parent)
         {
             PhotoPrim(PrimitiveType.Cube, "SnackTableTop", parent,
-                new Vector3(-0.12f, 0.24f, -1.48f), new Vector3(0.50f, 0.07f, 0.28f),
-                new Color(0.46f, 0.30f, 0.20f), 0.34f);
+                new Vector3(-0.12f, 0.24f, -1.48f), new Vector3(0.58f, 0.055f, 0.34f),
+                new Color(0.40f, 0.26f, 0.18f), 0.30f);
             PhotoPrim(PrimitiveType.Cylinder, "SnackTableLeg", parent,
                 new Vector3(-0.12f, 0.11f, -1.48f), new Vector3(0.045f, 0.12f, 0.045f),
                 new Color(0.54f, 0.34f, 0.24f), 0.34f);
+            PhotoPrim(PrimitiveType.Cylinder, "SnackPlate", parent,
+                new Vector3(-0.12f, 0.295f, -1.48f), new Vector3(0.18f, 0.012f, 0.18f),
+                new Color(0.92f, 0.84f, 0.70f), 0.58f);
 
-            PhotoPrim(PrimitiveType.Cube, "BubbleTubBase", parent,
-                new Vector3(1.24f, 0.16f, 0.06f), new Vector3(0.66f, 0.22f, 0.40f),
-                new Color(0.60f, 0.74f, 0.78f), 0.46f);
-            for (int i = 0; i < 8; i++)
+            PhotoPrim(PrimitiveType.Sphere, "BubbleTubBase", parent,
+                new Vector3(1.24f, 0.18f, 0.06f), new Vector3(0.38f, 0.14f, 0.24f),
+                new Color(0.54f, 0.68f, 0.72f), 0.42f);
+            PhotoPrim(PrimitiveType.Sphere, "BubbleTubWater", parent,
+                new Vector3(1.24f, 0.31f, 0.06f), new Vector3(0.31f, 0.035f, 0.19f),
+                new Color(0.68f, 0.92f, 0.96f), 0.72f, true, 0.14f);
+            PhotoPrim(PrimitiveType.Cylinder, "BubbleTubRim", parent,
+                new Vector3(1.24f, 0.32f, 0.06f), new Vector3(0.36f, 0.055f, 0.23f),
+                new Color(0.78f, 0.88f, 0.88f), 0.54f);
+            for (int i = 0; i < 10; i++)
             {
-                float x = 0.98f + (i % 4) * 0.16f;
-                float z = -0.07f + (i / 4) * 0.20f;
+                float x = 0.96f + (i % 5) * 0.14f;
+                float z = -0.08f + (i / 5) * 0.18f;
                 PhotoPrim(PrimitiveType.Sphere, $"BubbleBathFoam{i}", parent,
-                    new Vector3(x, 0.36f + Mathf.Sin(i) * 0.025f, z), Vector3.one * (0.055f + (i % 3) * 0.012f),
+                    new Vector3(x, 0.38f + Mathf.Sin(i) * 0.020f, z), Vector3.one * (0.050f + (i % 3) * 0.010f),
                     new Color(0.96f, 1.00f, 1.00f), 0.88f, true, 0.35f);
             }
         }
@@ -2158,17 +2167,16 @@ namespace MoonlightMagicHouse
         static void CreateGlossyKidTreats(Transform parent)
         {
             MakePhotorealToy(parent, PrimitiveType.Sphere, "StrawberryMacaron",
-                new Vector3(1.56f, 0.06f, -1.18f), new Vector3(0.070f, 0.024f, 0.070f),
+                new Vector3(-0.23f, 0.335f, -1.51f), new Vector3(0.060f, 0.020f, 0.060f),
                 new Color(1.00f, 0.46f, 0.62f), 0.62f);
             MakePhotorealToy(parent, PrimitiveType.Sphere, "LemonMacaron",
-                new Vector3(1.78f, 0.055f, -1.08f), new Vector3(0.064f, 0.022f, 0.064f),
+                new Vector3(-0.10f, 0.342f, -1.45f), new Vector3(0.058f, 0.020f, 0.058f),
                 new Color(1.00f, 0.84f, 0.32f), 0.58f);
             MakePhotorealToy(parent, PrimitiveType.Sphere, "BlueberryMacaron",
-                new Vector3(2.04f, 0.052f, -1.18f), new Vector3(0.058f, 0.020f, 0.058f),
+                new Vector3(0.03f, 0.335f, -1.52f), new Vector3(0.054f, 0.018f, 0.054f),
                 new Color(0.42f, 0.62f, 1.00f), 0.60f);
 
-            // Keep this pass intentionally tiny: the photo already carries plush/detail,
-            // while the macarons add a small readable "treat" affordance near SNACK.
+            // Keep treats on the snack table so the SNACK vignette has a real contact target.
         }
 
         static GameObject MakePhotorealToy(Transform parent, PrimitiveType type, string name,

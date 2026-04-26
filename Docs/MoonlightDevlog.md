@@ -1,5 +1,27 @@
 # Moonlight Magic House Devlog
 
+## 2026-04-26 - Snack and Bath Contact Prop Pass
+
+Reason for this pass:
+- While the user playtested the current build, the next small production step was to improve action contact points without changing the whole visual direction.
+- `SNACK` had a mismatch: the treats were not on the snack table, so Moonlight moved toward a vignette without a clear object target.
+- `BATH` still read as a primitive block with bubbles.
+
+What changed:
+- Moved the macarons onto the snack table and added a small plate, so `SNACK` has a readable table/contact target.
+- Reworked the bath prop from a cube into a small oval tub cluster with base, water surface, rim, and more organized foam.
+- Kept the changes deliberately scoped: the photoreal room plate remains the main visual read, and the foreground props are only gameplay affordances.
+
+Verification:
+- Built successfully with Unity 6000.3.2f1 in headless batchmode using the external APFS temp/cache paths.
+- Ran `Moonlight Magic House.app -mmhPlaytest`.
+- Player log reached `[Playtest][PASS] xp=3564 coins=10 mood=Happy wonder=100 warmth=86 rest=37 magic=80 hunger=72`.
+- Inspected `01_FeedBtn` and `05_BathBtn` screenshots in `~/Desktop/MMH-QA/playtest/`.
+
+Current honesty:
+- This is a small but useful contact-read improvement: snack is clearer, bath is less blocky.
+- The next real art jump still needs authored high-quality props rather than runtime primitives.
+
 ## 2026-04-26 - Action Motion and Perceived Physics Pass
 
 Reason for this pass:
