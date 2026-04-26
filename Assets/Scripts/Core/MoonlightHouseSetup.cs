@@ -2904,9 +2904,21 @@ namespace MoonlightMagicHouse
             var xpLabel    = MakeLegacyLabel("XPLabel",    hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "XP 0", 1, Color.clear, FontStyle.Normal);
             var daysLabel  = MakeLegacyLabel("DaysLabel",  hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "DAY 1", 1, Color.clear, FontStyle.Normal);
 
+            var carePanel = Panel("CarePanel", canvasGO.transform,
+                new Vector2(1f, 1f), new Vector2(1f, 1f),
+                new Vector2(-386f, -238f), new Vector2(-76f, -86f),
+                new Color(1f, 0.94f, 0.86f, 0.38f));
+
+            var careHint = MakeLegacyLabel("CareHint", carePanel.transform,
+                new Vector2(0f, -20f), new Vector2(276f, 24f),
+                "Moonlight feels cozy", 15, new Color(0.34f, 0.18f, 0.18f), FontStyle.Bold);
+
             var sliders = new Slider[5];
-            for (int i = 0; i < sliders.Length; i++)
-                sliders[i] = MakeHiddenSlider(canvasGO.transform, i);
+            sliders[0] = MakeCareSlider(carePanel.transform, "FUN",   -48f, new Color(1.00f, 0.78f, 0.30f));
+            sliders[1] = MakeCareSlider(carePanel.transform, "LOVE",  -70f, new Color(1.00f, 0.46f, 0.66f));
+            sliders[2] = MakeCareSlider(carePanel.transform, "REST",  -92f, new Color(0.52f, 0.70f, 1.00f));
+            sliders[3] = MakeCareSlider(carePanel.transform, "MAGIC", -114f, new Color(0.76f, 0.55f, 1.00f));
+            sliders[4] = MakeCareSlider(carePanel.transform, "FOOD",  -136f, new Color(1.00f, 0.58f, 0.40f));
 
             var btnPanel = Panel("CandyActionBar", canvasGO.transform,
                 new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
@@ -3041,6 +3053,9 @@ namespace MoonlightMagicHouse
                 roomPanel, roomLabel,
                 offlinePanel, sleepOvr,
                 feedMenu, contentGO.transform);
+            ui.promptRoot = carePanel;
+            ui.legacyPromptLabel = careHint;
+            ui.keepPromptVisible = true;
 
             return (canvasGO, ui);
         }
@@ -3060,6 +3075,58 @@ namespace MoonlightMagicHouse
             var slider = go.GetComponent<Slider>();
             slider.value = 0.8f;
             slider.interactable = false;
+            return slider;
+        }
+
+        static Slider MakeCareSlider(Transform parent, string label, float y, Color fillColor)
+        {
+            var row = new GameObject($"{label}Row");
+            row.transform.SetParent(parent, false);
+            var rowRt = row.AddComponent<RectTransform>();
+            rowRt.anchorMin = new Vector2(0f, 1f);
+            rowRt.anchorMax = new Vector2(1f, 1f);
+            rowRt.pivot = new Vector2(0f, 1f);
+            rowRt.offsetMin = new Vector2(18f, y - 18f);
+            rowRt.offsetMax = new Vector2(-18f, y);
+
+            var labelGO = new GameObject($"{label}Label");
+            labelGO.transform.SetParent(row.transform, false);
+            var text = labelGO.AddComponent<Text>();
+            text.text = label;
+            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.fontSize = 11;
+            text.fontStyle = FontStyle.Bold;
+            text.color = new Color(0.30f, 0.16f, 0.14f);
+            text.alignment = TextAnchor.MiddleLeft;
+            var labelRt = labelGO.GetComponent<RectTransform>();
+            labelRt.anchorMin = new Vector2(0f, 0f);
+            labelRt.anchorMax = new Vector2(0f, 1f);
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = new Vector2(58f, 0f);
+
+            var res = new DefaultControls.Resources();
+            var go = DefaultControls.CreateSlider(res);
+            go.name = $"{label}CareBar";
+            go.transform.SetParent(row.transform, false);
+            var rt = go.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 0f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.offsetMin = new Vector2(64f, 2f);
+            rt.offsetMax = new Vector2(0f, -2f);
+
+            var slider = go.GetComponent<Slider>();
+            slider.value = 0.8f;
+            slider.interactable = false;
+
+            var background = go.transform.Find("Background")?.GetComponent<Image>();
+            if (background != null) background.color = new Color(0.22f, 0.16f, 0.14f, 0.26f);
+
+            var fill = go.transform.Find("Fill Area/Fill")?.GetComponent<Image>();
+            if (fill != null) fill.color = fillColor;
+
+            var handle = go.transform.Find("Handle Slide Area/Handle");
+            if (handle != null) handle.gameObject.SetActive(false);
+
             return slider;
         }
 

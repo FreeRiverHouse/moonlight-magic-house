@@ -1,5 +1,28 @@
 # Moonlight Magic House Devlog
 
+## 2026-04-26 - Virtual Pet Readability Pass
+
+Reason for this pass:
+- User feedback: the game is still too limited as gameplay; it needs to feel more like a real virtual pet, not just a photoreal scene with action buttons.
+- The existing Moonlight systems already track hunger, rest, warmth, magic, wonder, XP, coins, mood, and decay, but the photoreal prototype hid most of that loop.
+- This pass exposes the care loop first, before larger gameplay expansion, so playtesting has clearer feedback.
+
+What changed:
+- Added a compact persistent care panel to the photoreal HUD with live `FUN`, `LOVE`, `REST`, `MAGIC`, and `FOOD` bars wired to the existing Moonlight stat system.
+- Added a contextual care hint that updates from Moonlight's lowest need, e.g. snack, nap, hug, play, or magic.
+- Kept the panel visible in photoreal mode even if prompt hover events fire elsewhere, so the care state does not disappear during play.
+- Reused existing `MoonlightCharacter` stats/actions rather than creating a parallel virtual-pet system.
+
+Verification:
+- Built successfully with Unity 6000.3.2f1 in headless batchmode using the external APFS temp/cache paths.
+- Ran `Moonlight Magic House.app -mmhPlaytest`.
+- Player log reached `[Playtest][PASS] xp=3604 coins=9 mood=Happy wonder=100 warmth=58 rest=37 magic=89 hunger=72`.
+- Inspected `00_initial`, `03_SleepBtn`, `04_PlayBtn`, and `05_BathBtn` screenshots in `~/Desktop/MMH-QA/playtest/`.
+
+Current honesty:
+- This improves gameplay readability immediately: the player can now see why an action matters.
+- It is still not enough to call the game "next level"; the next gameplay step should add richer action outcomes/mini-goals, and the next art step should replace more primitive foreground props with authored photoreal/stylized-real assets.
+
 ## 2026-04-26 - Snack and Bath Contact Prop Pass
 
 Reason for this pass:

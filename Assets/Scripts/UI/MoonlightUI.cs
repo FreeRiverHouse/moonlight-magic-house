@@ -46,6 +46,7 @@ namespace MoonlightMagicHouse
         public GameObject promptRoot;
         public TMP_Text   promptLabel;
         public Text       legacyPromptLabel;
+        public bool       keepPromptVisible;
 
         // Feed menu
         public GameObject  feedMenuRoot;
@@ -126,7 +127,11 @@ namespace MoonlightMagicHouse
             promptRoot.SetActive(true);
         }
 
-        public void HidePrompt() => promptRoot?.SetActive(false);
+        public void HidePrompt()
+        {
+            if (keepPromptVisible) return;
+            promptRoot?.SetActive(false);
+        }
 
         public void Refresh(MoonlightCharacter m)
         {
@@ -141,6 +146,7 @@ namespace MoonlightMagicHouse
             SetText(xpLabel, legacyXPLabel, $"XP {m.xp}");
             SetText(daysLabel, legacyDaysLabel, $"Day {Mathf.FloorToInt(m.daysInHouse) + 1}");
             SetText(moodEmoji, legacyMoodLabel, MoodEmojis[(int)m.stats.GetMood()]);
+            UpdateCarePrompt(m);
         }
 
         public void OnMoodChange(MoonlightMood mood)
@@ -223,6 +229,32 @@ namespace MoonlightMagicHouse
             panel.SetActive(true);
             yield return new WaitForSeconds(dur);
             panel.SetActive(false);
+        }
+
+        void UpdateCarePrompt(MoonlightCharacter m)
+        {
+            if (promptRoot == null) return;
+
+            var s = m.stats;
+            string prompt;
+            if (s.hunger < 35f)
+                prompt = "Moonlight wants a snack";
+            else if (s.rest < 35f)
+                prompt = "Moonlight needs a nap";
+            else if (s.warmth < 35f)
+                prompt = "Moonlight wants a hug";
+            else if (s.wonder < 35f)
+                prompt = "Moonlight wants to play";
+            else if (s.magic < 35f)
+                prompt = "Moonlight wants magic";
+            else
+            {
+                var mood = s.GetMood();
+                prompt = mood == MoonlightMood.Radiant ? "Moonlight is glowing" : "Moonlight feels cozy";
+            }
+
+            SetText(promptLabel, legacyPromptLabel, prompt);
+            promptRoot.SetActive(true);
         }
 
         static void SetText(TMP_Text tmp, Text legacy, string value)
