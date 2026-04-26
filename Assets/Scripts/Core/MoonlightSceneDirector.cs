@@ -162,9 +162,9 @@ namespace MoonlightMagicHouse
 
         IEnumerator NapRoutine()
         {
-            Vector3 bedApproach = _home + new Vector3(0.86f, 0f, 0.38f);
-            Vector3 bedRestSpot = _home + new Vector3(1.40f, 0.53f, 0.38f);
-            StartCameraMove(new Vector3(0.04f, 1.04f, -4.86f), _home + new Vector3(1.38f, 0.58f, 0.34f), 38f, 0.65f);
+            Vector3 bedApproach = _home + new Vector3(-1.10f, 0f, 0.18f);
+            Vector3 bedRestSpot = _home + new Vector3(-1.55f, 0.54f, 0.18f);
+            StartCameraMove(new Vector3(-0.56f, 1.02f, -4.92f), _home + new Vector3(-1.45f, 0.62f, 0.18f), 37f, 0.65f);
             yield return MoveMoonlight(bedApproach, 0.52f, -12f, false);
             _kid.SetWalking(false);
             _kid.SetFacingYaw(0f);
@@ -442,7 +442,7 @@ namespace MoonlightMagicHouse
             if (_bedRestRoot != null || _moonlight == null) return;
 
             _bedRestRoot = new GameObject("MoonBedRestOcclusion");
-            _bedRestRoot.transform.position = _home + new Vector3(1.48f, 0.84f, 0.38f);
+            _bedRestRoot.transform.position = _home + new Vector3(-1.55f, 0.86f, 0.18f);
             _bedRestRoot.transform.rotation = Quaternion.identity;
 
             var shadowMat = MakeSpriteMat(new Color(0.12f, 0.055f, 0.05f, 0.26f), MoonlightHouseSetup.MakeSoftCircleTex(128));

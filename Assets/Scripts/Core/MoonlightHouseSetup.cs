@@ -1480,47 +1480,21 @@ namespace MoonlightMagicHouse
         static void BuildFairytaleBedroom3D(Transform parent)
         {
             var floor = PhotoPrim(PrimitiveType.Cube, "PGR_HoneyWoodFloor", parent,
-                new Vector3(0.25f, -0.055f, -0.75f), new Vector3(5.30f, 0.10f, 5.30f),
-                new Color(0.72f, 0.48f, 0.31f), 0.34f);
-            ApplyTiledTexture(floor, ProcTextures.LightWood(), new Vector2(2.2f, 2.1f));
-
-            var back = PhotoPrim(PrimitiveType.Cube, "PGR_BackWallpaper", parent,
-                new Vector3(0.25f, 1.35f, 1.56f), new Vector3(5.30f, 2.82f, 0.10f),
-                new Color(1.00f, 0.86f, 0.88f), 0.22f);
-            ApplyTiledTexture(back, MakeStripeTex(192, 192, new Color(1.00f, 0.78f, 0.84f), new Color(0.74f, 0.56f, 0.86f)), new Vector2(2.0f, 1.0f));
-            var left = PhotoPrim(PrimitiveType.Cube, "PGR_LeftWall", parent,
-                new Vector3(-2.40f, 1.35f, -0.75f), new Vector3(0.10f, 2.82f, 5.30f),
-                new Color(0.88f, 0.96f, 0.96f), 0.20f);
-            ApplyTiledTexture(left, MakeStripeTex(192, 192, new Color(0.78f, 0.92f, 0.96f), new Color(0.98f, 0.82f, 0.88f)), new Vector2(1.2f, 1.0f));
-            var right = PhotoPrim(PrimitiveType.Cube, "PGR_RightWall", parent,
-                new Vector3(2.90f, 1.35f, -0.75f), new Vector3(0.10f, 2.82f, 5.30f),
-                new Color(0.96f, 0.86f, 0.98f), 0.20f);
-            ApplyTiledTexture(right, MakeStripeTex(192, 192, new Color(0.92f, 0.76f, 0.96f), new Color(1.00f, 0.86f, 0.80f)), new Vector2(1.2f, 1.0f));
-            PhotoPrim(PrimitiveType.Cube, "PGR_CeilingWarmth", parent,
-                new Vector3(0.25f, 2.78f, -0.75f), new Vector3(5.30f, 0.10f, 5.30f),
-                new Color(0.95f, 0.82f, 0.72f), 0.18f);
-
-            Color trim = new Color(0.96f, 0.80f, 0.62f);
-            PhotoPrim(PrimitiveType.Cube, "PGR_BackSkirt", parent, new Vector3(0.25f, 0.10f, 1.48f), new Vector3(5.20f, 0.18f, 0.08f), trim, 0.30f);
-            PhotoPrim(PrimitiveType.Cube, "PGR_LeftSkirt", parent, new Vector3(-2.34f, 0.10f, -0.75f), new Vector3(0.08f, 0.18f, 5.00f), trim, 0.30f);
-            PhotoPrim(PrimitiveType.Cube, "PGR_RightSkirt", parent, new Vector3(2.84f, 0.10f, -0.75f), new Vector3(0.08f, 0.18f, 5.00f), trim, 0.30f);
+                new Vector3(0.18f, -0.065f, -1.20f), new Vector3(4.90f, 0.08f, 2.30f),
+                new Color(0.36f, 0.20f, 0.13f), 0.18f);
+            ApplyTiledTexture(floor, ProcTextures.LightWood(), new Vector2(1.4f, 0.8f));
 
             var rug = PhotoPrim(PrimitiveType.Cube, "PGR_DanceRug", parent,
                 new Vector3(0.70f, 0.008f, -1.05f), new Vector3(2.25f, 0.024f, 1.05f),
-                new Color(0.94f, 0.50f, 0.66f), 0.48f);
+                new Color(0.54f, 0.30f, 0.38f), 0.34f);
             ApplyTiledTexture(rug, ProcTextures.Rug(), new Vector2(1.0f, 0.8f));
             PhotoGlowQuad("PGR_RugSoftBloom", parent, new Vector3(0.70f, 0.035f, -1.05f),
                 Quaternion.Euler(90f, 0f, 0f), new Vector3(2.70f, 1.20f, 1f),
                 new Color(1.0f, 0.45f, 0.56f, 0.08f));
 
-            BuildBedroomWindow(parent);
-            BuildBedroomBed(parent);
-            BuildBedroomDollhouse(parent);
             BuildBedroomPlayProps(parent);
             BuildBedroomBathAndSnack(parent);
             BuildBedroomFairyLights(parent);
-            BuildBedroomMagicDetails(parent);
-            BuildBedroomProductionDetails(parent);
         }
 
         static void BuildBedroomWindow(Transform parent)
@@ -1554,28 +1528,28 @@ namespace MoonlightMagicHouse
         {
             PhotoPrim(PrimitiveType.Cube, "MoonlightRealBedBase", parent,
                 new Vector3(2.16f, 0.17f, -0.54f), new Vector3(1.38f, 0.24f, 0.78f),
-                new Color(0.82f, 0.48f, 0.42f), 0.38f);
+                new Color(0.46f, 0.27f, 0.22f), 0.34f);
             PhotoPrim(PrimitiveType.Cube, "MoonlightRealBedHeadboard", parent,
                 new Vector3(2.78f, 0.60f, -0.54f), new Vector3(0.14f, 0.88f, 0.96f),
-                new Color(0.70f, 0.42f, 0.54f), 0.36f);
+                new Color(0.42f, 0.26f, 0.32f), 0.32f);
             PhotoPrim(PrimitiveType.Sphere, "MoonlightRealMattress", parent,
                 new Vector3(2.05f, 0.38f, -0.54f), new Vector3(0.72f, 0.13f, 0.42f),
-                new Color(1.0f, 0.88f, 0.82f), 0.50f);
+                new Color(0.86f, 0.76f, 0.68f), 0.42f);
             PhotoPrim(PrimitiveType.Sphere, "MoonlightRealBlanket", parent,
                 new Vector3(2.17f, 0.50f, -0.54f), new Vector3(0.56f, 0.10f, 0.46f),
-                new Color(0.94f, 0.44f, 0.52f), 0.62f);
+                new Color(0.68f, 0.34f, 0.38f), 0.48f);
             PhotoPrim(PrimitiveType.Sphere, "MoonlightRealPillow", parent,
                 new Vector3(1.48f, 0.51f, -0.54f), new Vector3(0.22f, 0.08f, 0.30f),
-                new Color(1.0f, 0.92f, 0.72f), 0.58f);
+                new Color(0.86f, 0.80f, 0.66f), 0.46f);
 
-            Color post = new Color(0.98f, 0.72f, 0.50f);
+            Color post = new Color(0.66f, 0.45f, 0.28f);
             PhotoPrim(PrimitiveType.Cylinder, "MoonlightBedPostFrontA", parent, new Vector3(1.45f, 0.46f, -0.09f), new Vector3(0.045f, 0.44f, 0.045f), post, 0.42f);
             PhotoPrim(PrimitiveType.Cylinder, "MoonlightBedPostFrontB", parent, new Vector3(1.45f, 0.46f, -0.99f), new Vector3(0.045f, 0.44f, 0.045f), post, 0.42f);
             PhotoPrim(PrimitiveType.Sphere, "MoonlightBedPostOrbA", parent, new Vector3(1.45f, 0.91f, -0.09f), Vector3.one * 0.075f, new Color(1.0f, 0.80f, 0.48f), 0.58f, true, 0.35f);
             PhotoPrim(PrimitiveType.Sphere, "MoonlightBedPostOrbB", parent, new Vector3(1.45f, 0.91f, -0.99f), Vector3.one * 0.075f, new Color(1.0f, 0.80f, 0.48f), 0.58f, true, 0.35f);
             MakePhotoRotated(PrimitiveType.Cube, "MoonlightBedCanopyRibbon", parent,
                 new Vector3(2.04f, 1.05f, -0.54f), Quaternion.Euler(0f, 0f, -2f),
-                new Vector3(1.12f, 0.040f, 0.78f), new Color(1.0f, 0.66f, 0.80f), 0.46f, true, 0.18f);
+                new Vector3(1.12f, 0.032f, 0.78f), new Color(0.66f, 0.36f, 0.48f), 0.34f, true, 0.08f);
 
             PhotoGlowQuad("MoonlightBedWarmUnderGlow", parent, new Vector3(2.05f, 0.035f, -0.54f),
                 Quaternion.Euler(90f, 0f, 0f), new Vector3(1.62f, 0.88f, 1f),
@@ -1608,10 +1582,10 @@ namespace MoonlightMagicHouse
         {
             PhotoPrim(PrimitiveType.Sphere, "PGR_PlushBody", parent,
                 new Vector3(-1.44f, 0.20f, -1.03f), new Vector3(0.24f, 0.27f, 0.21f),
-                new Color(0.92f, 0.76f, 0.62f), 0.55f);
+                new Color(0.68f, 0.55f, 0.44f), 0.42f);
             PhotoPrim(PrimitiveType.Sphere, "PGR_PlushHead", parent,
                 new Vector3(-1.44f, 0.43f, -1.04f), Vector3.one * 0.15f,
-                new Color(0.96f, 0.80f, 0.68f), 0.55f);
+                new Color(0.72f, 0.58f, 0.48f), 0.42f);
             PhotoPrim(PrimitiveType.Sphere, "PGR_PlushEarL", parent,
                 new Vector3(-1.55f, 0.52f, -1.04f), new Vector3(0.07f, 0.10f, 0.05f),
                 new Color(0.88f, 0.62f, 0.58f), 0.52f);
@@ -1646,14 +1620,14 @@ namespace MoonlightMagicHouse
         {
             PhotoPrim(PrimitiveType.Cube, "SnackTableTop", parent,
                 new Vector3(-0.12f, 0.24f, -1.48f), new Vector3(0.50f, 0.07f, 0.28f),
-                new Color(0.80f, 0.52f, 0.34f), 0.42f);
+                new Color(0.46f, 0.30f, 0.20f), 0.34f);
             PhotoPrim(PrimitiveType.Cylinder, "SnackTableLeg", parent,
                 new Vector3(-0.12f, 0.11f, -1.48f), new Vector3(0.045f, 0.12f, 0.045f),
                 new Color(0.54f, 0.34f, 0.24f), 0.34f);
 
             PhotoPrim(PrimitiveType.Cube, "BubbleTubBase", parent,
                 new Vector3(1.24f, 0.16f, 0.06f), new Vector3(0.66f, 0.22f, 0.40f),
-                new Color(0.75f, 0.90f, 0.96f), 0.70f);
+                new Color(0.60f, 0.74f, 0.78f), 0.46f);
             for (int i = 0; i < 8; i++)
             {
                 float x = 0.98f + (i % 4) * 0.16f;
@@ -1841,6 +1815,7 @@ namespace MoonlightMagicHouse
         {
             var meadow = new GameObject("Moonlight3DMeadow");
             meadow.transform.SetParent(parent, false);
+            CreateMeadowPhotoBackdrop(meadow.transform);
 
             var sky = GameObject.CreatePrimitive(PrimitiveType.Quad);
             sky.name = "PGR_MeadowSkyGradient";
@@ -2040,10 +2015,31 @@ namespace MoonlightMagicHouse
             var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
             quad.name = "PhotorealRoomBackdrop";
             quad.transform.SetParent(parent, false);
-            quad.transform.localPosition = new Vector3(0.04f, 1.42f, 1.335f);
+            quad.transform.localPosition = new Vector3(0.20f, 1.43f, 1.335f);
             quad.transform.localRotation = Quaternion.identity;
             float aspect = (float)tex.width / Mathf.Max(1, tex.height);
-            float height = 3.45f;
+            float height = 7.20f;
+            quad.transform.localScale = new Vector3(height * aspect, height, 1f);
+            Object.Destroy(quad.GetComponent<Collider>());
+
+            var mat = new Material(TransparentSpriteShader);
+            mat.mainTexture = tex;
+            mat.color = Color.white;
+            quad.GetComponent<MeshRenderer>().material = mat;
+        }
+
+        static void CreateMeadowPhotoBackdrop(Transform parent)
+        {
+            var tex = Resources.Load<Texture2D>("Photoreal/meadow-generated");
+            if (tex == null) return;
+
+            var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            quad.name = "PhotorealMeadowBackdrop";
+            quad.transform.SetParent(parent, false);
+            quad.transform.localPosition = new Vector3(0.20f, 1.46f, 1.86f);
+            quad.transform.localRotation = Quaternion.identity;
+            float aspect = (float)tex.width / Mathf.Max(1, tex.height);
+            float height = 6.40f;
             quad.transform.localScale = new Vector3(height * aspect, height, 1f);
             Object.Destroy(quad.GetComponent<Collider>());
 

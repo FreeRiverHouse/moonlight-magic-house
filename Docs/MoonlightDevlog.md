@@ -1,5 +1,29 @@
 # Moonlight Magic House Devlog
 
+## 2026-04-26 - Photoreal Plate Integration Pass
+
+Reason for this pass:
+- The previous build was functional and more animated, but still read as a stylized character pasted into a partly procedural room.
+- The biggest visual offenders were the blocky right wall, cube bed, duplicated dollhouse/window props, and low-poly outdoor meadow.
+
+What changed:
+- Removed the procedural bedroom shell as the main visual read: no more large primitive side walls, ceiling, back wallpaper, or blocky bed/dollhouse duplication in front of the photoreal room.
+- Enlarged the generated photoreal bedroom plate so action cameras do not reveal empty gray background.
+- Retained only lightweight gameplay props in front of the plate: snack/bath affordances, rug/action grounding, simple toy props, fairy lights, and HUD.
+- Moved the `NAP` action toward the bed area in the photoreal room plate instead of the old cube bed on the right.
+- Added a photoreal meadow backdrop inside the outdoor scene, so `PLAY` no longer depends only on the low-poly grass/trees.
+- Kept Moonlight animated and clickable; this is a visual integration pass, not a full rig/animation replacement.
+
+Verification:
+- Built successfully with Unity 6000.3.2f1 in headless batchmode using external APFS temp/cache paths.
+- Ran `Moonlight Magic House.app -mmhPlaytest`.
+- Player log reached `[Playtest][PASS] xp=2760 coins=19 mood=Happy wonder=100 warmth=58 rest=37 magic=68 hunger=72`.
+- Inspected `00_initial`, `03_SleepBtn`, `04_PlayDoor`, and `04_PlayBtn` screenshots in `~/Desktop/MMH-QA/playtest/`.
+
+Current honesty:
+- This is a meaningful prototype-quality upgrade: first read is warmer, more photoreal, and less obviously assembled from primitive room walls.
+- It is not yet the final "top top" bar. The remaining mismatch is Moonlight/interactive props versus photoreal backgrounds. The next production pass should focus on a better child avatar/rig, authored action props, root-motion clips, and a coherent URP/HDRP-style render stack.
+
 ## 2026-04-26 - Asset Forge References + Scale/Staging Runtime Pass
 
 Reason for this pass:
