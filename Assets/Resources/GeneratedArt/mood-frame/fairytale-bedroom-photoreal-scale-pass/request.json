@@ -1,0 +1,19 @@
+{
+  "asset_type": "mood-frame",
+  "created_at": "2026-04-26T18:19:46+00:00",
+  "game": "moonlight",
+  "game_name": "Moonlight Magic House",
+  "license_mode": "ai_generated",
+  "linear": "FRE-130",
+  "notes": "First tracked Moonlight graphics upgrade request. Use generated images as mood/material reference; runtime must be rebuilt as coherent 3D scene with correct scale and action staging.",
+  "player_facing": false,
+  "prompt": "Moonlight Magic House visual target: photoreal but fairytale cozy little-girl bedroom, believable 1.1m child scale, warm moonlight and string lights, pink bed, plush toys, dollhouse play area, no visible real child, no pasted-photo look, room geometry and props suitable for Unity runtime reconstruction.",
+  "qa_focus": "Check child proportions, action staging, room scale, cozy fairytale mood, and no pasted photo child.",
+  "replacement_path": null,
+  "request_output_dir": "/Volumes/SSD-FRH-1/Free-River-House/moonlight-magic-house/Assets/Resources/GeneratedArt/mood-frame/fairytale-bedroom-photoreal-scale-pass",
+  "runtime_dir": "Assets/Resources/GeneratedArt/mood-frame/fairytale-bedroom-photoreal-scale-pass",
+  "slug": "fairytale-bedroom-photoreal-scale-pass",
+  "source_tool": "gpt-image-2",
+  "style_ref": null,
+  "target_root": "/Volumes/SSD-FRH-1/Free-River-House/moonlight-magic-house"
+}
