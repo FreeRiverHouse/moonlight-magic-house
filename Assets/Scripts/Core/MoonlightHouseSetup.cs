@@ -467,8 +467,10 @@ namespace MoonlightMagicHouse
             Bounds b = renderers[0].bounds;
             foreach (var r in renderers) b.Encapsulate(r.bounds);
             float height = Mathf.Max(0.1f, b.size.y);
-            float childScale = 1.06f / height;
-            instance.transform.localScale = new Vector3(childScale * 0.86f, childScale * 1.14f, childScale * 0.86f);
+            const float targetChildHeight = 1.10f;
+            const float childHeightStretch = 1.08f;
+            float childScale = targetChildHeight / (height * childHeightStretch);
+            instance.transform.localScale = new Vector3(childScale * 0.92f, childScale * childHeightStretch, childScale * 0.92f);
             instance.transform.localRotation = Quaternion.identity;
 
             b = renderers[0].bounds;
@@ -543,7 +545,7 @@ namespace MoonlightMagicHouse
             Bounds b = renderers[0].bounds;
             foreach (var r in renderers) b.Encapsulate(r.bounds);
             float height = Mathf.Max(0.1f, b.size.y);
-            instance.transform.localScale = Vector3.one * (1.06f / height);
+            instance.transform.localScale = Vector3.one * (1.10f / height);
             instance.transform.localRotation = Quaternion.identity;
 
             b = renderers[0].bounds;
@@ -1449,7 +1451,9 @@ namespace MoonlightMagicHouse
 
             var bedroom = new GameObject("Moonlight3DBedroomVisuals");
             bedroom.transform.SetParent(root.transform, false);
+            CreateRoomPhotoBackdrop(bedroom.transform);
             BuildFairytaleBedroom3D(bedroom.transform);
+            CreatePhotorealFloorBlend(bedroom.transform);
             CreateGlossyKidTreats(bedroom.transform);
             BuildFairytaleMeadow3D(root.transform);
 
@@ -2036,10 +2040,10 @@ namespace MoonlightMagicHouse
             var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
             quad.name = "PhotorealRoomBackdrop";
             quad.transform.SetParent(parent, false);
-            quad.transform.localPosition = new Vector3(0f, 1.52f, 2.35f);
+            quad.transform.localPosition = new Vector3(0.04f, 1.42f, 1.335f);
             quad.transform.localRotation = Quaternion.identity;
             float aspect = (float)tex.width / Mathf.Max(1, tex.height);
-            float height = 10.20f;
+            float height = 3.45f;
             quad.transform.localScale = new Vector3(height * aspect, height, 1f);
             Object.Destroy(quad.GetComponent<Collider>());
 

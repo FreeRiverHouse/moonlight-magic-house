@@ -1,5 +1,33 @@
 # Moonlight Magic House Devlog
 
+## 2026-04-26 - Asset Forge References + Scale/Staging Runtime Pass
+
+Reason for this pass:
+- The next-level graphics roadmap now has a controlled asset workflow in FRH-ADMIN, and Moonlight needs to stop accepting untracked pasted-looking art.
+- The user called out wrong proportions and action movement: sleep should physically go to the bed, outdoor play should walk to the door, open it, and run outside.
+
+What changed:
+- Added a tracked photoreal/fairytale bedroom reference through `frh-game-asset-forge`:
+  - `Assets/Resources/GeneratedArt/mood-frame/fairytale-bedroom-photoreal-scale-pass/fairytale-bedroom-photoreal-scale-pass_source.png`
+- Promoted the no-child generated bedroom image into `Assets/Resources/Photoreal/room-generated.png` as a temporary runtime plate behind the 3D scene.
+- Runtime still keeps the authored 3D bed, dollhouse, floor, rug, lights, door, action props, and meadow in front of the plate; the image is not the old user-supplied photo and contains no child.
+- Recalibrated the child avatar target height to about 1.10m and reduced the stretched/narrow read on the SD avatar.
+- Enlarged the outdoor door/portal to adult-room scale instead of toy-door scale, so Moonlight no longer looks huge next to it.
+- Widened and lowered the action camera a little for bath/snack/dance/door moments so movement reads less cramped.
+- Increased the door walk distance and transition timing so the outdoor action reads as a real staged movement.
+
+Verification plan:
+- Build headless with Unity 6000.3.2f1.
+- Run `Moonlight Magic House.app -mmhPlaytest`.
+- Inspect `00_initial`, `03_SleepBtn`, `04_PlayDoor`, `04_PlayBtn`, `05_BathBtn`, and `06_DanceBtn`.
+
+Verification result:
+- Build succeeded in Unity 6000.3.2f1 batchmode/headless.
+- Playtest produced all expected screenshots in `~/Desktop/MMH-QA/playtest/`.
+- Player log reached `[Playtest][PASS] xp=2600 coins=23 mood=Happy wonder=80 warmth=58 rest=37 magic=34 hunger=72`.
+- Inspected `00_initial`, `04_PlayDoor`, and `04_PlayBtn`; the new room plate makes the first read much richer and the larger door fixes the worst scale mismatch.
+- Current honesty: foreground props are still too blocky next to the photoreal plate. Next pass should replace the bed/dollhouse/tub/rug primitives with authored assets or generated texture cards, then move toward URP.
+
 ## 2026-04-25 - SOTA Graphics Study + Bedroom Production Detail Pass
 
 Reason for this pass:

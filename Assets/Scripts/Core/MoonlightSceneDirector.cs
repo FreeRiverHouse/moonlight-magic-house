@@ -207,14 +207,14 @@ namespace MoonlightMagicHouse
             RestoreRoomInstant(false);
             if (_doorRoot != null) _doorRoot.SetActive(true);
 
-            Vector3 doorSpot = _home + new Vector3(0.98f, 0f, 0.05f);
-            StartCameraMove(new Vector3(0.04f, 1.04f, -4.84f), doorSpot + new Vector3(0f, 0.58f, 0.06f), 41f, 0.45f);
-            yield return MoveMoonlight(doorSpot, 0.82f, -16f, false);
+            Vector3 doorSpot = _home + new Vector3(1.50f, 0f, 0.16f);
+            StartCameraMove(new Vector3(0.10f, 1.10f, -5.10f), doorSpot + new Vector3(0f, 0.80f, 0.08f), 40f, 0.55f);
+            yield return MoveMoonlight(doorSpot, 0.96f, -18f, false);
             _kid.SetWalking(false);
             _kid.SetFacingYaw(-18f);
 
             yield return OpenDoor(true, 0.52f);
-            yield return MoveMoonlight(doorSpot + new Vector3(0.28f, 0f, 0.06f), 0.34f, -24f, false);
+            yield return MoveMoonlight(doorSpot + new Vector3(0.46f, 0f, 0.08f), 0.44f, -24f, false);
             SetOutdoorBackdrop();
             if (_doorRoot != null) _doorRoot.SetActive(false);
 
@@ -370,9 +370,9 @@ namespace MoonlightMagicHouse
 
         Vector3 ActionCameraPos(Vector3 target, string gesture)
         {
-            float x = Mathf.Clamp(target.x * 0.18f - 0.03f, -0.34f, 0.28f);
-            float y = gesture == "Snack" ? 1.00f : 0.98f;
-            float z = gesture == "Bath" ? -5.02f : -4.92f;
+            float x = Mathf.Clamp(target.x * 0.16f - 0.02f, -0.36f, 0.34f);
+            float y = gesture == "Snack" ? 1.06f : 1.04f;
+            float z = gesture == "Bath" ? -5.18f : -5.08f;
             return new Vector3(x, y, z);
         }
 
@@ -494,21 +494,21 @@ namespace MoonlightMagicHouse
             var knobMat = MakeStandard(new Color(1.0f, 0.86f, 0.38f), 0.62f);
 
             _doorRoot = new GameObject("MoonDoorPortal");
-            _doorRoot.transform.position = _home + new Vector3(1.36f, 0.56f, 0.24f);
+            _doorRoot.transform.position = _home + new Vector3(1.88f, 0.96f, 0.30f);
             _doorRoot.transform.rotation = Quaternion.Euler(0f, -2f, 0f);
 
             var auraMat = MakeSpriteMat(new Color(1f, 0.70f, 0.36f, 0.28f), MoonlightHouseSetup.MakeSoftCircleTex(128));
-            MakeQuad("MoonDoorOuterAura", _doorRoot.transform, new Vector3(0f, 0.02f, 0.040f), new Vector3(0.98f, 1.30f, 1f), auraMat);
+            MakeQuad("MoonDoorOuterAura", _doorRoot.transform, new Vector3(0f, 0.02f, 0.040f), new Vector3(1.18f, 2.08f, 1f), auraMat);
 
-            MakeCube("MoonDoorFrameTop", _doorRoot.transform, new Vector3(0f, 0.50f, 0f), new Vector3(0.60f, 0.040f, 0.042f), frameMat);
-            MakeCube("MoonDoorFrameLeft", _doorRoot.transform, new Vector3(-0.31f, 0f, 0f), new Vector3(0.040f, 1.01f, 0.042f), frameMat);
-            MakeCube("MoonDoorFrameRight", _doorRoot.transform, new Vector3(0.31f, 0f, 0f), new Vector3(0.040f, 1.01f, 0.042f), frameMat);
+            MakeCube("MoonDoorFrameTop", _doorRoot.transform, new Vector3(0f, 0.86f, 0f), new Vector3(0.72f, 0.052f, 0.052f), frameMat);
+            MakeCube("MoonDoorFrameLeft", _doorRoot.transform, new Vector3(-0.37f, 0f, 0f), new Vector3(0.052f, 1.76f, 0.052f), frameMat);
+            MakeCube("MoonDoorFrameRight", _doorRoot.transform, new Vector3(0.37f, 0f, 0f), new Vector3(0.052f, 1.76f, 0.052f), frameMat);
 
             for (int i = 0; i <= 10; i++)
             {
                 float t = i / 10f;
-                float x = Mathf.Lerp(-0.31f, 0.31f, t);
-                float y = 0.48f + Mathf.Sin(t * Mathf.PI) * 0.15f;
+                float x = Mathf.Lerp(-0.37f, 0.37f, t);
+                float y = 0.84f + Mathf.Sin(t * Mathf.PI) * 0.22f;
                 Color c = Color.Lerp(new Color(1f, 0.56f, 0.82f), new Color(1f, 0.86f, 0.40f), t);
                 MakePortalSparkle(_doorRoot.transform, new Vector3(x, y, -0.040f), 0.030f, c);
             }
@@ -517,7 +517,7 @@ namespace MoonlightMagicHouse
             _doorGlow.name = "MoonDoorMeadowGlow";
             _doorGlow.transform.SetParent(_doorRoot.transform, false);
             _doorGlow.transform.localPosition = new Vector3(0f, 0f, 0.025f);
-            _doorGlow.transform.localScale = new Vector3(0.52f, 0.92f, 1f);
+            _doorGlow.transform.localScale = new Vector3(0.62f, 1.58f, 1f);
             Object.Destroy(_doorGlow.GetComponent<Collider>());
             var glowMat = new Material(Shader.Find("Sprites/Default"));
             glowMat.mainTexture = _meadowTexture;
@@ -528,11 +528,11 @@ namespace MoonlightMagicHouse
             var pivot = new GameObject("MoonDoorPivot");
             _doorPivot = pivot.transform;
             _doorPivot.SetParent(_doorRoot.transform, false);
-            _doorPivot.localPosition = new Vector3(-0.25f, 0f, -0.01f);
+            _doorPivot.localPosition = new Vector3(-0.31f, 0f, -0.01f);
 
-            MakeQuad("MoonDoorPanel", _doorPivot, new Vector3(0.25f, 0f, -0.006f), new Vector3(0.50f, 0.92f, 1f), doorMat);
-            MakeQuad("MoonDoorWindow", _doorPivot, new Vector3(0.25f, 0.24f, -0.014f), new Vector3(0.22f, 0.20f, 1f), MakeSpriteMat(new Color(1f, 0.90f, 0.56f, 0.72f), MoonlightHouseSetup.MakeSoftCircleTex(64)));
-            MakeCube("MoonDoorKnob", _doorPivot, new Vector3(0.42f, -0.06f, -0.038f), Vector3.one * 0.040f, knobMat);
+            MakeQuad("MoonDoorPanel", _doorPivot, new Vector3(0.31f, 0f, -0.006f), new Vector3(0.62f, 1.58f, 1f), doorMat);
+            MakeQuad("MoonDoorWindow", _doorPivot, new Vector3(0.31f, 0.42f, -0.014f), new Vector3(0.28f, 0.34f, 1f), MakeSpriteMat(new Color(1f, 0.90f, 0.56f, 0.72f), MoonlightHouseSetup.MakeSoftCircleTex(64)));
+            MakeCube("MoonDoorKnob", _doorPivot, new Vector3(0.52f, -0.18f, -0.038f), Vector3.one * 0.046f, knobMat);
             _doorRoot.SetActive(false);
         }
 
