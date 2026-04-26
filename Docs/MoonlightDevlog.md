@@ -1,5 +1,29 @@
 # Moonlight Magic House Devlog
 
+## 2026-04-26 - Action Motion and Perceived Physics Pass
+
+Reason for this pass:
+- User feedback: the photoreal/procedural blend is improving, but some actions still look stiff, crooked, or physically fake.
+- The main issue is perceived physics, not a true physics simulation: root movement, bone posing, camera timing, and 2D plate composition need to agree.
+
+What changed:
+- Smoothed root travel with sine easing and smaller lateral arcs so walk/run actions feel less robotic.
+- Added subtle vertical travel arcs during movement so Moonlight has a little weight without popping.
+- Reduced exaggerated idle bob and ribbon motion during `NAP`, where extra motion made the pose look crooked.
+- Tuned walk/run cycle: smaller torso sway, softer arm swing, less mechanical double-bounce, and cleaner foot/leg offsets.
+- Reworked `NAP` staging from a fake horizontal lie-down over a 2D photo plate into a lower reclined/rest pose near the bed area. This is more believable with the current 2D/3D hybrid than forcing a full bed interaction without a real 3D bed asset.
+- Slowed the door approach and outdoor run slightly so transitions feel less snappy.
+
+Verification:
+- Built successfully with Unity 6000.3.2f1 in headless batchmode using the external APFS temp/cache paths.
+- Ran `Moonlight Magic House.app -mmhPlaytest`.
+- Player log reached `[Playtest][PASS] xp=2880 coins=16 mood=Happy wonder=100 warmth=58 rest=37 magic=100 hunger=72`.
+- Inspected the action screenshots, especially `03_SleepBtn`, `04_PlayDoor`, `04_PlayBtn`, and `06_DanceBtn`.
+
+Current honesty:
+- This pass makes the action layer less stiff and removes the worst nap-floating read.
+- The true next jump still needs authored animation clips/root motion and real 3D interaction props for bed/bath/snack so actions can physically contact objects instead of implying contact against a plate.
+
 ## 2026-04-26 - Photoreal Plate Integration Pass
 
 Reason for this pass:

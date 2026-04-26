@@ -137,17 +137,20 @@ namespace MoonlightMagicHouse
             RestoreBones();
 
             float t = Time.time;
+            bool napping = _pose == ActionPose.Nap;
             float breathe = Mathf.Sin(t * 2.0f) * 0.012f;
             _facingYaw = Mathf.LerpAngle(_facingYaw, _targetFacingYaw, 1f - Mathf.Exp(-Time.deltaTime * 9f));
-            transform.localPosition = _basePos + Vector3.up * (Mathf.Sin(t * 2.4f) * 0.018f);
-            float idleYaw = _walking ? Mathf.Sin(t * 4.8f) * 0.7f : Mathf.Sin(t * 1.35f) * 1.8f;
-            float idleRoll = _walking ? Mathf.Sin(t * 5.0f) * 0.8f : Mathf.Sin(t * 1.1f) * 1.2f;
+            float idleBob = napping ? 0.004f : (_walking ? 0.006f : 0.018f);
+            transform.localPosition = _basePos + Vector3.up * (Mathf.Sin(t * 2.4f) * idleBob);
+            float idleYaw = napping ? 0.25f : (_walking ? Mathf.Sin(t * 4.8f) * 0.7f : Mathf.Sin(t * 1.35f) * 1.8f);
+            float idleRoll = napping ? 0.18f : (_walking ? Mathf.Sin(t * 5.0f) * 0.8f : Mathf.Sin(t * 1.1f) * 1.2f);
             transform.localRotation = _baseRot * Quaternion.Euler(0f, _facingYaw + idleYaw, idleRoll);
             if (_hips != null) _hips.localScale *= 1f + breathe;
-            if (_head != null) Add(_head, Mathf.Sin(t * 0.9f) * 2.0f, Mathf.Sin(t * 1.1f) * 3.0f, 0f);
-            if (_leftArm != null) Add(_leftArm, Mathf.Sin(t * 1.2f) * 2.5f, 0f, Mathf.Sin(t * 1.5f) * 3.0f);
-            if (_rightArm != null) Add(_rightArm, Mathf.Sin(t * 1.2f + 1.5f) * 2.5f, 0f, Mathf.Sin(t * 1.5f + 1.2f) * -3.0f);
-            AnimateRibbons(t);
+            float idleLayer = napping ? 0.18f : 1f;
+            if (_head != null) Add(_head, Mathf.Sin(t * 0.9f) * 2.0f * idleLayer, Mathf.Sin(t * 1.1f) * 3.0f * idleLayer, 0f);
+            if (_leftArm != null) Add(_leftArm, Mathf.Sin(t * 1.2f) * 2.5f * idleLayer, 0f, Mathf.Sin(t * 1.5f) * 3.0f * idleLayer);
+            if (_rightArm != null) Add(_rightArm, Mathf.Sin(t * 1.2f + 1.5f) * 2.5f * idleLayer, 0f, Mathf.Sin(t * 1.5f + 1.2f) * -3.0f * idleLayer);
+            AnimateRibbons(t, napping ? 0.24f : 1f);
             if (_walking) ApplyWalkCycle(t);
 
             if (_pose == ActionPose.None) return;
@@ -185,12 +188,14 @@ namespace MoonlightMagicHouse
                     break;
 
                 case ActionPose.Nap:
-                    transform.localRotation *= Quaternion.Euler(0f, 0f, 7f * hold);
-                    transform.localPosition += Vector3.down * (0.02f * hold);
-                    Add(_head, 16f * hold, 0f, 8f * hold);
-                    Add(_spine, 8f * hold, 0f, 5f * hold);
-                    Add(_leftArm, 18f * hold, 0f, 14f * hold);
-                    Add(_rightArm, 18f * hold, 0f, -14f * hold);
+                    transform.localRotation *= Quaternion.Euler(0f, 0f, 3.5f * hold);
+                    transform.localPosition += Vector3.down * (0.045f * hold);
+                    Add(_head, 11f * hold, 0f, 4f * hold);
+                    Add(_spine, 5f * hold, 0f, 2.5f * hold);
+                    Add(_leftArm, 10f * hold, 0f, 18f * hold);
+                    Add(_rightArm, 10f * hold, 0f, -18f * hold);
+                    Add(_leftUpLeg, -7f * hold, 0f, 4f * hold);
+                    Add(_rightUpLeg, -4f * hold, 0f, -3f * hold);
                     break;
 
                 case ActionPose.Play:
@@ -313,7 +318,7 @@ namespace MoonlightMagicHouse
             if (k >= 1f) _roomMoving = false;
         }
 
-        void AnimateRibbons(float t)
+        void AnimateRibbons(float t, float amount)
         {
             if (_ribbons == null) return;
             for (int i = 0; i < _ribbons.Length; i++)
@@ -321,7 +326,7 @@ namespace MoonlightMagicHouse
                 var ribbon = _ribbons[i];
                 if (ribbon == null) continue;
                 float side = i < 4 ? 1f : -1f;
-                Add(ribbon, Mathf.Sin(t * 1.9f + i * 0.55f) * 2.0f, 0f, side * Mathf.Sin(t * 2.2f + i) * 2.4f);
+                Add(ribbon, Mathf.Sin(t * 1.9f + i * 0.55f) * 2.0f * amount, 0f, side * Mathf.Sin(t * 2.2f + i) * 2.4f * amount);
             }
         }
 
@@ -329,25 +334,27 @@ namespace MoonlightMagicHouse
         {
             float speed = _running ? 8.0f : 5.2f;
             float stride = _running ? 30f : 18f;
-            float lift = _running ? 0.060f : 0.032f;
+            float lift = _running ? 0.050f : 0.024f;
             _walkPhase += Time.deltaTime * speed;
             float s = Mathf.Sin(_walkPhase);
             float c = Mathf.Cos(_walkPhase);
-            float landing = Mathf.Abs(c);
+            float footA = Mathf.Max(0f, s);
+            float footB = Mathf.Max(0f, -s);
+            float landing = Mathf.Pow(Mathf.Abs(c), 1.7f);
             float doubleStep = Mathf.Sin(_walkPhase * 2f);
 
-            transform.localPosition += new Vector3(0f, landing * lift, doubleStep * (_running ? 0.014f : 0.007f));
-            transform.localRotation *= Quaternion.Euler(-1.2f - landing * 1.3f, c * (_running ? 2.8f : 1.4f), s * (_running ? 3.2f : 2.1f));
-            Add(_spine, -3f - landing * 1.4f, 0f, s * 2.5f);
+            transform.localPosition += new Vector3(0f, landing * lift, doubleStep * (_running ? 0.010f : 0.005f));
+            transform.localRotation *= Quaternion.Euler(-1.0f - landing * 0.8f, c * (_running ? 2.1f : 1.0f), s * (_running ? 2.4f : 1.5f));
+            Add(_spine, -2.4f - landing * 0.8f, 0f, s * 1.7f);
             Add(_leftUpLeg, stride * s, 0f, 0f);
             Add(_rightUpLeg, -stride * s, 0f, 0f);
-            Add(_leftLeg, -stride * 0.55f * Mathf.Max(0f, -s), 0f, 0f);
-            Add(_rightLeg, -stride * 0.55f * Mathf.Max(0f, s), 0f, 0f);
-            Add(_leftFoot, stride * 0.22f * Mathf.Max(0f, s), 0f, 0f);
-            Add(_rightFoot, stride * 0.22f * Mathf.Max(0f, -s), 0f, 0f);
-            Add(_leftArm, -stride * 0.70f * s, 0f, 8f + c * 2f);
-            Add(_rightArm, stride * 0.70f * s, 0f, -8f + c * 2f);
-            Add(_head, -landing * 1.6f, -s * 1.2f, s * 1.6f);
+            Add(_leftLeg, -stride * 0.42f * footB, 0f, 0f);
+            Add(_rightLeg, -stride * 0.42f * footA, 0f, 0f);
+            Add(_leftFoot, stride * 0.18f * footA, 0f, 0f);
+            Add(_rightFoot, stride * 0.18f * footB, 0f, 0f);
+            Add(_leftArm, -stride * 0.55f * s, 0f, 5f + c * 1.4f);
+            Add(_rightArm, stride * 0.55f * s, 0f, -5f + c * 1.4f);
+            Add(_head, -landing * 0.9f, -s * 0.8f, s * 1.0f);
         }
 
         void RestoreBones()

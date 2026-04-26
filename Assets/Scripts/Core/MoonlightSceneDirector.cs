@@ -163,14 +163,14 @@ namespace MoonlightMagicHouse
         IEnumerator NapRoutine()
         {
             Vector3 bedApproach = _home + new Vector3(-1.10f, 0f, 0.18f);
-            Vector3 bedRestSpot = _home + new Vector3(-1.55f, 0.54f, 0.18f);
-            StartCameraMove(new Vector3(-0.56f, 1.02f, -4.92f), _home + new Vector3(-1.45f, 0.62f, 0.18f), 37f, 0.65f);
-            yield return MoveMoonlight(bedApproach, 0.52f, -12f, false);
+            Vector3 bedRestSpot = _home + new Vector3(-1.48f, 0.18f, 0.16f);
+            StartCameraMove(new Vector3(-0.64f, 0.92f, -4.92f), _home + new Vector3(-1.42f, 0.42f, 0.18f), 37f, 0.65f);
+            yield return MoveMoonlight(bedApproach, 0.66f, -10f, false);
             _kid.SetWalking(false);
             _kid.SetFacingYaw(0f);
             _kid.PlayGesture("Nap");
             ShowBedRestHelpers(true);
-            yield return SettleIntoBed(bedRestSpot, 0.35f);
+            yield return SettleIntoBed(bedRestSpot, 0.58f);
             yield return new WaitForSeconds(2.2f);
             ShowBedRestHelpers(false);
             RecoverMoonlightFromBed(false);
@@ -184,15 +184,17 @@ namespace MoonlightMagicHouse
             Vector3 fromPos = _moonlight.position;
             Quaternion fromRot = _moonlight.rotation;
             Vector3 fromScale = _moonlight.localScale;
-            Quaternion bedRot = _homeRotation * Quaternion.Euler(0f, -4f, 78f);
-            Vector3 bedScale = _homeScale * 0.84f;
+            Quaternion bedRot = _homeRotation * Quaternion.Euler(-6f, -10f, 28f);
+            Vector3 bedScale = _homeScale * 0.86f;
 
             float t = 0f;
             while (t < duration)
             {
                 t += Time.deltaTime;
-                float k = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t / Mathf.Max(0.01f, duration)));
+                float k = EaseInOutSine(Mathf.Clamp01(t / Mathf.Max(0.01f, duration)));
+                float sink = Mathf.Sin(k * Mathf.PI) * 0.05f;
                 _moonlight.position = Vector3.Lerp(fromPos, bedRestSpot, k);
+                _moonlight.position += Vector3.down * sink;
                 _moonlight.rotation = Quaternion.Slerp(fromRot, bedRot, k);
                 _moonlight.localScale = Vector3.Lerp(fromScale, bedScale, k);
                 yield return null;
@@ -209,12 +211,12 @@ namespace MoonlightMagicHouse
 
             Vector3 doorSpot = _home + new Vector3(1.50f, 0f, 0.16f);
             StartCameraMove(new Vector3(0.10f, 1.10f, -5.10f), doorSpot + new Vector3(0f, 0.80f, 0.08f), 40f, 0.55f);
-            yield return MoveMoonlight(doorSpot, 0.96f, -18f, false);
+            yield return MoveMoonlight(doorSpot, 1.12f, -16f, false);
             _kid.SetWalking(false);
             _kid.SetFacingYaw(-18f);
 
             yield return OpenDoor(true, 0.52f);
-            yield return MoveMoonlight(doorSpot + new Vector3(0.46f, 0f, 0.08f), 0.44f, -24f, false);
+            yield return MoveMoonlight(doorSpot + new Vector3(0.46f, 0f, 0.08f), 0.50f, -22f, false);
             SetOutdoorBackdrop();
             if (_doorRoot != null) _doorRoot.SetActive(false);
 
@@ -224,7 +226,7 @@ namespace MoonlightMagicHouse
             _kid.SetFacingYaw(10f);
             _kid.PlayGesture("Play");
             StartCameraMove(new Vector3(0f, 0.98f, -4.92f), _home + new Vector3(0.18f, 0.56f, -0.10f), 44f, 0.28f);
-            yield return MoveMoonlight(meadowEnd, 1.35f, 10f, true);
+            yield return MoveMoonlight(meadowEnd, 1.55f, 8f, true);
             _kid.SetWalking(false);
             _kid.SetFacingYaw(0f);
             _kid.PlayGesture("Dance");
@@ -242,7 +244,8 @@ namespace MoonlightMagicHouse
             target.y = _home.y;
             Vector3 delta = target - from;
             Vector3 side = delta.sqrMagnitude > 0.0001f ? Vector3.Cross(Vector3.up, delta.normalized) : Vector3.right;
-            float sideArc = run ? 0.070f : 0.035f;
+            float sideArc = run ? 0.045f : 0.018f;
+            float verticalArc = run ? 0.035f : 0.014f;
             _kid.SetWalking(true, run);
             _kid.SetFacingYaw(yaw);
 
@@ -251,13 +254,19 @@ namespace MoonlightMagicHouse
             {
                 t += Time.deltaTime;
                 float k = Mathf.Clamp01(t / Mathf.Max(0.01f, duration));
-                float ease = Mathf.SmoothStep(0f, 1f, k);
+                float ease = EaseInOutSine(k);
                 Vector3 p = Vector3.Lerp(from, target, ease);
                 p += side * (Mathf.Sin(k * Mathf.PI) * sideArc);
+                p += Vector3.up * (Mathf.Sin(k * Mathf.PI) * verticalArc);
                 _moonlight.position = p;
                 yield return null;
             }
             _moonlight.position = target;
+        }
+
+        static float EaseInOutSine(float t)
+        {
+            return 0.5f - Mathf.Cos(Mathf.Clamp01(t) * Mathf.PI) * 0.5f;
         }
 
         IEnumerator OpenDoor(bool open, float duration)
@@ -442,7 +451,7 @@ namespace MoonlightMagicHouse
             if (_bedRestRoot != null || _moonlight == null) return;
 
             _bedRestRoot = new GameObject("MoonBedRestOcclusion");
-            _bedRestRoot.transform.position = _home + new Vector3(-1.55f, 0.86f, 0.18f);
+            _bedRestRoot.transform.position = _home + new Vector3(-1.48f, 0.48f, 0.18f);
             _bedRestRoot.transform.rotation = Quaternion.identity;
 
             var shadowMat = MakeSpriteMat(new Color(0.12f, 0.055f, 0.05f, 0.26f), MoonlightHouseSetup.MakeSoftCircleTex(128));
