@@ -56,6 +56,7 @@ namespace MoonlightMagicHouse
             Directory.CreateDirectory(dir);
 
             yield return new WaitForSeconds(1.2f);
+            NormalizePlaytestState();
             yield return CaptureStep(dir, "00_initial");
 
             string[] buttons = { "FeedBtn", "CuddleBtn", "SleepBtn", "PlayBtn", "BathBtn", "DanceBtn" };
@@ -120,6 +121,22 @@ namespace MoonlightMagicHouse
 
             yield return new WaitForSeconds(0.8f);
             Application.Quit();
+        }
+
+        static void NormalizePlaytestState()
+        {
+            var gm = MoonlightGameManager.Instance;
+            var ml = gm?.moonlight;
+            if (ml == null) return;
+
+            ml.coins = Mathf.Max(ml.coins, 30);
+            ml.stats.wonder = Mathf.Max(ml.stats.wonder, 70f);
+            ml.stats.warmth = Mathf.Max(ml.stats.warmth, 70f);
+            ml.stats.rest = Mathf.Max(ml.stats.rest, 70f);
+            ml.stats.magic = Mathf.Max(ml.stats.magic, 70f);
+            ml.stats.hunger = Mathf.Max(ml.stats.hunger, 70f);
+            gm.ui?.Refresh(ml);
+            Debug.Log("[Playtest] Normalized in-memory care state for deterministic QA");
         }
 
         IEnumerator CaptureStep(string dir, string tag)

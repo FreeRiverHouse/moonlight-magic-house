@@ -1,5 +1,29 @@
 # Moonlight Magic House Devlog
 
+## 2026-04-27 - GPT Image 2 Direction Plate Pass
+
+Reason for this pass:
+- User feedback: modern X benchmarks are using AI image/asset generation plus depth/parallax/lighting workflows, while Moonlight still looked too much like a prototype assembled over a flat photo.
+- The biggest immediate visual offender was not only the background quality; it was the mismatch between a photoreal plate and large procedural foreground floor/rug primitives.
+
+What changed:
+- Generated a new no-character fairytale photoreal bedroom plate with a GPT Image 2-targeted prompt and imported it as `Assets/Resources/Photoreal/room-gpt-image-2-v1.png`.
+- Updated runtime loading to prefer `Photoreal/room-gpt-image-2-v1` with fallback to the older `room-generated`.
+- Refit the backdrop transform for the new plate so the bedroom reads as a playable room rather than an over-zoomed crop.
+- Removed the large procedural floor/rug slab from photoreal bedroom mode; the generated plate now carries the floor/rug visual read.
+- Changed the photoreal camera background color from cool gray to warm brown so any unavoidable edge pixels do not read as editor/prototype background.
+- Made `-mmhPlaytest` deterministic by normalizing care stats/coins in memory only. This avoids false QA failures caused by accumulated local save state and does not delete local save data.
+
+Verification:
+- Built successfully with Unity 6000.3.2f1 in headless batchmode using the external APFS temp/cache paths.
+- Ran `Moonlight Magic House.app -mmhPlaytest`.
+- Player log reached `[Playtest][PASS] xp=3978 coins=29 mood=Radiant wonder=100 warmth=100 rest=92 magic=100 hunger=100`.
+- Inspected `00_initial`, `03_SleepBtn`, and `04_PlayBtn` screenshots in `~/Desktop/MMH-QA/playtest/`.
+
+Current honesty:
+- This is a clear visual improvement over the previous plate/procedural-floor mix: the room is warmer, cleaner, and less obviously assembled.
+- It is still not the full modern benchmark. The next real jump is depth-aware scene reconstruction: generate/estimate depth, split plate into parallax layers or a mesh, add occlusion/contact shadows, then relight Moonlight against that geometry.
+
 ## 2026-04-26 - Virtual Pet Readability Pass
 
 Reason for this pass:

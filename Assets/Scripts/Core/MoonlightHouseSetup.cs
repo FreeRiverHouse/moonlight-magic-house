@@ -67,7 +67,7 @@ namespace MoonlightMagicHouse
                 camGO.AddComponent<AudioListener>();
             }
             cam.clearFlags      = PhotorealMode ? CameraClearFlags.SolidColor : CameraClearFlags.Skybox;
-            cam.backgroundColor = PhotorealMode ? new Color(0.70f, 0.78f, 0.84f) : new Color(0.04f, 0.02f, 0.10f);
+            cam.backgroundColor = PhotorealMode ? new Color(0.12f, 0.055f, 0.035f) : new Color(0.04f, 0.02f, 0.10f);
             if (!PhotorealMode && !gameObject.GetComponent<SkyboxSetup>())
                 gameObject.AddComponent<SkyboxSetup>();
             cam.farClipPlane    = PhotorealMode ? 40f : 80f;
@@ -1479,19 +1479,8 @@ namespace MoonlightMagicHouse
 
         static void BuildFairytaleBedroom3D(Transform parent)
         {
-            var floor = PhotoPrim(PrimitiveType.Cube, "PGR_HoneyWoodFloor", parent,
-                new Vector3(0.18f, -0.065f, -1.20f), new Vector3(4.90f, 0.08f, 2.30f),
-                new Color(0.36f, 0.20f, 0.13f), 0.18f);
-            ApplyTiledTexture(floor, ProcTextures.LightWood(), new Vector2(1.4f, 0.8f));
-
-            var rug = PhotoPrim(PrimitiveType.Cube, "PGR_DanceRug", parent,
-                new Vector3(0.70f, 0.008f, -1.05f), new Vector3(2.25f, 0.024f, 1.05f),
-                new Color(0.54f, 0.30f, 0.38f), 0.34f);
-            ApplyTiledTexture(rug, ProcTextures.Rug(), new Vector2(1.0f, 0.8f));
-            PhotoGlowQuad("PGR_RugSoftBloom", parent, new Vector3(0.70f, 0.035f, -1.05f),
-                Quaternion.Euler(90f, 0f, 0f), new Vector3(2.70f, 1.20f, 1f),
-                new Color(1.0f, 0.45f, 0.56f, 0.08f));
-
+            // The GPT Image 2 plate already carries the bedroom floor and rug. Large
+            // procedural floor slabs made the prototype read as a pasted-on diorama.
             BuildBedroomPlayProps(parent);
             BuildBedroomBathAndSnack(parent);
             BuildBedroomFairyLights(parent);
@@ -2014,7 +2003,13 @@ namespace MoonlightMagicHouse
 
         static void CreateRoomPhotoBackdrop(Transform parent)
         {
-            var tex = Resources.Load<Texture2D>("Photoreal/room-generated");
+            var useNextPlate = true;
+            var tex = Resources.Load<Texture2D>("Photoreal/room-gpt-image-2-v1");
+            if (tex == null)
+            {
+                useNextPlate = false;
+                tex = Resources.Load<Texture2D>("Photoreal/room-generated");
+            }
             if (tex == null)
             {
                 Debug.LogWarning("[Photoreal] Missing generated room backdrop");
@@ -2024,10 +2019,10 @@ namespace MoonlightMagicHouse
             var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
             quad.name = "PhotorealRoomBackdrop";
             quad.transform.SetParent(parent, false);
-            quad.transform.localPosition = new Vector3(0.20f, 1.43f, 1.335f);
+            quad.transform.localPosition = useNextPlate ? new Vector3(0.14f, 1.34f, 1.335f) : new Vector3(0.20f, 1.43f, 1.335f);
             quad.transform.localRotation = Quaternion.identity;
             float aspect = (float)tex.width / Mathf.Max(1, tex.height);
-            float height = 7.20f;
+            float height = useNextPlate ? 6.65f : 7.20f;
             quad.transform.localScale = new Vector3(height * aspect, height, 1f);
             Object.Destroy(quad.GetComponent<Collider>());
 
