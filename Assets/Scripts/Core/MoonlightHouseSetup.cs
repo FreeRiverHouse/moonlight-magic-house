@@ -1815,77 +1815,13 @@ namespace MoonlightMagicHouse
             meadow.transform.SetParent(parent, false);
             CreateMeadowPhotoBackdrop(meadow.transform);
 
-            var sky = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            sky.name = "PGR_MeadowSkyGradient";
-            sky.transform.SetParent(meadow.transform, false);
-            sky.transform.localPosition = new Vector3(0.35f, 1.48f, 1.95f);
-            sky.transform.localScale = new Vector3(24.0f, 3.8f, 1f);
-            Object.Destroy(sky.GetComponent<Collider>());
-            var skyMat = new Material(Shader.Find("Sprites/Default") ?? Shader.Find("Unlit/Texture"));
-            skyMat.mainTexture = MakeVerticalGradientTex(160, 128, new Color(0.38f, 0.70f, 1.0f), new Color(1.0f, 0.76f, 0.54f));
-            skyMat.color = Color.white;
-            sky.GetComponent<MeshRenderer>().material = skyMat;
-
-            var grass = PhotoPrim(PrimitiveType.Cube, "PGR_MeadowGrass", meadow.transform,
-                new Vector3(0.35f, -0.06f, -0.56f), new Vector3(24.00f, 0.10f, 5.60f),
-                new Color(0.34f, 0.68f, 0.34f), 0.22f);
-            grass.GetComponent<MeshRenderer>().material.mainTexture = MakeSpeckleTex(96, new Color(0.30f, 0.62f, 0.30f), new Color(0.78f, 0.88f, 0.46f), 0.20f);
-            grass.GetComponent<MeshRenderer>().material.mainTextureScale = new Vector2(5f, 4f);
-
-            for (int i = 0; i < 4; i++)
-            {
-                float x = -2.7f + i * 1.8f;
-                float z = 1.02f + Mathf.Sin(i * 1.7f) * 0.18f;
-                PhotoPrim(PrimitiveType.Sphere, $"PGR_MeadowHill{i}", meadow.transform,
-                    new Vector3(x, -0.08f, z), new Vector3(1.30f, 0.30f, 0.62f),
-                    new Color(0.42f, 0.78f, 0.38f), 0.18f);
-            }
-
-            var path = PhotoPrim(PrimitiveType.Cube, "PGR_MeadowPath", meadow.transform,
-                new Vector3(0.72f, -0.035f, -1.00f), new Vector3(1.25f, 0.035f, 2.75f),
-                new Color(0.84f, 0.66f, 0.42f), 0.32f);
-            path.transform.localRotation = Quaternion.Euler(0f, -8f, 0f);
-
-            for (int i = 0; i < 46; i++)
-            {
-                float a = i * 12.9898f;
-                float x = Mathf.Sin(a) * 2.85f + 0.22f;
-                float z = -1.95f + Mathf.Abs(Mathf.Cos(a * 0.71f)) * 2.45f;
-                if (Mathf.Abs(x - 0.72f) < 0.45f && z < 0.25f) x += x < 0.72f ? -0.55f : 0.55f;
-                Color flower = i % 4 == 0 ? new Color(1f, 0.54f, 0.72f) :
-                    i % 4 == 1 ? new Color(1f, 0.86f, 0.34f) :
-                    i % 4 == 2 ? new Color(0.58f, 0.78f, 1f) : new Color(0.96f, 0.90f, 1f);
-                PhotoPrim(PrimitiveType.Cylinder, $"PGR_FlowerStem{i}", meadow.transform,
-                    new Vector3(x, 0.07f, z), new Vector3(0.012f, 0.07f, 0.012f), new Color(0.22f, 0.58f, 0.24f), 0.18f);
-                PhotoPrim(PrimitiveType.Sphere, $"PGR_FlowerHead{i}", meadow.transform,
-                    new Vector3(x, 0.17f, z), Vector3.one * 0.045f, flower, 0.46f, true, 0.35f);
-            }
-
-            for (int i = 0; i < 3; i++)
-            {
-                float x = -2.35f + i * 2.25f;
-                PhotoPrim(PrimitiveType.Cylinder, $"PGR_MeadowTreeTrunk{i}", meadow.transform,
-                    new Vector3(x, 0.35f, 0.70f), new Vector3(0.11f, 0.42f, 0.11f), new Color(0.50f, 0.32f, 0.18f), 0.30f);
-                PhotoPrim(PrimitiveType.Sphere, $"PGR_MeadowTreeCrown{i}", meadow.transform,
-                    new Vector3(x, 0.95f, 0.70f), new Vector3(0.55f, 0.48f, 0.42f), new Color(0.38f, 0.78f, 0.42f), 0.32f);
-                PhotoPrim(PrimitiveType.Sphere, $"PGR_MeadowTreeCrownGlow{i}", meadow.transform,
-                    new Vector3(x + 0.22f, 1.12f, 0.62f), new Vector3(0.28f, 0.24f, 0.22f), new Color(0.74f, 0.90f, 0.44f), 0.36f, true, 0.45f);
-            }
-
-            var sun = PhotoPrim(PrimitiveType.Sphere, "PGR_MeadowSunGem", meadow.transform,
-                new Vector3(-1.90f, 2.05f, 1.70f), Vector3.one * 0.20f,
-                new Color(1f, 0.82f, 0.34f), 0.45f, true, 2.1f);
-            sun.AddComponent<StarTwinkle>();
-            PhotoGlowQuad("PGR_MeadowSunBloom", meadow.transform, new Vector3(-1.90f, 2.05f, 1.69f),
-                Quaternion.identity, new Vector3(0.92f, 0.92f, 1f), new Color(1f, 0.76f, 0.38f, 0.20f));
-
             var lightGO = new GameObject("PGR_MeadowWarmKey");
             lightGO.transform.SetParent(meadow.transform, false);
             lightGO.transform.localPosition = new Vector3(-1.3f, 2.2f, -1.2f);
             var light = lightGO.AddComponent<Light>();
             light.type = LightType.Point;
             light.color = new Color(1f, 0.78f, 0.48f);
-            light.intensity = 2.0f;
+            light.intensity = 1.65f;
             light.range = 5.0f;
 
             meadow.SetActive(false);
@@ -2034,16 +1970,22 @@ namespace MoonlightMagicHouse
 
         static void CreateMeadowPhotoBackdrop(Transform parent)
         {
-            var tex = Resources.Load<Texture2D>("Photoreal/meadow-generated");
+            var useNextPlate = true;
+            var tex = Resources.Load<Texture2D>("Photoreal/meadow-gpt-image-2-v1");
+            if (tex == null)
+            {
+                useNextPlate = false;
+                tex = Resources.Load<Texture2D>("Photoreal/meadow-generated");
+            }
             if (tex == null) return;
 
             var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
             quad.name = "PhotorealMeadowBackdrop";
             quad.transform.SetParent(parent, false);
-            quad.transform.localPosition = new Vector3(0.20f, 1.46f, 1.86f);
+            quad.transform.localPosition = useNextPlate ? new Vector3(0.20f, 1.18f, 1.86f) : new Vector3(0.20f, 1.46f, 1.86f);
             quad.transform.localRotation = Quaternion.identity;
             float aspect = (float)tex.width / Mathf.Max(1, tex.height);
-            float height = 6.40f;
+            float height = useNextPlate ? 7.45f : 6.40f;
             quad.transform.localScale = new Vector3(height * aspect, height, 1f);
             Object.Destroy(quad.GetComponent<Collider>());
 

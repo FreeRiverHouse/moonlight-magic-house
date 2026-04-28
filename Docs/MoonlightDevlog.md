@@ -1,5 +1,31 @@
 # Moonlight Magic House Devlog
 
+## 2026-04-27 - Vertical Slice Meadow Cleanup Pass
+
+Linear:
+- Tracked under `FRE-135` (`Moonlight vertical slice reset: depth-aware room and 3 polished core actions`) in `FRH-ADMIN & procedure`.
+
+Reason for this pass:
+- User feedback: modern one-week AI/Claude/Unity examples on X are shipping vertical slices with stronger perceived polish than Moonlight/PGR after months of incremental work.
+- The room had started moving in the right direction with GPT Image 2, but the `PLAY` meadow still looked like a prototype: low-poly grass plane, sphere trees, primitive flowers, and a photoreal plate fighting the foreground primitives.
+
+What changed:
+- Generated a new GPT Image 2-targeted fairytale meadow plate and imported it as `Assets/Resources/Photoreal/meadow-gpt-image-2-v1.png`.
+- Updated meadow runtime loading to prefer `Photoreal/meadow-gpt-image-2-v1` with fallback to the older `meadow-generated`.
+- Removed the most obvious low-poly meadow primitives: grass slab, path slab, flower cylinders/spheres, sphere trees, fake sky gradient, and sun gem.
+- Kept the meadow action scene focused on the photoreal plate plus character motion, reducing the pasted-together look.
+- Refit the meadow plate scale/position to reduce visible non-plate edges during `PLAY`.
+
+Verification:
+- Built successfully with Unity 6000.3.2f1 in headless batchmode using the external APFS temp/cache paths.
+- Ran `Moonlight Magic House.app -mmhPlaytest`.
+- Player log reached `[Playtest][PASS] xp=4018 coins=29 mood=Radiant wonder=100 warmth=100 rest=92 magic=87 hunger=100`.
+- Inspected `04_PlayBtn`; the meadow now reads as a single premium garden plate instead of low-poly foreground props over a photo.
+
+Current honesty:
+- The outdoor `PLAY` screen is now much closer to the visual direction we want and is no longer the most obvious prototype offender.
+- The next real benchmark jump is still depth-aware integration: depth map/parallax/occlusion/contact shadows and character relighting, not more flat plates.
+
 ## 2026-04-27 - GPT Image 2 Direction Plate Pass
 
 Reason for this pass:
