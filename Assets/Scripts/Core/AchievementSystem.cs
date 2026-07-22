@@ -20,8 +20,8 @@ namespace MoonlightMagicHouse
     {
         public static AchievementSystem Instance { get; private set; }
 
-        [SerializeField] List<Achievement> achievements;
-        public UnityEvent<Achievement> onUnlocked;
+        [SerializeField] List<Achievement> achievements = new List<Achievement>();
+        public UnityEvent<Achievement> onUnlocked = new UnityEvent<Achievement>();
 
         const string PREFIX = "ach_";
 
@@ -32,18 +32,21 @@ namespace MoonlightMagicHouse
             if (achievements == null) achievements = new List<Achievement>();
             if (onUnlocked == null) onUnlocked = new UnityEvent<Achievement>();
             foreach (var a in achievements)
+            {
+                if (a == null) continue;
                 a.unlocked = PlayerPrefs.GetInt(PREFIX + a.id, 0) == 1;
+            }
         }
 
         public void Check(string id)
         {
             if (achievements == null) return;
-            var ach = achievements.Find(a => a.id == id);
+            var ach = achievements.Find(a => a != null && a.id == id);
             if (ach == null || ach.unlocked) return;
             ach.unlocked = true;
             PlayerPrefs.SetInt(PREFIX + id, 1);
             PlayerPrefs.Save();
-            MoonlightGameManager.Instance?.moonlight.EarnCoins(ach.coinReward);
+            MoonlightGameManager.Instance?.moonlight?.EarnCoins(ach.coinReward);
             onUnlocked?.Invoke(ach);
             AudioManager.Instance?.Play("achievement");
         }

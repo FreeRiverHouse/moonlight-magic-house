@@ -1,5 +1,6 @@
-using System.IO;
 using System.Collections;
+using System.IO;
+using System.Linq;
 using UnityEngine;
 using UnityEngine.UI;
 #if UNITY_EDITOR
@@ -14,12 +15,58 @@ namespace MoonlightMagicHouse
         [SerializeField] bool captureOnEvolution = true;
         [SerializeField] bool captureOnAchievement = true;
 
-        void Start()
+        IEnumerator Start()
         {
             if (HasArg("-mmhPlaytest"))
                 StartCoroutine(PlaytestForQA());
             else if (HasArg("-mmhCapture"))
                 StartCoroutine(CaptureForQA());
+
+            var args = System.Environment.GetCommandLineArgs();
+            if (args.Contains("-moonlightVisualQa"))
+            {
+                int pathIndex = System.Array.IndexOf(args, "-moonlightVisualQaPath");
+                string file = pathIndex >= 0 && pathIndex + 1 < args.Length
+                    ? args[pathIndex + 1]
+                    : Path.Combine(Application.persistentDataPath, "moonlight_visual_qa.png");
+
+                string directory = Path.GetDirectoryName(file);
+                if (!string.IsNullOrEmpty(directory))
+                    Directory.CreateDirectory(directory);
+
+                Screen.SetResolution(1366, 1024, false);
+                yield return new WaitForSeconds(3f);
+                var camera = Camera.main;
+                if (camera != null)
+                    Debug.Log($"[VisualQA] Camera position={camera.transform.position} forward={camera.transform.forward}");
+                yield return new WaitForEndOfFrame();
+                ScreenCapture.CaptureScreenshot(file);
+                Debug.Log($"[VisualQA] Captured {file}");
+                yield return new WaitForSeconds(1f);
+
+                var gm = MoonlightGameManager.Instance;
+                if (gm?.moonlight != null && gm.ui != null)
+                {
+                    float warmthBefore = gm.moonlight.stats.warmth;
+                    float restBefore = gm.moonlight.stats.rest;
+                    int xpBefore = gm.moonlight.xp;
+                    gm.ui.cuddleBtn?.onClick.Invoke();
+                    gm.ui.sleepBtn?.onClick.Invoke();
+                    gm.ui.feedBtn?.onClick.Invoke();
+                    bool feedOpened = gm.ui.feedMenuRoot != null && gm.ui.feedMenuRoot.activeSelf;
+                    if (gm.ui.feedMenuRoot != null) gm.ui.feedMenuRoot.SetActive(false);
+                    Debug.Log($"[VisualQA] GameplaySmoke feedMenu={feedOpened} " +
+                        $"warmthDelta={gm.moonlight.stats.warmth - warmthBefore:0.0} " +
+                        $"restDelta={gm.moonlight.stats.rest - restBefore:0.0} " +
+                        $"xpDelta={gm.moonlight.xp - xpBefore}");
+                }
+                else
+                {
+                    Debug.LogError("[VisualQA] GameplaySmoke missing GameManager, Moonlight or UI");
+                }
+                Application.Quit(0);
+                yield break;
+            }
 
             var ml = MoonlightGameManager.Instance?.moonlight;
             if (captureOnEvolution && ml != null)

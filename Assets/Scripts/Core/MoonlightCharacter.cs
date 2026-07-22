@@ -69,11 +69,11 @@ namespace MoonlightMagicHouse
         const float TICK_SEC     = 60f;
 
         // ── Events ─────────────────────────────────────────────────────────
-        public UnityEvent<MoonlightStage> onStageUp;
-        public UnityEvent<MoonlightMood>  onMoodChange;
-        public UnityEvent<int>            onXPGained;
-        public UnityEvent<int>            onCoinsChanged;
-        public UnityEvent<int>            onRoomUnlocked;
+        public UnityEvent<MoonlightStage> onStageUp       = new UnityEvent<MoonlightStage>();
+        public UnityEvent<MoonlightMood>  onMoodChange    = new UnityEvent<MoonlightMood>();
+        public UnityEvent<int>            onXPGained      = new UnityEvent<int>();
+        public UnityEvent<int>            onCoinsChanged  = new UnityEvent<int>();
+        public UnityEvent<int>            onRoomUnlocked  = new UnityEvent<int>();
 
         MoonlightMood _lastMood;
 
@@ -231,6 +231,27 @@ namespace MoonlightMagicHouse
             stats.warmth = Mathf.Min(100, stats.warmth + 8f);
             stats.rest   = Mathf.Min(100, stats.rest   + 5f);
             GainXP(10);
+        }
+
+        public void CompleteGardening()
+        {
+            stats.wonder = Mathf.Min(100, stats.wonder + 16f);
+            stats.magic = Mathf.Min(100, stats.magic + 12f);
+            EarnCoins(3);
+            GainXP(10);
+            AchievementSystem.Instance?.Check("room_garden");
+            HapticFeedback.Success();
+        }
+
+        public void CompleteReading()
+        {
+            stats.wonder = Mathf.Min(100, stats.wonder + 14f);
+            stats.warmth = Mathf.Min(100, stats.warmth + 10f);
+            stats.rest = Mathf.Min(100, stats.rest + 6f);
+            EarnCoins(2);
+            GainXP(12);
+            AchievementSystem.Instance?.Check("room_library");
+            HapticFeedback.Success();
         }
 
         // ── Economy ────────────────────────────────────────────────────────

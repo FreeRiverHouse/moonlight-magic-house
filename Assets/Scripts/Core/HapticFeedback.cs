@@ -1,35 +1,72 @@
+using System;
+using System.Linq;
+using System.Reflection;
 using UnityEngine;
 
 namespace MoonlightMagicHouse
 {
-    // Thin wrapper — add platform-specific haptics here as needed.
     public static class HapticFeedback
     {
         public static void Light()
         {
-#if UNITY_IOS
-            HapticPatterns.PlayPreset(HapticPatterns.PresetType.LightImpact);
-#elif UNITY_ANDROID
-            Handheld.Vibrate();
-#endif
+            PlayPreset("LightImpact");
         }
 
         public static void Medium()
         {
-#if UNITY_IOS
-            HapticPatterns.PlayPreset(HapticPatterns.PresetType.MediumImpact);
-#elif UNITY_ANDROID
-            Handheld.Vibrate();
-#endif
+            PlayPreset("MediumImpact");
         }
 
         public static void Success()
         {
-#if UNITY_IOS
-            HapticPatterns.PlayPreset(HapticPatterns.PresetType.Success);
-#elif UNITY_ANDROID
+            PlayPreset("Success");
+        }
+
+        static void PlayPreset(string presetName)
+        {
+#if UNITY_IOS || UNITY_ANDROID
+            if (TryPlayHapticPatternsPreset(presetName))
+            {
+                return;
+            }
+
             Handheld.Vibrate();
 #endif
+        }
+
+        static bool TryPlayHapticPatternsPreset(string presetName)
+        {
+            try
+            {
+                Type hapticPatternsType = AppDomain.CurrentDomain.GetAssemblies()
+                    .Select(assembly => assembly.GetType("HapticPatterns") ?? assembly.GetType("Lofelt.NiceVibrations.HapticPatterns"))
+                    .FirstOrDefault(type => type != null);
+
+                if (hapticPatternsType == null)
+                {
+                    return false;
+                }
+
+                Type presetType = hapticPatternsType.GetNestedType("PresetType", BindingFlags.Public);
+                if (presetType == null || !presetType.IsEnum || !Enum.IsDefined(presetType, presetName))
+                {
+                    return false;
+                }
+
+                MethodInfo playPreset = hapticPatternsType.GetMethod("PlayPreset", BindingFlags.Public | BindingFlags.Static, null, new[] { presetType }, null);
+                if (playPreset == null)
+                {
+                    return false;
+                }
+
+                object preset = Enum.Parse(presetType, presetName);
+                playPreset.Invoke(null, new[] { preset });
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
     }
 }

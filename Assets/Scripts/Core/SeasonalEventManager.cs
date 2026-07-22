@@ -20,7 +20,7 @@ namespace MoonlightMagicHouse
     {
         public static SeasonalEventManager Instance { get; private set; }
 
-        [SerializeField] List<SeasonalEvent> events;
+        [SerializeField] List<SeasonalEvent> events = new List<SeasonalEvent>();
 
         SeasonalEvent _active;
         public SeasonalEvent Active => _active;
@@ -40,6 +40,7 @@ namespace MoonlightMagicHouse
             var now = DateTime.Now;
             foreach (var ev in events)
             {
+                if (ev == null) continue;
                 var start = new DateTime(now.Year, ev.startMonth, ev.startDay);
                 var end   = new DateTime(now.Year, ev.endMonth,   ev.endDay);
                 if (now >= start && now <= end) return ev;
@@ -56,7 +57,7 @@ namespace MoonlightMagicHouse
             {
                 PlayerPrefs.SetInt(pref, 1);
                 // Coins granted via GameManager after Start
-                MoonlightGameManager.Instance?.moonlight.EarnCoins(ev.bonusCoins);
+                MoonlightGameManager.Instance?.moonlight?.EarnCoins(ev.bonusCoins);
                 AudioManager.Instance?.Play("reward");
             }
         }

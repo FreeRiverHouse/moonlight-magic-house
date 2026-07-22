@@ -20,6 +20,15 @@ namespace MoonlightMagicHouse
         {
             _anim   = GetComponent<MoonlightAnimator>();
             _origin = transform.position;
+
+            // Player-controlled Moonlight keeps the visual idle animation but
+            // must never have its world position stolen by autonomous wander.
+            if (GetComponent<MoonlightPlayerController>() != null)
+            {
+                enabled = false;
+                return;
+            }
+
             StartCoroutine(WanderLoop());
         }
 

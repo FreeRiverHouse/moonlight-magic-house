@@ -19,9 +19,9 @@ namespace MoonlightMagicHouse
     {
         public static MoonlightTricksSystem Instance { get; private set; }
 
-        [SerializeField] List<MoonlightTrick> tricks;
-        public UnityEvent<MoonlightTrick> onTrickLearned;
-        public UnityEvent<MoonlightTrick> onTrickPerformed;
+        [SerializeField] List<MoonlightTrick> tricks = new List<MoonlightTrick>();
+        public UnityEvent<MoonlightTrick> onTrickLearned = new UnityEvent<MoonlightTrick>();
+        public UnityEvent<MoonlightTrick> onTrickPerformed = new UnityEvent<MoonlightTrick>();
 
         MoonlightCharacter _ml;
 
@@ -45,6 +45,7 @@ namespace MoonlightMagicHouse
             if (tricks == null) return;
             foreach (var trick in tricks)
             {
+                if (trick == null) continue;
                 string pref = $"trick_learned_{trick.id}";
                 if (PlayerPrefs.GetInt(pref, 0) == 0 && xp >= trick.xpRequired)
                 {
@@ -60,10 +61,10 @@ namespace MoonlightMagicHouse
         {
             if (tricks == null) return;
             if (!IsLearned(id)) return;
-            var trick = tricks.Find(t => t.id == id);
+            var trick = tricks.Find(t => t != null && t.id == id);
             if (trick == null) return;
 
-            var anim = MoonlightGameManager.Instance?.moonlight.GetComponentInChildren<MoonlightAnimator>();
+            var anim = MoonlightGameManager.Instance?.moonlight?.GetComponentInChildren<MoonlightAnimator>();
             // anim?.TriggerCustom(trick.animTrigger);  // extend animator as needed
 
             _ml?.EarnCoins(trick.coinReward);
@@ -75,6 +76,8 @@ namespace MoonlightMagicHouse
             PlayerPrefs.GetInt($"trick_learned_{id}", 0) == 1;
 
         public List<MoonlightTrick> LearnedTricks() =>
-            tricks != null ? tricks.FindAll(t => IsLearned(t.id)) : new List<MoonlightTrick>();
+            tricks != null
+                ? tricks.FindAll(t => t != null && IsLearned(t.id))
+                : new List<MoonlightTrick>();
     }
 }

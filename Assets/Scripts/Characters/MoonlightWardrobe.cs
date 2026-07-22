@@ -16,7 +16,7 @@ namespace MoonlightMagicHouse
             public GameObject root;   // activate/deactivate
         }
 
-        [SerializeField] List<Outfit> outfits;
+        [SerializeField] List<Outfit> outfits = new List<Outfit>();
 
         int _current = 0;
         public int CurrentId => _current;
@@ -39,7 +39,8 @@ namespace MoonlightMagicHouse
         {
             var outfit = outfits.Find(o => o.id == id);
             if (outfit.root == null) return false;
-            if (!MoonlightGameManager.Instance.moonlight.SpendCoins(outfit.cost)) return false;
+            var moonlight = MoonlightGameManager.Instance?.moonlight;
+            if (moonlight == null || !moonlight.SpendCoins(outfit.cost)) return false;
             Equip(id);
             AudioManager.Instance?.Play("buy");
             HapticFeedback.Light();

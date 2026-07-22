@@ -6,7 +6,7 @@ namespace MoonlightMagicHouse
     // a painted-storybook feel without external art assets.
     public static class ProcTextures
     {
-        static Texture2D _wood, _rug, _wall, _ceiling, _velvet, _wood2;
+        static Texture2D _wood, _rug, _wall, _ceiling, _velvet, _wood2, _kitchenTiles;
 
         // Warm plank floor with subtle grain
         public static Texture2D WoodPlanks(int w = 512, int h = 512)
@@ -159,6 +159,31 @@ namespace MoonlightMagicHouse
             }
             t.Apply();
             _wood2 = t;
+            return t;
+        }
+
+        // Soft ivory and sage tiles keep the kitchen bright without the
+        // repeated dark knots of the furniture wood texture.
+        public static Texture2D KitchenTiles(int w = 256, int h = 256)
+        {
+            if (_kitchenTiles != null) return _kitchenTiles;
+            var t = New(w, h);
+            const int tileSize = 64;
+            var ivory = new Color(0.92f, 0.88f, 0.80f);
+            var sage = new Color(0.70f, 0.80f, 0.75f);
+            var grout = new Color(0.78f, 0.72f, 0.68f);
+            for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                bool seam = x % tileSize < 3 || y % tileSize < 3;
+                bool alternate = ((x / tileSize) + (y / tileSize)) % 2 == 0;
+                float variation = 0.96f + Mathf.PerlinNoise(x * 0.025f, y * 0.025f) * 0.08f;
+                var c = seam ? grout : (alternate ? ivory : sage) * variation;
+                c.a = 1f;
+                t.SetPixel(x, y, c);
+            }
+            t.Apply();
+            _kitchenTiles = t;
             return t;
         }
 

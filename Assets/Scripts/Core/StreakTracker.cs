@@ -8,7 +8,7 @@ namespace MoonlightMagicHouse
     {
         public static StreakTracker Instance { get; private set; }
 
-        public UnityEvent<int, int> onDailyLogin; // streak, coinsEarned
+        public UnityEvent<int, int> onDailyLogin = new UnityEvent<int, int>(); // streak, coinsEarned
 
         static readonly int[] CoinsPerStreak = { 10, 15, 20, 25, 30, 40, 60 };
 
@@ -41,7 +41,7 @@ namespace MoonlightMagicHouse
             PlayerPrefs.Save();
 
             int coins = CoinsPerStreak[Mathf.Min(streak - 1, CoinsPerStreak.Length - 1)];
-            MoonlightGameManager.Instance?.moonlight.EarnCoins(coins);
+            MoonlightGameManager.Instance?.moonlight?.EarnCoins(coins);
             AudioManager.Instance?.Play("reward");
             onDailyLogin?.Invoke(streak, coins);
 

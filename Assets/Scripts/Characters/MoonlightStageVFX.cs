@@ -18,7 +18,7 @@ namespace MoonlightMagicHouse
         void Start()
         {
             _cam = Camera.main;
-            MoonlightGameManager.Instance?.moonlight.onStageUp.AddListener(OnStageUp);
+            MoonlightGameManager.Instance?.moonlight?.onStageUp?.AddListener(OnStageUp);
         }
 
         void OnStageUp(MoonlightStage stage)

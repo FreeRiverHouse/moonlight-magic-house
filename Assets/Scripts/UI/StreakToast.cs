@@ -20,21 +20,23 @@ namespace MoonlightMagicHouse
             }
 
             root.SetActive(false);
-            StreakTracker.Instance?.onDailyLogin.AddListener(Show);
+            StreakTracker.Instance?.onDailyLogin?.AddListener(Show);
         }
 
         public void Show(int streak, int coins)
         {
-            streakLabel.text = $"🌙 Day {streak} streak!";
-            coinsLabel.text  = $"+{coins} ⭐";
-            StartCoroutine(Display());
+            if (streakLabel != null) streakLabel.text = $"🌙 Day {streak} streak!";
+            if (coinsLabel != null) coinsLabel.text = $"+{coins} ⭐";
+            if (root != null) StartCoroutine(Display());
         }
 
         IEnumerator Display()
         {
+            if (root == null) yield break;
+
             root.SetActive(true);
             yield return new WaitForSeconds(displayTime);
-            root.SetActive(false);
+            if (root != null) root.SetActive(false);
         }
     }
 }

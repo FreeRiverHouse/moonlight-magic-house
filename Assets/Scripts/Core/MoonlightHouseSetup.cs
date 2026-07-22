@@ -11,7 +11,11 @@ namespace MoonlightMagicHouse
     [DefaultExecutionOrder(-100)]
     public class MoonlightHouseSetup : MonoBehaviour
     {
-        static readonly bool PhotorealMode = true;
+        // The authored Blender house is the playable default. The image-plate
+        // presentation remains available for dedicated visual comparisons.
+        static readonly bool PhotorealMode = System.Array.Exists(
+            System.Environment.GetCommandLineArgs(),
+            argument => string.Equals(argument, "-moonlightPhotoreal", System.StringComparison.OrdinalIgnoreCase));
 
         void Awake()
         {
@@ -29,12 +33,16 @@ namespace MoonlightMagicHouse
             var rm = CreateRooms();
             if (PhotorealMode)
                 new GameObject("MoonlightSceneDirector").AddComponent<MoonlightSceneDirector>();
+            rm.BindPlayer(mlGO.GetComponent<MoonlightPlayerController>());
 
             var (uiGO, ui) = CreateUI();
+            var roomNavigation = CreateRoomNavigation(uiGO.transform, rm);
+            ui.WireRoomNavigation(roomNavigation);
 
             // GameManager ties everything together
             var gmGO = new GameObject("MoonlightGameManager");
             var gm   = gmGO.AddComponent<MoonlightGameManager>();
+            gmGO.AddComponent<MoonlightVisualQA>();
             gm.moonlight    = ml;
             gm.ui           = ui;
             gm.rooms        = rm;
@@ -67,14 +75,21 @@ namespace MoonlightMagicHouse
                 camGO.AddComponent<AudioListener>();
             }
             cam.clearFlags      = PhotorealMode ? CameraClearFlags.SolidColor : CameraClearFlags.Skybox;
-            cam.backgroundColor = PhotorealMode ? new Color(0.12f, 0.055f, 0.035f) : new Color(0.04f, 0.02f, 0.10f);
+            cam.backgroundColor = PhotorealMode
+                ? new Color(0.12f, 0.055f, 0.035f)
+                : new Color(0.91f, 0.84f, 0.79f);
             if (!PhotorealMode && !gameObject.GetComponent<SkyboxSetup>())
                 gameObject.AddComponent<SkyboxSetup>();
             cam.farClipPlane    = PhotorealMode ? 40f : 80f;
-            cam.fieldOfView     = PhotorealMode ? 39f : 60f;
-            cam.transform.position = PhotorealMode ? new Vector3(-0.05f, 1.26f, -4.85f) : new Vector3(0f, 2.8f, -6.2f);
-            cam.transform.LookAt(PhotorealMode ? new Vector3(0.52f, 0.78f, -0.44f) : new Vector3(0f, 1.2f, 0.5f));
+            cam.fieldOfView     = PhotorealMode ? 39f : 40.5f;
+            cam.transform.position = PhotorealMode
+                ? new Vector3(-0.05f, 1.26f, -4.85f)
+                : new Vector3(4.45f, 3.10f, -5.35f);
+            cam.transform.LookAt(PhotorealMode
+                ? new Vector3(0.52f, 0.78f, -0.44f)
+                : new Vector3(0.22f, 1.38f, 0.45f));
             cam.allowHDR = true;
+            cam.useOcclusionCulling = true;
             cam.depthTextureMode |= DepthTextureMode.DepthNormals;
 
             if (!PhotorealMode && !cam.GetComponent<CameraController>())
@@ -118,28 +133,29 @@ namespace MoonlightMagicHouse
                 return;
             }
 
-            RenderSettings.ambientMode    = AmbientMode.Flat;
-            RenderSettings.ambientLight   = new Color(0.18f, 0.12f, 0.30f);
-            RenderSettings.fog            = true;
-            RenderSettings.fogMode        = FogMode.Linear;
-            RenderSettings.fogStartDistance = 18f;
-            RenderSettings.fogEndDistance   = 45f;
-            RenderSettings.fogColor       = new Color(0.05f, 0.02f, 0.13f);
+            RenderSettings.ambientMode = AmbientMode.Trilight;
+            RenderSettings.ambientSkyColor = new Color(0.58f, 0.53f, 0.52f);
+            RenderSettings.ambientEquatorColor = new Color(0.47f, 0.40f, 0.38f);
+            RenderSettings.ambientGroundColor = new Color(0.24f, 0.19f, 0.18f);
+            RenderSettings.ambientIntensity = 0.70f;
+            RenderSettings.reflectionIntensity = 0.55f;
+            RenderSettings.fog = false;
 
-            // Moon — cool blue-white directional
-            MakeLight("Moon", LightType.Directional,
-                new Color(0.70f, 0.82f, 1.00f), 1.4f,
-                Quaternion.Euler(40f, -20f, 0f), LightShadows.Soft, 0.6f);
+            QualitySettings.shadows = ShadowQuality.All;
+            QualitySettings.shadowDistance = 24f;
+            QualitySettings.shadowCascades = 2;
+            QualitySettings.shadowResolution = ShadowResolution.High;
+            QualitySettings.shadowProjection = ShadowProjection.StableFit;
 
-            // Warm fill — fireplace/lamp feel
-            MakeLight("WarmFill", LightType.Directional,
-                new Color(1.00f, 0.60f, 0.30f), 0.6f,
-                Quaternion.Euler(30f, 160f, 0f), LightShadows.None, 0f);
-
-            // Magic rim — purple
-            MakeLight("MagicRim", LightType.Directional,
-                new Color(0.60f, 0.30f, 1.00f), 0.9f,
-                Quaternion.Euler(20f, 180f, 0f), LightShadows.None, 0f);
+            // A warm studio key supplies the soft object modeling visible in the
+            // approved Blender frame. The cool fill has no shadows, keeping the
+            // iPad path to one realtime shadow caster.
+            MakeLight("WindowKey", LightType.Directional,
+                new Color(1.00f, 0.94f, 0.86f), 0.76f,
+                Quaternion.Euler(38f, -34f, 0f), LightShadows.Soft, 0.48f);
+            MakeLight("RoomFill", LightType.Directional,
+                new Color(0.76f, 0.84f, 1.00f), 0.12f,
+                Quaternion.Euler(24f, 148f, 0f), LightShadows.None, 0f);
 
             // Floating dust motes — ambient indoor atmosphere
             var dustGO = new GameObject("DustMotes");
@@ -147,20 +163,21 @@ namespace MoonlightMagicHouse
             var dps = dustGO.AddComponent<ParticleSystem>();
             var dmain = dps.main;
             dmain.startLifetime = 8f;
-            dmain.startSpeed    = 0.15f;
-            dmain.startSize     = new ParticleSystem.MinMaxCurve(0.04f, 0.10f);
+            dmain.startSpeed    = 0.06f;
+            dmain.startSize     = new ParticleSystem.MinMaxCurve(0.02f, 0.045f);
             dmain.startColor    = new ParticleSystem.MinMaxGradient(
                 new Color(1f, 0.95f, 0.85f, 0.35f), new Color(0.85f, 0.75f, 1f, 0.35f));
-            dmain.maxParticles  = 60;
+            dmain.maxParticles  = 12;
             dmain.gravityModifier = -0.02f;
             var demis = dps.emission;
-            demis.rateOverTime = 6f;
+            demis.rateOverTime = 1f;
             var dshape = dps.shape;
             dshape.shapeType = ParticleSystemShapeType.Box;
             dshape.scale     = new Vector3(8f, 3f, 8f);
             var dvel = dps.velocityOverLifetime;
             dvel.enabled = true;
             dvel.x = new ParticleSystem.MinMaxCurve(-0.12f, 0.12f);
+            dvel.y = new ParticleSystem.MinMaxCurve(-0.015f, 0.035f);
             dvel.z = new ParticleSystem.MinMaxCurve(-0.12f, 0.12f);
             var dcol = dps.colorOverLifetime;
             dcol.enabled = true;
@@ -202,6 +219,7 @@ namespace MoonlightMagicHouse
         }
 
         static Texture2D _softCircleTex;
+        static Sprite _uiCircleSprite;
         public static Texture2D MakeSoftCircleTex(int size)
         {
             if (_softCircleTex != null) return _softCircleTex;
@@ -221,6 +239,33 @@ namespace MoonlightMagicHouse
             tex.Apply();
             _softCircleTex = tex;
             return tex;
+        }
+
+        static Sprite UICircleSprite
+        {
+            get
+            {
+                if (_uiCircleSprite != null) return _uiCircleSprite;
+                const int size = 96;
+                var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+                float center = (size - 1) * 0.5f;
+                float radius = center - 1f;
+                var pixels = new Color32[size * size];
+                for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    float dx = x - center;
+                    float dy = y - center;
+                    float distance = Mathf.Sqrt(dx * dx + dy * dy);
+                    byte alpha = (byte)Mathf.Clamp(Mathf.RoundToInt((radius - distance + 1f) * 255f), 0, 255);
+                    pixels[y * size + x] = new Color32(255, 255, 255, alpha);
+                }
+                tex.SetPixels32(pixels);
+                tex.Apply(false, true);
+                _uiCircleSprite = Sprite.Create(tex, new Rect(0f, 0f, tex.width, tex.height),
+                    new Vector2(0.5f, 0.5f), tex.width);
+                return _uiCircleSprite;
+            }
         }
 
         Light MakeLight(string n, LightType t, Color c, float intensity,
@@ -261,7 +306,9 @@ namespace MoonlightMagicHouse
         GameObject CreateMoonlightCharacter()
         {
             var mlGO = new GameObject("Moonlight");
-            mlGO.transform.position = PhotorealMode ? new Vector3(0.52f, 0.02f, -0.92f) : Vector3.zero;
+            mlGO.transform.position = PhotorealMode
+                ? new Vector3(0.52f, 0.02f, -0.92f)
+                : new Vector3(0.65f, 0f, -0.15f);
 
             mlGO.AddComponent<MoonlightCharacter>();
             if (!PhotorealMode)
@@ -273,23 +320,34 @@ namespace MoonlightMagicHouse
             mlGO.AddComponent<MoonlightMoodParticles>();
             if (!PhotorealMode)
                 mlGO.AddComponent<MoonlightAnimator>();
+            var controller = mlGO.AddComponent<MoonlightPlayerController>();
+            controller.ConfigureBounds(new Rect(-4.25f, -3.25f, 8.5f, 6.5f));
+            mlGO.AddComponent<MoonlightSpatialInteractor>();
 
             GameObject visual;
             if (PhotorealMode)
             {
                 visual = SpawnPhotorealMoonlightChild(mlGO.transform);
+                if (visual != null) visual.AddComponent<MoonlightKidAnimator>();
             }
             else
             {
-                // Mixamo "Kaya" — stylized-human rigged humanoid with baked face textures.
-                // Adobe/Mixamo license permits royalty-free commercial use when embedded in the game.
-                visual = SpawnMixamoCharacter(mlGO.transform, "Kenney/Sara", "Kenney/SaraSkin");
+                var heroPrefab = Resources.Load<GameObject>("Models/Hero/MoonbudCat");
+                visual = heroPrefab != null
+                    ? Object.Instantiate(heroPrefab, mlGO.transform)
+                    : BuildFallbackCharacter(mlGO.transform);
+                if (visual != null)
+                {
+                    visual.name = "Visual";
+                    visual.transform.localPosition = Vector3.zero;
+                    visual.transform.localRotation = Quaternion.Euler(-90f, 180f, 0f);
+                    visual.transform.localScale = Vector3.one;
+                    if (heroPrefab != null) ApplyHeroMaterials(visual);
+                }
             }
             if (visual == null) visual = BuildFallbackCharacter(mlGO.transform);
-            // Face the camera (camera is at -Z; character's face is at +Z by default)
-            visual.transform.localRotation = PhotorealMode ? Quaternion.Euler(0f, 180f, 0f) : Quaternion.Euler(0f, 180f, 0f);
-            // Subtle hip-tilt weight-shift (Ghibli-ish contrapposto read)
-            visual.transform.localRotation = visual.transform.localRotation * Quaternion.Euler(0f, 0f, PhotorealMode ? 0.6f : 1.8f);
+            if (PhotorealMode)
+                visual.transform.localRotation = Quaternion.Euler(0f, 180f, 0.6f);
             // Activate SSS + stronger wrap on skin parts (face, neck, ears, hands, forearms) — human warmth
             string[] skinParts = { "Head", "Neck", "EarL", "EarR", "HandL", "HandR", "ForearmL", "ForearmR", "Nose", "CheekL", "CheekR" };
             foreach (var pn in skinParts)
@@ -304,16 +362,12 @@ namespace MoonlightMagicHouse
                 if (mat.HasProperty("_SSSColor"))    mat.SetColor("_SSSColor", new Color(1.00f, 0.45f, 0.38f));
             }
             // Scale-punch on button presses
-            var puncher = visual.AddComponent<ScalePuncher>();
-            if (PhotorealMode)
-            {
-                visual.AddComponent<MoonlightKidAnimator>();
-            }
-            else
+            visual.AddComponent<ScalePuncher>();
+            if (!PhotorealMode)
             {
                 // Gentle idle micro-motion (head tilt, arm sway, body squash)
                 visual.AddComponent<IdleMicroMotion>();
-                visual.AddComponent<BreathingMotion>();
+                visual.AddComponent<MoonlightBobber>();
             }
 
             // Floating name tag above the character (3D TextMesh — billboarded)
@@ -332,10 +386,7 @@ namespace MoonlightMagicHouse
             tm.characterSize = 0.1f;
             var tmr = tagGO.GetComponent<MeshRenderer>();
             tmr.sortingOrder = 5;
-
-            // Procedural idle bob — no Animator required
-            if (!PhotorealMode)
-                mlGO.AddComponent<MoonlightBobber>();
+            tagGO.SetActive(false);
 
             // Collider
             var col = mlGO.AddComponent<CapsuleCollider>();
@@ -351,15 +402,15 @@ namespace MoonlightMagicHouse
             var ps = sparkGO.AddComponent<ParticleSystem>();
             var main = ps.main;
             main.startLifetime = PhotorealMode ? 1.8f : 2.2f;
-            main.startSpeed    = PhotorealMode ? 0.18f : 0.35f;
-            main.startSize     = PhotorealMode ? 0.035f : 0.06f;
+            main.startSpeed    = PhotorealMode ? 0.18f : 0.12f;
+            main.startSize     = 0.035f;
             main.startColor    = new ParticleSystem.MinMaxGradient(
                 PhotorealMode ? new Color(1f, 0.78f, 0.42f, 0.70f) : new Color(1f, 0.90f, 0.55f),
                 PhotorealMode ? new Color(1f, 0.56f, 0.78f, 0.55f) : new Color(0.75f, 0.55f, 1f));
-            main.maxParticles  = PhotorealMode ? 24 : 40;
+            main.maxParticles  = PhotorealMode ? 24 : 12;
             main.simulationSpace = ParticleSystemSimulationSpace.Local;
             var emission = ps.emission;
-            emission.rateOverTime = PhotorealMode ? 4f : 8f;
+            emission.rateOverTime = PhotorealMode ? 4f : 1.5f;
             var shape = ps.shape;
             shape.shapeType = ParticleSystemShapeType.Sphere;
             shape.radius    = PhotorealMode ? 0.38f : 0.9f;
@@ -389,34 +440,32 @@ namespace MoonlightMagicHouse
             Object.Destroy(haloGO.GetComponent<Collider>());
             haloGO.transform.SetParent(mlGO.transform, false);
             haloGO.transform.localPosition = new Vector3(0f, 0.005f, 0f);
-            haloGO.transform.localScale    = new Vector3(1.4f, 0.01f, 1.4f);
+            haloGO.transform.localScale    = new Vector3(0.85f, 0.006f, 0.85f);
             var haloMat = new Material(ToonShader);
-            haloMat.SetColor("_Color",            new Color(0.75f, 0.55f, 1.00f, 0.6f));
-            haloMat.SetColor("_EmissionColor",    new Color(0.75f, 0.55f, 1.00f));
-            haloMat.SetFloat("_EmissionIntensity", 1.2f);
+            haloMat.SetColor("_Color",            new Color(0.78f, 0.72f, 0.86f, 0.22f));
+            haloMat.SetColor("_EmissionColor",    new Color(0.22f, 0.18f, 0.28f));
+            haloMat.SetFloat("_EmissionIntensity", 0.08f);
             haloMat.SetFloat("_OutlineWidth",      0f);
             haloGO.GetComponent<MeshRenderer>().material = haloMat;
             haloGO.AddComponent<GroundHalo>();
+            haloGO.SetActive(false);
 
             // Orbiting fireflies around the character
             Color[] fireCols = {
-                new Color(1.00f, 0.85f, 0.55f),
-                new Color(0.80f, 0.60f, 1.00f),
-                new Color(0.70f, 0.95f, 0.80f),
-                new Color(1.00f, 0.65f, 0.85f),
-                new Color(0.55f, 0.85f, 1.00f),
+                new Color(1.00f, 0.86f, 0.58f),
+                new Color(0.62f, 0.82f, 0.76f),
             };
             for (int f = 0; f < fireCols.Length; f++)
             {
                 var fly = GameObject.CreatePrimitive(PrimitiveType.Sphere);
                 fly.name = $"Firefly{f}";
                 fly.transform.SetParent(mlGO.transform, false);
-                fly.transform.localScale = Vector3.one * Random.Range(0.05f, 0.08f);
+                fly.transform.localScale = Vector3.one * Random.Range(0.025f, 0.045f);
                 Object.Destroy(fly.GetComponent<Collider>());
                 var fMat = new Material(ToonShader);
                 fMat.SetColor("_Color",             fireCols[f]);
                 fMat.SetColor("_EmissionColor",     fireCols[f]);
-                fMat.SetFloat("_EmissionIntensity", 1.2f);
+                fMat.SetFloat("_EmissionIntensity", 0.25f);
                 fMat.SetFloat("_OutlineWidth",      0f);
                 fly.GetComponent<MeshRenderer>().material = fMat;
                 var orb = fly.AddComponent<OrbitingFirefly>();
@@ -433,9 +482,9 @@ namespace MoonlightMagicHouse
             glowGO.transform.localPosition = new Vector3(0f, 1.2f, 0f);
             var glow = glowGO.AddComponent<Light>();
             glow.type      = LightType.Point;
-            glow.color     = new Color(0.65f, 0.40f, 1.00f);
-            glow.intensity = 2.8f;
-            glow.range     = 6f;
+            glow.color     = new Color(1.00f, 0.78f, 0.62f);
+            glow.intensity = 0.22f;
+            glow.range     = 3.5f;
 
             return mlGO;
         }
@@ -1368,23 +1417,26 @@ namespace MoonlightMagicHouse
                 return rm;
             }
 
-            var lr = BuildRoom("LivingRoom", Vector3.zero,
-                new Color(0.12f, 0.07f, 0.22f), true,
-                new[]{ "Models/Props/LivingRoom/Sofa",
-                       "Models/Props/LivingRoom/ToyChest",
-                       "Models/Props/Shared/MoonLamp" },
-                new[]{ new Vector3(-2f, 0f, 3f),
-                       new Vector3( 2.5f, 0f, 2.5f),
-                       new Vector3(-3.5f, 0f, -2f) },
-                new[]{ Vector3.one * 1.2f, Vector3.one, Vector3.one * 1.1f },
-                new[]{ new Color(0.55f, 0.30f, 0.80f),
-                       new Color(0.40f, 0.20f, 0.65f),
-                       new Color(0.70f, 0.50f, 0.90f) });
+            // The approved Blender room is the playable starting room. The old
+            // primitive room remains only as a resilience fallback.
+            var lr = BuildHeroLivingRoom() ?? BuildRoom("LivingRoom", Vector3.zero,
+                new Color(0.78f, 0.68f, 0.62f), true,
+                new[]{ "Models/Props/Bedroom/Bed" },
+                new[]{ new Vector3(-2.8f, 0f, 2.7f) },
+                new[]{ Vector3.one * 1.2f },
+                new[]{ new Color(0.92f, 0.72f, 0.72f) });
             lr.AddComponent<FeedingStation>();
             lr.AddComponent<PlayArea>();
+            AddSpatialActionZones(lr.transform);
+            AddHeroCollisionProxies(lr.transform);
+            AddPersistentActivityStation(lr.transform, "PersistentPlayArena",
+                MoonlightSpatialActionKind.Play, "Models/Hero/MoonPlayArena",
+                new Vector3(0.27f, 0f, 0.95f), Vector3.one * 1.10f,
+                new Vector3(-0.18f, 0.01f, 0.08f), new Vector3(-90f, 0f, 0f),
+                Vector3.one * 0.84f);
 
             var kt = BuildRoom("Kitchen", new Vector3(14f, 0f, 0f),
-                new Color(0.06f, 0.10f, 0.06f), false,
+                new Color(0.86f, 0.72f, 0.64f), false,
                 new[]{ "Models/Props/Kitchen/Fridge",
                        "Models/Props/Kitchen/FoodBowl",
                        "Models/Props/Kitchen/Cake" },
@@ -1395,6 +1447,20 @@ namespace MoonlightMagicHouse
                 new[]{ new Color(0.70f, 0.85f, 0.70f),
                        new Color(0.80f, 0.60f, 0.40f),
                        new Color(0.90f, 0.50f, 0.60f) });
+            AddAuthoredKitchenNook(kt.transform);
+            AddSpatialActionZone(kt.transform, "KitchenCookingAction",
+                MoonlightSpatialActionKind.Cook, "moon kitchen",
+                kt.transform.position + new Vector3(0f, 0.04f, -0.95f),
+                new Color(0.94f, 0.68f, 0.28f), 1.25f);
+            Vector3 kitchenStationPosition = kt.transform.position + new Vector3(1.58f, 0.72f, -0.73f);
+            AddPersistentActivityStation(kt.transform, "PersistentCookWorkbench",
+                MoonlightSpatialActionKind.Cook, "Models/Hero/MoonKitchenWorkbench",
+                kitchenStationPosition, Vector3.one,
+                new Vector3(0f, 0.01f, 0.02f), new Vector3(0f, 180f, 0f),
+                new Vector3(1f, 0.56f, 1f));
+            AddCollisionProxy(kt.transform, "CookWorkbenchCollision",
+                kitchenStationPosition + new Vector3(0f, 0.38f, 0f),
+                new Vector3(1.74f, 0.76f, 0.94f));
 
             var bd = BuildRoom("Bedroom", new Vector3(-14f, 0f, 0f),
                 new Color(0.04f, 0.04f, 0.18f), false,
@@ -1409,6 +1475,10 @@ namespace MoonlightMagicHouse
                        new Color(0.35f, 0.25f, 0.60f),
                        new Color(0.55f, 0.55f, 0.90f) });
             bd.AddComponent<SleepArea>();
+            AddSpatialActionZone(bd.transform, "BedroomSleepAction",
+                MoonlightSpatialActionKind.SleepCuddle, "dream bed",
+                bd.transform.position + new Vector3(0f, 0.04f, 0.80f),
+                new Color(0.54f, 0.64f, 0.92f), 1.35f);
 
             var gd = BuildRoom("Garden", new Vector3(0f, 0f, 14f),
                 new Color(0.04f, 0.10f, 0.04f), false,
@@ -1420,6 +1490,21 @@ namespace MoonlightMagicHouse
                 new[]{ new Color(0.70f, 0.95f, 0.55f),
                        new Color(0.55f, 0.80f, 0.70f) });
             gd.AddComponent<GardenArea>();
+            AddSpatialActionZone(gd.transform, "GardenBloomAction",
+                MoonlightSpatialActionKind.Garden, "moon garden",
+                gd.transform.position + new Vector3(-0.75f, 0.04f, 0.35f),
+                new Color(0.38f, 0.78f, 0.46f), 1.25f);
+            AddPersistentActivityStation(gd.transform, "PersistentGardenAtelier",
+                MoonlightSpatialActionKind.Garden, "Models/Hero/MoonGardenAtelier",
+                gd.transform.position + new Vector3(0.35f, 0.08f, 0.65f), Vector3.one * 1.08f,
+                new Vector3(-0.10f, 0.01f, 0.06f), new Vector3(-90f, 0f, 0f),
+                Vector3.one * 0.86f);
+            AddCollisionProxy(gd.transform, "GardenPlanterCollision",
+                gd.transform.position + new Vector3(-1.35f, 0.40f, 1.65f),
+                new Vector3(2.65f, 0.80f, 0.95f));
+            AddCollisionProxy(gd.transform, "MagicWellCollision",
+                gd.transform.position + new Vector3(2f, 0.55f, 2f),
+                new Vector3(1.35f, 1.10f, 1.35f));
 
             var lb = BuildRoom("Library", new Vector3(0f, 0f, -14f),
                 new Color(0.09f, 0.05f, 0.02f), false,
@@ -1431,6 +1516,21 @@ namespace MoonlightMagicHouse
                 new[]{ new Color(0.65f, 0.45f, 0.25f),
                        new Color(0.55f, 0.35f, 0.20f) });
             lb.AddComponent<LibraryRoom>();
+            AddSpatialActionZone(lb.transform, "LibraryReadingAction",
+                MoonlightSpatialActionKind.Read, "star story",
+                lb.transform.position + new Vector3(0.55f, 0.04f, -0.75f),
+                new Color(0.88f, 0.66f, 0.30f), 1.25f);
+            AddPersistentActivityStation(lb.transform, "PersistentReadingNook",
+                MoonlightSpatialActionKind.Read, "Models/Hero/MoonReadingNook",
+                lb.transform.position + new Vector3(1.63f, 0.09f, -0.45f), Vector3.one * 1.08f,
+                new Vector3(-0.08f, 0.01f, 0.06f), new Vector3(-90f, 0f, 0f),
+                Vector3.one * 0.86f);
+            AddCollisionProxy(lb.transform, "BookshelfCollision",
+                lb.transform.position + new Vector3(-3.5f, 0.95f, 3.5f),
+                new Vector3(1.65f, 1.90f, 0.75f));
+            AddCollisionProxy(lb.transform, "ReadingDeskCollision",
+                lb.transform.position + new Vector3(0f, 0.42f, -0.65f),
+                new Vector3(2.0f, 0.84f, 0.90f));
 
             rm.AddRoom(RoomType.LivingRoom, lr);
             rm.AddRoom(RoomType.Kitchen,    kt);
@@ -2138,6 +2238,206 @@ namespace MoonlightMagicHouse
             return go;
         }
 
+        GameObject BuildHeroLivingRoom()
+        {
+            var roomPrefab = Resources.Load<GameObject>("Models/Hero/MoonlightHeroRoom");
+            if (roomPrefab == null)
+            {
+                Debug.LogWarning("[Moonlight] Blender hero room not found; using fallback room.");
+                return null;
+            }
+
+            var root = Object.Instantiate(roomPrefab);
+            root.name = "LivingRoom";
+            root.transform.position = Vector3.zero;
+            root.transform.rotation = Quaternion.Euler(-90f, 180f, 0f);
+            root.transform.localScale = Vector3.one;
+            ApplyHeroMaterials(root);
+            AddHeroFurniturePass(root.transform);
+
+            // Fill-only practicals: contact shadows come from the single studio
+            // key, avoiding three simultaneous soft-shadow lights on iPad.
+            AddHeroPointLight(root.transform, "BedsideWarmth",
+                new Vector3(-2.7f, 2.4f, 2.5f), new Color(1.00f, 0.76f, 0.60f), 0.16f, 4.8f);
+            AddHeroPointLight(root.transform, "WindowBounce",
+                new Vector3(2.8f, 3.0f, 2.8f), new Color(0.78f, 0.88f, 1.00f), 0.10f, 4.6f);
+
+            var ambience = root.AddComponent<RoomAmbience>();
+            ambience.ambientColor = new Color(0.88f, 0.78f, 0.72f);
+            root.SetActive(true);
+            return root;
+        }
+
+        static void AddHeroFurniturePass(Transform roomRoot)
+        {
+            var dressing = new GameObject("HeroFurniturePass");
+            dressing.transform.SetParent(roomRoot, true);
+            dressing.transform.position = roomRoot.position;
+            dressing.transform.rotation = Quaternion.identity;
+
+            AddHeroDecoration(dressing.transform, "Kenney/Furniture/bookcaseOpen",
+                new Vector3(-3.85f, 0f, -0.35f), new Vector3(0f, 90f, 0f), 0.40f,
+                new Color(0.72f, 0.48f, 0.34f));
+            var shelfBooks = AddHeroDecoration(dressing.transform, "Kenney/Furniture/books",
+                new Vector3(-3.64f, 0.42f, -0.35f), new Vector3(0f, 90f, 0f), 0.30f,
+                new Color(0.92f, 0.58f, 0.72f));
+            DuplicateHeroDecoration(shelfBooks, dressing.transform, "booksShelfMid",
+                new Vector3(-3.64f, 1.12f, -0.35f), new Vector3(0f, 90f, 0f));
+            DuplicateHeroDecoration(shelfBooks, dressing.transform, "booksShelfTop",
+                new Vector3(-3.64f, 1.78f, -0.35f), new Vector3(0f, -90f, 0f));
+            AddHeroDecoration(dressing.transform, "Kenney/Furniture/lampRoundFloor",
+                new Vector3(3.55f, 0f, 1.88f), Vector3.zero, 0.26f,
+                new Color(1.00f, 0.86f, 0.66f));
+            AddHeroDecoration(dressing.transform, "Kenney/Furniture/pottedPlant",
+                new Vector3(-2.88f, 0f, -0.72f), new Vector3(0f, 18f, 0f), 0.30f,
+                new Color(0.54f, 0.80f, 0.62f));
+        }
+
+        static GameObject AddHeroDecoration(Transform parent, string resourcePath,
+            Vector3 position, Vector3 rotation, float scale, Color tint)
+        {
+            var decoration = SpawnKenney(parent, resourcePath, position, rotation, scale, tint);
+            if (decoration == null) return null;
+
+            foreach (var collider in decoration.GetComponentsInChildren<Collider>(true))
+            {
+                collider.enabled = false;
+                Object.Destroy(collider);
+            }
+            foreach (var light in decoration.GetComponentsInChildren<Light>(true))
+            {
+                light.enabled = false;
+                Object.Destroy(light);
+            }
+            return decoration;
+        }
+
+        static void DuplicateHeroDecoration(GameObject source, Transform parent, string name,
+            Vector3 position, Vector3 rotation)
+        {
+            if (source == null) return;
+            var copy = Object.Instantiate(source, parent);
+            copy.name = name;
+            copy.transform.localPosition = position;
+            copy.transform.localRotation = Quaternion.Euler(rotation);
+        }
+
+        void AddSpatialActionZones(Transform roomRoot)
+        {
+            AddSpatialActionZone(roomRoot, "StarBallRugAction",
+                MoonlightSpatialActionKind.Play, "star ball rug",
+                new Vector3(0.85f, 0.04f, 1.05f), new Color(0.58f, 0.78f, 0.76f), 1.0f);
+            AddSpatialActionZone(roomRoot, "BedAction",
+                MoonlightSpatialActionKind.SleepCuddle, "bed nook",
+                new Vector3(-2.65f, 0.04f, 1.45f), new Color(0.54f, 0.64f, 0.92f), 1.35f);
+        }
+
+        void AddHeroCollisionProxies(Transform roomRoot)
+        {
+            AddCollisionProxy(roomRoot, "BedCollision",
+                new Vector3(-2.65f, 0.55f, 2.72f), new Vector3(2.15f, 1.10f, 1.25f));
+            AddCollisionProxy(roomRoot, "KitchenTableCollision",
+                new Vector3(-0.55f, 0.45f, -1.45f), new Vector3(1.45f, 0.90f, 0.72f));
+            AddCollisionProxy(roomRoot, "WindowSeatCollision",
+                new Vector3(3.15f, 0.45f, 2.55f), new Vector3(1.25f, 0.90f, 1.10f));
+        }
+
+        static MoonlightActivityStation AddPersistentActivityStation(Transform roomRoot,
+            string name, MoonlightSpatialActionKind kind, string resourcePath,
+            Vector3 worldPosition, Vector3 stageScale, Vector3 visualLocalPosition,
+            Vector3 visualLocalEuler, Vector3 visualLocalScale)
+        {
+            var root = new GameObject(name);
+            root.transform.SetParent(roomRoot, true);
+            var station = root.AddComponent<MoonlightActivityStation>();
+            station.Configure(kind, resourcePath, worldPosition, stageScale,
+                visualLocalPosition, visualLocalEuler, visualLocalScale);
+            return station;
+        }
+
+        static void AddAuthoredKitchenNook(Transform roomRoot)
+        {
+            var prefab = Resources.Load<GameObject>("Models/Hero/MoonKitchenNook");
+            if (prefab == null)
+            {
+                Debug.LogError("[Moonlight] authored kitchen nook missing");
+                return;
+            }
+
+            var nook = Object.Instantiate(prefab, roomRoot, true);
+            nook.name = "MoonKitchenNookAuthored";
+            nook.transform.position = roomRoot.position + new Vector3(0.45f, 0f, 3.92f);
+            nook.transform.rotation = Quaternion.Euler(-90f, 180f, 0f);
+            nook.transform.localScale = Vector3.one * 1.02f;
+            ApplyHeroMaterials(nook);
+
+            foreach (var collider in nook.GetComponentsInChildren<Collider>(true))
+                collider.enabled = false;
+            foreach (var light in nook.GetComponentsInChildren<Light>(true))
+                light.enabled = false;
+
+            var renderers = nook.GetComponentsInChildren<Renderer>(true);
+            Debug.Log($"[Moonlight] authored-kitchen-nook renderers={renderers.Length} " +
+                "marker=MOONLIGHT_AUTHORED_KITCHEN_NOOK_READY");
+            AddCollisionProxy(roomRoot, "KitchenNookCollision",
+                roomRoot.position + new Vector3(0.45f, 1.55f, 3.78f),
+                new Vector3(5.0f, 3.10f, 0.38f));
+        }
+
+        static void AddCollisionProxy(Transform parent, string name, Vector3 worldCenter, Vector3 size)
+        {
+            var proxy = new GameObject(name);
+            proxy.transform.SetParent(parent, true);
+            proxy.transform.position = worldCenter;
+            var collider = proxy.AddComponent<BoxCollider>();
+            collider.size = size;
+            Debug.Log($"[MoonlightNavigationQA] blocker-ready name={name} center={worldCenter:F2} size={size:F2}");
+        }
+
+        void AddSpatialActionZone(Transform parent, string name, MoonlightSpatialActionKind kind,
+            string label, Vector3 worldPosition, Color color, float radius)
+        {
+            var marker = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            marker.name = name;
+            marker.transform.position = new Vector3(worldPosition.x, 0.014f, worldPosition.z);
+            marker.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            marker.transform.SetParent(parent, true);
+            marker.transform.localScale = new Vector3(radius * 1.05f, radius * 1.05f, 1f);
+            Object.Destroy(marker.GetComponent<Collider>());
+
+            var markerShader = Shader.Find("Sprites/Default") ?? Shader.Find("Unlit/Transparent");
+            var mat = new Material(markerShader);
+            mat.color = new Color(color.r, color.g, color.b, 0.20f);
+            mat.mainTexture = MakeSoftCircleTex(32);
+            var markerRenderer = marker.GetComponent<MeshRenderer>();
+            markerRenderer.material = mat;
+            markerRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            markerRenderer.receiveShadows = false;
+
+            var zoneGO = new GameObject(name + "Zone");
+            zoneGO.transform.position = worldPosition;
+            zoneGO.transform.SetParent(parent, true);
+            var zone = zoneGO.AddComponent<MoonlightSpatialActionZone>();
+            zone.Configure(kind, label, radius);
+
+            // The floor marker plus contextual HUD prompt are enough guidance.
+            // World-space labels obscure the character at tablet camera distances.
+        }
+
+        static void AddHeroPointLight(Transform parent, string name, Vector3 position,
+            Color color, float intensity, float range)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = position;
+            var light = go.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.color = color;
+            light.intensity = intensity;
+            light.range = range;
+            light.shadows = LightShadows.None;
+        }
+
         GameObject BuildRoom(string roomName, Vector3 pos, Color ambColor, bool active,
             string[] propPaths = null, Vector3[] propPositions = null,
             Vector3[] propScales = null, Color[] propColors = null)
@@ -2145,11 +2445,30 @@ namespace MoonlightMagicHouse
             var root = new GameObject(roomName);
             root.transform.position = pos;
 
+            Color floorColor = roomName switch
+            {
+                "Kitchen" => new Color(0.94f, 0.92f, 0.88f),
+                "Bedroom" => new Color(0.43f, 0.37f, 0.54f),
+                "Garden" => new Color(0.29f, 0.48f, 0.37f),
+                "Library" => new Color(0.45f, 0.32f, 0.25f),
+                _ => new Color(0.55f, 0.32f, 0.28f)
+            };
+            Color wallCol = roomName switch
+            {
+                "Kitchen" => new Color(0.93f, 0.84f, 0.78f),
+                "Bedroom" => new Color(0.58f, 0.54f, 0.76f),
+                "Garden" => new Color(0.48f, 0.67f, 0.56f),
+                "Library" => new Color(0.66f, 0.49f, 0.38f),
+                _ => new Color(0.62f, 0.52f, 0.70f)
+            };
+
             // Floor — warm wood planks (procedural texture)
             var floor = Prim(PrimitiveType.Cube, "Floor", root.transform,
                 new Vector3(0f, -0.1f, 0f), new Vector3(10f, 0.18f, 10f),
-                new Color(0.55f, 0.32f, 0.28f));
-            ApplyTiledTexture(floor, ProcTextures.WoodPlanks(), new Vector2(3f, 3f));
+                floorColor);
+            ApplyTiledTexture(floor,
+                roomName == "Kitchen" ? ProcTextures.KitchenTiles() : ProcTextures.WoodPlanks(),
+                new Vector2(3f, 3f));
 
             // Ceiling — starry sky texture
             var ceil = Prim(PrimitiveType.Cube, "Ceiling", root.transform,
@@ -2177,28 +2496,30 @@ namespace MoonlightMagicHouse
                 cStar.AddComponent<StarTwinkle>();
             }
 
-            // Walls — striped wallpaper (procedural)
-            Color wallCol = new Color(0.22f, 0.14f, 0.38f);
+            // Open-front dollhouse walls. The former front wall sat directly
+            // between the follow camera and every secondary room.
             var wb = Prim(PrimitiveType.Cube, "WallBack",  root.transform, new Vector3(0f, 2.5f,  5f), new Vector3(10f, 5f, 0.2f), wallCol);
-            var wf = Prim(PrimitiveType.Cube, "WallFront", root.transform, new Vector3(0f, 2.5f, -5f), new Vector3(10f, 5f, 0.2f), wallCol);
             var wr = Prim(PrimitiveType.Cube, "WallRight", root.transform, new Vector3( 5f, 2.5f, 0f), new Vector3(0.2f, 5f, 10f), wallCol);
             var wl = Prim(PrimitiveType.Cube, "WallLeft",  root.transform, new Vector3(-5f, 2.5f, 0f), new Vector3(0.2f, 5f, 10f), wallCol);
-            var wallTex = ProcTextures.Wallpaper();
-            ApplyTiledTexture(wb, wallTex, new Vector2(3f, 1.2f));
-            ApplyTiledTexture(wf, wallTex, new Vector2(3f, 1.2f));
-            ApplyTiledTexture(wr, wallTex, new Vector2(3f, 1.2f));
-            ApplyTiledTexture(wl, wallTex, new Vector2(3f, 1.2f));
+            if (roomName != "Kitchen")
+            {
+                var wallTex = ProcTextures.Wallpaper();
+                ApplyTiledTexture(wb, wallTex, new Vector2(3f, 1.2f));
+                ApplyTiledTexture(wr, wallTex, new Vector2(3f, 1.2f));
+                ApplyTiledTexture(wl, wallTex, new Vector2(3f, 1.2f));
+            }
 
             // Skirting boards
-            Color skirt = new Color(0.20f, 0.14f, 0.32f);
+            Color skirt = roomName == "Kitchen"
+                ? new Color(0.52f, 0.36f, 0.40f)
+                : new Color(0.20f, 0.14f, 0.32f);
             Prim(PrimitiveType.Cube, "SkirtBack",  root.transform, new Vector3(0f, 0.12f,  4.9f), new Vector3(9.8f, 0.24f, 0.1f), skirt);
-            Prim(PrimitiveType.Cube, "SkirtFront", root.transform, new Vector3(0f, 0.12f, -4.9f), new Vector3(9.8f, 0.24f, 0.1f), skirt);
             Prim(PrimitiveType.Cube, "SkirtRight", root.transform, new Vector3( 4.9f, 0.12f, 0f), new Vector3(0.1f, 0.24f, 9.8f), skirt);
             Prim(PrimitiveType.Cube, "SkirtLeft",  root.transform, new Vector3(-4.9f, 0.12f, 0f), new Vector3(0.1f, 0.24f, 9.8f), skirt);
 
             // Ambient
             var amb = root.AddComponent<RoomAmbience>();
-            amb.ambientColor = ambColor;
+            amb.ambientColor = Color.Lerp(ambColor, Color.white, 0.55f);
 
             // Room point light
             var lGO = new GameObject("RoomLight");
@@ -2206,9 +2527,10 @@ namespace MoonlightMagicHouse
             lGO.transform.localPosition = new Vector3(0f, 4f, 0f);
             var rl = lGO.AddComponent<Light>();
             rl.type      = LightType.Point;
-            rl.color     = Color.Lerp(ambColor, Color.white, 0.5f);
-            rl.intensity = 2.0f;
+            rl.color     = Color.Lerp(ambColor, Color.white, 0.78f);
+            rl.intensity = 1.65f;
             rl.range     = 12f;
+            rl.shadows   = LightShadows.None;
 
             // Load FBX props
             if (propPaths != null)
@@ -2228,6 +2550,8 @@ namespace MoonlightMagicHouse
                     ApplyToonToAll(prop, tint);
                 }
             }
+
+            AddSecondaryRoomDetails(root.transform, roomName);
 
             // Always add a MoonLamp primitive so the room looks furnished even if FBX props fail
             if (active)
@@ -2583,6 +2907,88 @@ namespace MoonlightMagicHouse
             return root;
         }
 
+        void AddSecondaryRoomDetails(Transform root, string roomName)
+        {
+            if (roomName == "Garden")
+            {
+                DecorPrim(PrimitiveType.Cube, "MoonPlanter", root,
+                    new Vector3(-1.65f, 0.20f, 1.65f), new Vector3(2.35f, 0.38f, 1.15f),
+                    new Color(0.72f, 0.42f, 0.28f));
+                DecorPrim(PrimitiveType.Cube, "MoonSoil", root,
+                    new Vector3(-1.65f, 0.40f, 1.65f), new Vector3(2.10f, 0.08f, 0.92f),
+                    new Color(0.25f, 0.16f, 0.13f));
+                var flowerColors = new[]
+                {
+                    new Color(0.98f, 0.58f, 0.72f), new Color(0.95f, 0.78f, 0.34f),
+                    new Color(0.60f, 0.72f, 0.98f), new Color(0.78f, 0.58f, 0.94f)
+                };
+                for (int i = 0; i < 8; i++)
+                {
+                    float x = -2.45f + (i % 4) * 0.54f;
+                    float z = 1.40f + (i / 4) * 0.50f;
+                    DecorPrim(PrimitiveType.Cylinder, $"FlowerStem-{i}", root,
+                        new Vector3(x, 0.70f, z), new Vector3(0.035f, 0.30f, 0.035f),
+                        new Color(0.28f, 0.62f, 0.32f));
+                    var bloom = DecorPrim(PrimitiveType.Sphere, $"MoonBloom-{i}", root,
+                        new Vector3(x, 1.04f, z), Vector3.one * 0.16f,
+                        flowerColors[i % flowerColors.Length]);
+                    SetMat(bloom, flowerColors[i % flowerColors.Length], flowerColors[i % flowerColors.Length] * 0.18f);
+                }
+                for (int i = 0; i < 6; i++)
+                    DecorPrim(PrimitiveType.Cylinder, $"GardenStep-{i}", root,
+                        new Vector3(-0.8f + i * 0.58f, 0.02f, -1.35f + Mathf.Sin(i * 0.8f) * 0.32f),
+                        new Vector3(0.28f, 0.025f, 0.22f), new Color(0.72f, 0.76f, 0.66f));
+                AddDecorGlow(root, "GardenGlow", new Vector3(-1.4f, 2.6f, 2.0f),
+                    new Color(0.62f, 0.92f, 0.58f), 0.42f, 4.2f);
+            }
+            else if (roomName == "Library")
+            {
+                var rug = DecorPrim(PrimitiveType.Cylinder, "ReadingRug", root,
+                    new Vector3(1.0f, 0.02f, -0.25f), new Vector3(1.55f, 0.025f, 1.55f),
+                    new Color(0.48f, 0.28f, 0.55f));
+                ApplyTiledTexture(rug, ProcTextures.Rug(), Vector2.one);
+                DecorPrim(PrimitiveType.Cube, "ReadingDesk", root,
+                    new Vector3(-0.35f, 0.52f, 1.35f), new Vector3(1.45f, 0.10f, 0.82f),
+                    new Color(0.72f, 0.50f, 0.31f));
+                DecorPrim(PrimitiveType.Cube, "OpenPageLeft", root,
+                    new Vector3(-0.68f, 0.60f, 1.34f), new Vector3(0.58f, 0.025f, 0.64f),
+                    new Color(0.96f, 0.89f, 0.72f));
+                DecorPrim(PrimitiveType.Cube, "OpenPageRight", root,
+                    new Vector3(-0.05f, 0.60f, 1.34f), new Vector3(0.58f, 0.025f, 0.64f),
+                    new Color(0.98f, 0.92f, 0.78f));
+                for (int i = 0; i < 7; i++)
+                    DecorPrim(PrimitiveType.Cube, $"BookStack-{i}", root,
+                        new Vector3(2.55f, 0.10f + i * 0.10f, 2.8f),
+                        new Vector3(0.72f - i * 0.025f, 0.09f, 0.46f),
+                        i % 2 == 0 ? new Color(0.70f, 0.38f, 0.46f) : new Color(0.36f, 0.58f, 0.68f));
+                AddDecorGlow(root, "ReadingGlow", new Vector3(-0.35f, 1.55f, 1.2f),
+                    new Color(1.00f, 0.72f, 0.38f), 0.48f, 3.8f);
+            }
+        }
+
+        static GameObject DecorPrim(PrimitiveType type, string name, Transform parent,
+            Vector3 localPosition, Vector3 localScale, Color color)
+        {
+            var go = Prim(type, name, parent, localPosition, localScale, color);
+            var collider = go.GetComponent<Collider>();
+            if (collider != null) Object.Destroy(collider);
+            return go;
+        }
+
+        static void AddDecorGlow(Transform parent, string name, Vector3 localPosition,
+            Color color, float intensity, float range)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = localPosition;
+            var light = go.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.color = color;
+            light.intensity = intensity;
+            light.range = range;
+            light.shadows = LightShadows.None;
+        }
+
         // ── UI ───────────────────────────────────────────────────────────────
         (GameObject go, MoonlightUI ui) CreateUI()
         {
@@ -2602,21 +3008,23 @@ namespace MoonlightMagicHouse
 
             canvasGO.AddComponent<GraphicRaycaster>();
 
-            // HUD panel (top) — taller so info labels fit, very transparent
+            // Compact warm HUD: readable on iPad without masking the authored room.
             var hud = Panel("HUD", canvasGO.transform,
                 new Vector2(0f, 1f), new Vector2(1f, 1f),
-                new Vector2(0f, -200f), new Vector2(0f, 0f),
-                new Color(0.04f, 0.02f, 0.10f, 0.35f));
+                new Vector2(0f, -142f), new Vector2(0f, 0f),
+                new Color(0.20f, 0.15f, 0.18f, 0.48f));
+            hud.AddComponent<MoonlightSafeAreaBand>()
+                .Configure(MoonlightSafeAreaBand.Edge.Top);
 
             // Stat sliders
             float[] xPos   = { -420f, -210f, 0f, 210f, 420f };
             string[] names = { "Wonder", "Warmth", "Rest", "Magic", "Hunger" };
             Color[]  cols  = {
-                new Color(0.4f, 0.8f, 1.0f),
-                new Color(1.0f, 0.6f, 0.8f),
-                new Color(0.6f, 0.9f, 0.6f),
-                new Color(0.8f, 0.4f, 1.0f),
-                new Color(1.0f, 0.8f, 0.4f)
+                new Color(0.45f, 0.76f, 0.82f),
+                new Color(0.92f, 0.62f, 0.70f),
+                new Color(0.48f, 0.76f, 0.58f),
+                new Color(0.68f, 0.58f, 0.82f),
+                new Color(0.94f, 0.74f, 0.38f)
             };
 
             string[] shortNames = { "WONDER", "WARMTH", "REST", "MAGIC", "HUNGER" };
@@ -2632,8 +3040,8 @@ namespace MoonlightMagicHouse
                 slRt.anchorMin        = new Vector2(0.5f, 1f);
                 slRt.anchorMax        = new Vector2(0.5f, 1f);
                 slRt.pivot            = new Vector2(0.5f, 0.5f);
-                slRt.anchoredPosition = new Vector2(xPos[i], -90f);
-                slRt.sizeDelta        = new Vector2(200f, 26f);
+                slRt.anchoredPosition = new Vector2(xPos[i], -60f);
+                slRt.sizeDelta        = new Vector2(176f, 18f);
                 var sl = slGO.GetComponent<Slider>();
                 sl.value = 0.8f;
                 sl.interactable = false;
@@ -2648,16 +3056,16 @@ namespace MoonlightMagicHouse
 
                 // Label above slider (legacy UI.Text — guaranteed to render)
                 MakeLegacyLabel(names[i] + "Lbl", hud.transform,
-                    new Vector2(xPos[i], -55f), new Vector2(200f, 26f),
+                    new Vector2(xPos[i], -32f), new Vector2(180f, 22f),
                     shortNames[i], 18, cols[i], FontStyle.Bold);
             }
 
             // Info labels (stage, mood, coins, xp, days) — legacy Text so they always show
-            var stageLblGO = MakeLegacyLabel("StageLabel", hud.transform, new Vector2(-420f, -145f), new Vector2(220f, 30f), "Moonlight", 20, Color.white, FontStyle.Bold);
-            var moodLblGO  = MakeLegacyLabel("MoodLabel",  hud.transform, new Vector2(-200f, -145f), new Vector2(120f, 30f), "HAPPY",   18, new Color(1f, 0.7f, 0.9f), FontStyle.Bold);
-            var coinsLblGO = MakeLegacyLabel("CoinsLabel", hud.transform, new Vector2(  40f, -145f), new Vector2(180f, 30f), "COINS 30", 20, new Color(1f, 0.9f, 0.3f), FontStyle.Bold);
-            var xpLblGO    = MakeLegacyLabel("XPLabel",    hud.transform, new Vector2( 240f, -145f), new Vector2(160f, 30f), "XP 0",    18, new Color(0.75f, 0.55f, 1f), FontStyle.Bold);
-            var daysLblGO  = MakeLegacyLabel("DaysLabel",  hud.transform, new Vector2( 420f, -145f), new Vector2(140f, 30f), "DAY 1",   18, new Color(0.7f, 0.9f, 1f), FontStyle.Bold);
+            var stageLblGO = MakeLegacyLabel("StageLabel", hud.transform, new Vector2(-420f, -105f), new Vector2(220f, 26f), "Moonlight", 20, Color.white, FontStyle.Bold);
+            var moodLblGO  = MakeLegacyLabel("MoodLabel",  hud.transform, new Vector2(-200f, -105f), new Vector2(120f, 26f), "HAPPY",   18, new Color(1f, 0.72f, 0.78f), FontStyle.Bold);
+            var coinsLblGO = MakeLegacyLabel("CoinsLabel", hud.transform, new Vector2(  40f, -105f), new Vector2(180f, 26f), "COINS 30", 20, new Color(1f, 0.86f, 0.42f), FontStyle.Bold);
+            var xpLblGO    = MakeLegacyLabel("XPLabel",    hud.transform, new Vector2( 240f, -105f), new Vector2(160f, 26f), "XP 0",    18, new Color(0.76f, 0.68f, 0.88f), FontStyle.Bold);
+            var daysLblGO  = MakeLegacyLabel("DaysLabel",  hud.transform, new Vector2( 420f, -105f), new Vector2(140f, 26f), "DAY 1",   18, new Color(0.66f, 0.82f, 0.84f), FontStyle.Bold);
 
             // Wrap legacy Text in TMP_Text-compatible adapters? No — MoonlightUI.Wire needs TMP_Text.
             // Create hidden TMP labels that mirror nothing but satisfy the signature — OR swap Wire signature.
@@ -2680,43 +3088,39 @@ namespace MoonlightMagicHouse
             // Action buttons (bottom) — 2×3 grid of 6 actions w/ emoji icons and softer chrome.
             var btnPanel = Panel("ActionBar", canvasGO.transform,
                 new Vector2(0f, 0f), new Vector2(1f, 0f),
-                new Vector2(0f, 0f), new Vector2(0f, 260f),
-                new Color(0.06f, 0.03f, 0.14f, 0.78f));
+                new Vector2(0f, 0f), new Vector2(0f, 150f),
+                new Color(0.18f, 0.14f, 0.16f, 0.40f));
+            btnPanel.AddComponent<MoonlightSafeAreaBand>()
+                .Configure(MoonlightSafeAreaBand.Edge.Bottom);
 
-            var feedBtn   = MakeButton("FeedBtn",   btnPanel.transform, new Vector2(-300f, 170f), "FEED",   new Color(0.96f, 0.58f, 0.26f));
-            var cuddleBtn = MakeButton("CuddleBtn", btnPanel.transform, new Vector2(   0f, 170f), "CUDDLE", new Color(0.95f, 0.40f, 0.68f));
-            var sleepBtn  = MakeButton("SleepBtn",  btnPanel.transform, new Vector2( 300f, 170f), "SLEEP",  new Color(0.36f, 0.50f, 0.92f));
-            var playBtn   = MakeButton("PlayBtn",   btnPanel.transform, new Vector2(-300f,  70f), "PLAY",   new Color(0.98f, 0.78f, 0.24f));
-            var bathBtn   = MakeButton("BathBtn",   btnPanel.transform, new Vector2(   0f,  70f), "BATH",   new Color(0.45f, 0.85f, 0.95f));
-            var danceBtn  = MakeButton("DanceBtn",  btnPanel.transform, new Vector2( 300f,  70f), "DANCE",  new Color(0.78f, 0.42f, 0.94f));
+            var feedBtn   = MakeButton("FeedBtn",   btnPanel.transform, new Vector2(-190f, 132f), "FEED",   new Color(0.88f, 0.63f, 0.30f));
+            var cuddleBtn = MakeButton("CuddleBtn", btnPanel.transform, new Vector2(   0f, 132f), "CUDDLE", new Color(0.86f, 0.50f, 0.64f));
+            var sleepBtn  = MakeButton("SleepBtn",  btnPanel.transform, new Vector2( 190f, 132f), "SLEEP",  new Color(0.42f, 0.62f, 0.76f));
+            feedBtn.gameObject.SetActive(false);
+            cuddleBtn.gameObject.SetActive(false);
+            sleepBtn.gameObject.SetActive(false);
+
+            var contextLabel = MakeTMPLabel("ContextActionLabel", btnPanel.transform,
+                new Vector2(-30f, 92f), new Vector2(620f, 34f),
+                "EXPLORE THE ROOM", 22, Color.white);
+            var resultLabel = MakeTMPLabel("ContextResultLabel", btnPanel.transform,
+                new Vector2(-30f, 48f), new Vector2(700f, 36f),
+                "", 19, new Color(1f, 0.86f, 0.58f));
+
+            var actionBtn = MakeButton("ContextActionBtn", btnPanel.transform,
+                new Vector2(485f, 74f), "ACTION", new Color(0.46f, 0.58f, 0.72f));
+            actionBtn.GetComponent<RectTransform>().sizeDelta = new Vector2(250f, 84f);
+            var legacyActionText = actionBtn.GetComponentInChildren<Text>();
+            if (legacyActionText) legacyActionText.enabled = false;
+            var actionBtnLabel = MakeTMPButtonLabel("ActionBtnLabel", actionBtn.transform, "ACTION", 24, Color.white);
+
+            var joystick = MakeJoystick(btnPanel.transform);
 
             // Visual feedback: particle bursts on button click (finds Moonlight by name at click time)
             AttachBurst(feedBtn,   new Color(1.0f, 0.75f, 0.35f), 14);
             AttachBurst(cuddleBtn, new Color(1.0f, 0.45f, 0.70f), 20);
             AttachBurst(sleepBtn,  new Color(0.55f, 0.70f, 1.0f), 12);
-            AttachBurst(playBtn,   new Color(1.0f, 0.85f, 0.35f), 18);
-            AttachBurst(bathBtn,   new Color(0.60f, 0.90f, 1.00f), 16);
-            AttachBurst(danceBtn,  new Color(0.85f, 0.55f, 1.00f), 22);
-
-            // Hook up the extra actions directly — MoonlightUI only wires the original three.
-            playBtn.onClick.AddListener(() =>
-            {
-                MoonlightGameManager.Instance?.moonlight?.Play();
-                var ui = Object.FindAnyObjectByType<MoonlightUI>();
-                if (ui != null && MoonlightGameManager.Instance?.moonlight != null) ui.Refresh(MoonlightGameManager.Instance.moonlight);
-            });
-            bathBtn.onClick.AddListener(() =>
-            {
-                MoonlightGameManager.Instance?.moonlight?.Bathe();
-                var ui = Object.FindAnyObjectByType<MoonlightUI>();
-                if (ui != null && MoonlightGameManager.Instance?.moonlight != null) ui.Refresh(MoonlightGameManager.Instance.moonlight);
-            });
-            danceBtn.onClick.AddListener(() =>
-            {
-                MoonlightGameManager.Instance?.moonlight?.Dance();
-                var ui = Object.FindAnyObjectByType<MoonlightUI>();
-                if (ui != null && MoonlightGameManager.Instance?.moonlight != null) ui.Refresh(MoonlightGameManager.Instance.moonlight);
-            });
+            AttachBurst(actionBtn, new Color(0.70f, 0.86f, 1.0f), 18);
 
             // Feed menu overlay
             var feedMenu = Panel("FeedMenu", canvasGO.transform,
@@ -2740,7 +3144,7 @@ namespace MoonlightMagicHouse
                 Vector2.zero, Vector2.zero,
                 new Color(0.06f, 0.02f, 0.18f, 0.92f));
             stgPanel.SetActive(false);
-            var stgLabel = MakeTMPLabel("StgLabel", stgPanel.transform, new Vector2(0f, 0f), new Vector2(600f, 80f), "✨ Stage Up!", 32, Color.white);
+            var stgLabel = MakeTMPLabel("StgLabel", stgPanel.transform, new Vector2(0f, 0f), new Vector2(600f, 80f), "Stage Up!", 32, Color.white);
 
             // Room unlock overlay
             var roomPanel = Panel("RoomPanel", canvasGO.transform,
@@ -2748,7 +3152,7 @@ namespace MoonlightMagicHouse
                 Vector2.zero, Vector2.zero,
                 new Color(0.04f, 0.08f, 0.04f, 0.92f));
             roomPanel.SetActive(false);
-            var roomLabel = MakeTMPLabel("RoomLabel", roomPanel.transform, new Vector2(0f, 0f), new Vector2(600f, 80f), "🌙 Room Unlocked!", 28, Color.white);
+            var roomLabel = MakeTMPLabel("RoomLabel", roomPanel.transform, new Vector2(0f, 0f), new Vector2(600f, 80f), "Room Unlocked!", 28, Color.white);
 
             // Offline panel
             var offlinePanel = Panel("OfflinePanel", canvasGO.transform,
@@ -2756,7 +3160,7 @@ namespace MoonlightMagicHouse
                 Vector2.zero, Vector2.zero,
                 new Color(0.18f, 0.08f, 0.04f, 0.92f));
             offlinePanel.SetActive(false);
-            MakeTMPLabel("OfflineLbl", offlinePanel.transform, Vector2.zero, new Vector2(600f, 60f), "Moonlight missed you! 🌙", 26, new Color(1f, 0.8f, 0.5f));
+            MakeTMPLabel("OfflineLbl", offlinePanel.transform, Vector2.zero, new Vector2(600f, 60f), "Moonlight missed you!", 26, new Color(1f, 0.8f, 0.5f));
 
             // Sleep overlay
             var sleepOvr = Panel("SleepOverlay", canvasGO.transform,
@@ -2764,31 +3168,7 @@ namespace MoonlightMagicHouse
                 Vector2.zero, Vector2.zero,
                 new Color(0.02f, 0.02f, 0.10f, 0.75f));
             sleepOvr.SetActive(false);
-            MakeTMPLabel("SleepLbl", sleepOvr.transform, Vector2.zero, new Vector2(400f, 80f), "💤 zzzz...", 42, new Color(0.7f, 0.8f, 1f));
-
-            // Quit button — top-right corner
-            var quitRes = new DefaultControls.Resources();
-            var quitGO  = DefaultControls.CreateButton(quitRes);
-            quitGO.name = "QuitBtn";
-            quitGO.transform.SetParent(canvasGO.transform, false);
-            var quitRt = quitGO.GetComponent<RectTransform>();
-            quitRt.anchorMin        = new Vector2(1f, 1f);
-            quitRt.anchorMax        = new Vector2(1f, 1f);
-            quitRt.pivot            = new Vector2(1f, 1f);
-            quitRt.anchoredPosition = new Vector2(-20f, -20f);
-            quitRt.sizeDelta        = new Vector2(56f, 56f);
-            var quitImg = quitGO.GetComponent<Image>();
-            if (quitImg) quitImg.color = new Color(0.85f, 0.25f, 0.30f, 0.95f);
-            var quitLbl = quitGO.GetComponentInChildren<Text>();
-            if (quitLbl) { quitLbl.text = "X"; quitLbl.fontSize = 28; quitLbl.color = Color.white; quitLbl.fontStyle = FontStyle.Bold; }
-            quitGO.GetComponent<Button>().onClick.AddListener(() =>
-            {
-#if UNITY_EDITOR
-                UnityEditor.EditorApplication.isPlaying = false;
-#else
-                Application.Quit();
-#endif
-            });
+            MakeTMPLabel("SleepLbl", sleepOvr.transform, Vector2.zero, new Vector2(400f, 80f), "zzzz...", 42, new Color(0.7f, 0.8f, 1f));
 
             // EventSystem (needed for UI input)
             if (!FindAnyObjectByType<UnityEngine.EventSystems.EventSystem>())
@@ -2808,11 +3188,12 @@ namespace MoonlightMagicHouse
                 roomPanel, roomLabel,
                 offlinePanel, sleepOvr,
                 feedMenu, contentGO.transform);
+            ui.WireSpatialAction(actionBtn, actionBtnLabel, contextLabel, resultLabel);
+            joystick.Bind(FindAnyObjectByType<MoonlightPlayerController>());
 
             // Extra UI components
             canvasGO.AddComponent<DayNightCycleUI>();
             canvasGO.AddComponent<StreakToast>();
-            canvasGO.AddComponent<AchievementToast>();
 
             return (canvasGO, ui);
         }
@@ -2997,6 +3378,36 @@ namespace MoonlightMagicHouse
             return (canvasGO, ui);
         }
 
+        GameObject CreateRoomNavigation(Transform canvasRoot, RoomManager rooms)
+        {
+            var nav = Panel("RoomNavigation", canvasRoot,
+                new Vector2(1f, 1f), new Vector2(1f, 1f),
+                new Vector2(-900f, -214f), new Vector2(-20f, -154f),
+                new Color(0.18f, 0.14f, 0.16f, 0.42f));
+
+            var types = new[]
+            {
+                RoomType.LivingRoom, RoomType.Kitchen, RoomType.Bedroom,
+                RoomType.Garden, RoomType.Library
+            };
+            var labels = new[] { "LIVING", "KITCHEN", "BEDROOM", "GARDEN", "LIBRARY" };
+            var colors = new[]
+            {
+                new Color(0.62f, 0.46f, 0.68f), new Color(0.80f, 0.52f, 0.28f),
+                new Color(0.42f, 0.55f, 0.76f), new Color(0.36f, 0.64f, 0.46f),
+                new Color(0.58f, 0.42f, 0.30f)
+            };
+            for (int i = 0; i < types.Length; i++)
+            {
+                var room = types[i];
+                var button = MakeButton($"{room}Nav", nav.transform,
+                    new Vector2(-352f + i * 176f, 0f), labels[i], colors[i]);
+                button.GetComponent<RectTransform>().sizeDelta = new Vector2(158f, 44f);
+                button.onClick.AddListener(() => rooms.GoToRoom(room));
+            }
+            return nav;
+        }
+
         // ── UI Helpers ───────────────────────────────────────────────────────
         static Slider MakeHiddenSlider(Transform parent, int index)
         {
@@ -3098,6 +3509,9 @@ namespace MoonlightMagicHouse
             t.color     = color;
             t.alignment = TextAnchor.MiddleCenter;
             t.horizontalOverflow = HorizontalWrapMode.Overflow;
+            var outline = go.AddComponent<Outline>();
+            outline.effectColor = new Color(0.08f, 0.06f, 0.08f, 0.72f);
+            outline.effectDistance = new Vector2(1f, -1f);
             var rt = go.GetComponent<RectTransform>();
             rt.anchorMin        = new Vector2(0.5f, 1f);
             rt.anchorMax        = new Vector2(0.5f, 1f);
@@ -3143,6 +3557,54 @@ namespace MoonlightMagicHouse
             rt.anchoredPosition = anchoredPos;
             rt.sizeDelta        = size;
             return t;
+        }
+
+        static TMP_Text MakeTMPButtonLabel(string name, Transform parent, string text,
+            float fontSize, Color color)
+        {
+            var label = MakeTMPLabel(name, parent, Vector2.zero, Vector2.zero, text, fontSize, color);
+            label.fontStyle = FontStyles.Bold;
+            var rt = label.GetComponent<RectTransform>();
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = Vector2.zero;
+            return label;
+        }
+
+        static MoonlightTouchJoystick MakeJoystick(Transform parent)
+        {
+            var root = new GameObject("MoveJoystick");
+            root.transform.SetParent(parent, false);
+            var image = root.AddComponent<Image>();
+            image.sprite = UICircleSprite;
+            image.color = new Color(0.12f, 0.12f, 0.14f, 0.42f);
+            var rt = root.GetComponent<RectTransform>();
+            rt.anchorMin = new Vector2(0f, 0f);
+            rt.anchorMax = new Vector2(0f, 0f);
+            rt.pivot = new Vector2(0.5f, 0.5f);
+            rt.anchoredPosition = new Vector2(140f, 90f);
+            rt.sizeDelta = new Vector2(168f, 168f);
+
+            var knob = new GameObject("Knob");
+            knob.transform.SetParent(root.transform, false);
+            var knobImage = knob.AddComponent<Image>();
+            knobImage.sprite = UICircleSprite;
+            knobImage.color = new Color(0.78f, 0.84f, 0.88f, 0.78f);
+            var knobRt = knob.GetComponent<RectTransform>();
+            knobRt.anchorMin = new Vector2(0.5f, 0.5f);
+            knobRt.anchorMax = new Vector2(0.5f, 0.5f);
+            knobRt.pivot = new Vector2(0.5f, 0.5f);
+            knobRt.anchoredPosition = Vector2.zero;
+            knobRt.sizeDelta = new Vector2(72f, 72f);
+
+            var label = MakeTMPLabel("MoveLabel", root.transform,
+                new Vector2(0f, -108f), new Vector2(180f, 26f),
+                "MOVE", 16, new Color(1f, 1f, 1f, 0.72f));
+            label.fontStyle = FontStyles.Bold;
+
+            var joystick = root.AddComponent<MoonlightTouchJoystick>();
+            return joystick;
         }
 
         static void AttachBurst(Button btn, Color color, int count)
@@ -3193,14 +3655,14 @@ namespace MoonlightMagicHouse
             btnGO.transform.SetParent(parent, false);
             var rt = btnGO.GetComponent<RectTransform>();
             rt.anchoredPosition = pos;
-            rt.sizeDelta        = new Vector2(240f, 80f);
+            rt.sizeDelta        = new Vector2(168f, 56f);
             var img = btnGO.GetComponent<Image>();
             if (img) img.color = tint;
             var lbl = btnGO.GetComponentInChildren<Text>();
             if (lbl)
             {
                 lbl.text      = label;
-                lbl.fontSize  = 26;
+                lbl.fontSize  = 18;
                 lbl.fontStyle = FontStyle.Bold;
                 lbl.color     = Color.white;
             }
@@ -3314,6 +3776,86 @@ namespace MoonlightMagicHouse
                 mat.SetColor("_OutlineColor", new Color(0.06f, 0.03f, 0.12f));
                 mr.material = mat;
             }
+        }
+
+        static void ApplyHeroMaterials(GameObject root)
+        {
+            var standard = Shader.Find("Standard") ?? Shader.Find("Diffuse") ?? ToonShader;
+            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                var sourceMaterials = renderer.sharedMaterials;
+                var authoredMaterials = new Material[sourceMaterials.Length];
+                for (int i = 0; i < sourceMaterials.Length; i++)
+                {
+                    var source = sourceMaterials[i];
+                    string materialName = source != null ? source.name : renderer.gameObject.name;
+                    var color = source != null && source.HasProperty("_Color")
+                        ? source.color
+                        : HeroPaletteColor(materialName);
+
+                    // Some FBX import paths return white even though the authored
+                    // Blender material name carries the intended palette.
+                    var namedColor = HeroPaletteColor(materialName);
+                    if (color.r > 0.97f && color.g > 0.97f && color.b > 0.97f &&
+                        namedColor != Color.white)
+                        color = namedColor;
+
+                    var material = new Material(standard) { name = materialName + "_Runtime" };
+                    if (material.HasProperty("_Color")) material.SetColor("_Color", color);
+                    string lower = materialName.ToLowerInvariant();
+                    if (material.HasProperty("_Glossiness"))
+                        material.SetFloat("_Glossiness", HeroSmoothness(lower));
+                    if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
+                    if (material.HasProperty("_SpecularHighlights"))
+                        material.SetFloat("_SpecularHighlights", 1f);
+                    if (source != null && source.mainTexture != null)
+                        material.mainTexture = source.mainTexture;
+                    authoredMaterials[i] = material;
+                }
+
+                renderer.sharedMaterials = authoredMaterials;
+                renderer.shadowCastingMode = ShadowCastingMode.On;
+                renderer.receiveShadows = true;
+            }
+        }
+
+        static Color HeroPaletteColor(string materialName)
+        {
+            string n = (materialName ?? string.Empty).ToLowerInvariant();
+            if (n.Contains("room_cream")) return new Color(0.93f, 0.84f, 0.72f);
+            if (n.Contains("wall_peach")) return new Color(0.89f, 0.70f, 0.61f);
+            if (n.Contains("trim_ivory")) return new Color(0.98f, 0.94f, 0.84f);
+            if (n.Contains("floor_honey")) return new Color(0.76f, 0.57f, 0.38f);
+            if (n.Contains("wood_maple")) return new Color(0.62f, 0.40f, 0.27f);
+            if (n.Contains("bed_biscuit")) return new Color(0.88f, 0.68f, 0.43f);
+            if (n.Contains("blanket_blush")) return new Color(0.95f, 0.63f, 0.65f);
+            if (n.Contains("pillow_cream")) return new Color(0.98f, 0.95f, 0.87f);
+            if (n.Contains("mint_soft")) return new Color(0.55f, 0.78f, 0.69f);
+            if (n.Contains("mint_deep")) return new Color(0.25f, 0.59f, 0.55f);
+            if (n.Contains("sky_dusk")) return new Color(0.34f, 0.45f, 0.65f);
+            if (n.Contains("moon_butter")) return new Color(0.98f, 0.86f, 0.48f);
+            if (n.Contains("lilac_body")) return new Color(0.66f, 0.57f, 0.82f);
+            if (n.Contains("lilac_shadow")) return new Color(0.45f, 0.34f, 0.62f);
+            if (n.Contains("lilac_innerear")) return new Color(0.83f, 0.61f, 0.76f);
+            if (n.Contains("cat_belly")) return new Color(0.94f, 0.88f, 0.78f);
+            if (n.Contains("cat_eye")) return new Color(0.23f, 0.16f, 0.31f);
+            if (n.Contains("cat_highlight")) return new Color(1.00f, 0.98f, 0.91f);
+            if (n.Contains("cat_nose")) return new Color(0.67f, 0.40f, 0.55f);
+            if (n.Contains("pencil_coral")) return new Color(0.89f, 0.35f, 0.35f);
+            if (n.Contains("pencil_gold")) return new Color(0.95f, 0.70f, 0.25f);
+            if (n.Contains("pencil_blue")) return new Color(0.27f, 0.50f, 0.70f);
+            return Color.white;
+        }
+
+        static float HeroSmoothness(string materialName)
+        {
+            string n = materialName ?? string.Empty;
+            if (n.Contains("eye") || n.Contains("sky")) return 0.55f;
+            if (n.Contains("moon") || n.Contains("trim") || n.Contains("pencil")) return 0.34f;
+            if (n.Contains("blanket") || n.Contains("pillow") || n.Contains("bed_biscuit")) return 0.16f;
+            if (n.Contains("wall") || n.Contains("floor")) return 0.18f;
+            if (n.Contains("wood")) return 0.24f;
+            return 0.30f;
         }
     }
 }
