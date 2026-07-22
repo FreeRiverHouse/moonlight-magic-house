@@ -139,6 +139,7 @@ namespace MoonlightMagicHouse
             {
                 LastCueKey = "activity-try-again";
                 AudioManager.Instance?.Play(LastCueKey);
+                HapticFeedback.Light();
                 Debug.Log($"[MoonlightActivityQA] gesture-fail kind={kind} expected={RequiredGesture} " +
                     $"actual={gesture} score={LastGestureScore:0.00} step={_progressStep + 1}/{RequiredSteps}");
                 return $"TRY AGAIN  /  {GestureInstruction(RequiredGesture)}  /  SCORE {Mathf.RoundToInt(LastGestureScore * 100f)}";
@@ -273,6 +274,10 @@ namespace MoonlightMagicHouse
             }
 
             LastGesturePassed = true;
+            // Completion actions already emit their own success haptic through
+            // MoonlightCharacter. Intermediate steps get a distinct response.
+            if (RequiredSteps > 1 && _progressStep < RequiredSteps - 1)
+                HapticFeedback.Medium();
             return true;
         }
 
