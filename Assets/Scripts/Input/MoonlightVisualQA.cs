@@ -414,7 +414,7 @@ namespace MoonlightMagicHouse
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-navigation-cue-contract " +
                     navigationCueDetail);
-                Application.Quit(79);
+                Application.Quit(89);
                 yield break;
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-navigation-cue-contract " +
@@ -438,6 +438,16 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] action-visual-signatures " +
                 $"{actionVisualDetail} marker=MOONLIGHT_ACTIVITY_VISUAL_SIGNATURES_VERIFIED");
+            if (!MoonlightActionFeedback.ValidateActionQualityContract(
+                    out string actionQualityDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] action-quality-feedback " +
+                    actionQualityDetail);
+                Application.Quit(79);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] action-quality-feedback " +
+                $"{actionQualityDetail} marker=MOONLIGHT_ACTION_QUALITY_CONTRACT_VERIFIED");
 
             bool recognizerPass = MoonlightGesturePad.ValidateRecognizerContract(
                 out string recognizerDetail);

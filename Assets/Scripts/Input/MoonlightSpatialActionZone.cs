@@ -190,7 +190,7 @@ namespace MoonlightMagicHouse
                     recipe.wonderBoost = 5f;
                     recipe.magicBoost = 5f;
                     recipe.xpReward = 14;
-                    moonlight.Feed(recipe);
+                    moonlight.Feed(recipe, false);
                     Destroy(recipe);
                     string cookMastery = CompleteActivitySession(moonlight, 0, out int cookCoins);
                     _progressStep = 0;
@@ -216,7 +216,7 @@ namespace MoonlightMagicHouse
                     if (_progressStep == 3)
                         return $"MAGIC JUMP  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: TAP TO CATCH";
                     moonlight.Explore(RoomType.LivingRoom);
-                    moonlight.PerformMagic(5, 2);
+                    moonlight.PerformMagic(5, 2, false);
                     string playMastery = CompleteActivitySession(moonlight, 2, out int playCoins);
                     _progressStep = 0;
                     AudioManager.Instance?.Play("activity-complete");
@@ -240,7 +240,7 @@ namespace MoonlightMagicHouse
                         return $"DEW SPARKLING  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: ZIG-ZAG TO TEND";
                     if (_progressStep == 3)
                         return $"SPROUTS TENDED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: HOLD TO BLOOM";
-                    moonlight.CompleteGardening();
+                    moonlight.CompleteGardening(false);
                     string gardenMastery = CompleteActivitySession(moonlight, 3, out int gardenCoins);
                     _progressStep = 0;
                     AudioManager.Instance?.Play("activity-complete");
@@ -264,7 +264,7 @@ namespace MoonlightMagicHouse
                         return $"STAR PAGE TURNED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: CIRCLE TO TRACE";
                     if (_progressStep == 3)
                         return $"CONSTELLATION TRACED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: HOLD TO REMEMBER";
-                    moonlight.CompleteReading();
+                    moonlight.CompleteReading(false);
                     string readMastery = CompleteActivitySession(moonlight, 2, out int readCoins);
                     _progressStep = 0;
                     AudioManager.Instance?.Play("activity-complete");
@@ -292,17 +292,22 @@ namespace MoonlightMagicHouse
 
         bool TryBeginFeedback(MoonlightActionFeedback feedback, string state)
         {
-            if (!feedback.TryBegin(kind, DisplayName, state, _progressStep, RequiredSteps))
+            bool isScoredActivity = RequiredSteps > 1;
+            bool began = isScoredActivity
+                ? feedback.TryBegin(kind, DisplayName, state, _progressStep, RequiredSteps,
+                    LastGestureScore)
+                : feedback.TryBegin(kind, DisplayName, state, _progressStep, RequiredSteps);
+            if (!began)
             {
                 LastGesturePassed = false;
                 return false;
             }
 
             LastGesturePassed = true;
-            // Completion actions already emit their own success haptic through
-            // MoonlightCharacter. Intermediate steps get a distinct response.
-            if (RequiredSteps > 1 && _progressStep < RequiredSteps - 1)
-                HapticFeedback.Medium();
+            // The scored activity owns this pulse for every step. Completion
+            // methods suppress their legacy pulse to avoid duplicate feedback.
+            if (isScoredActivity)
+                feedback.PlayActionQualityHaptic();
             return true;
         }
 
@@ -321,7 +326,7 @@ namespace MoonlightMagicHouse
             _sessionAcceptedSteps++;
             _currentCombo++;
             _bestCombo = Mathf.Max(_bestCombo, _currentCombo);
-            if (LastGestureScore >= 0.88f) _perfectSteps++;
+            if (LastGestureScore >= MoonlightActionFeedback.PerfectActionQualityScore) _perfectSteps++;
         }
 
         string CompleteActivitySession(MoonlightCharacter moonlight, int baseCoins,
@@ -386,6 +391,6 @@ namespace MoonlightMagicHouse
         }
 
         static string GradeFor(float score) =>
-            score >= 0.88f ? "PERFECT" : score >= 0.72f ? "GREAT" : "GOOD";
+            MoonlightActionFeedback.ActionQualityTierFor(score).ToString().ToUpperInvariant();
     }
 }

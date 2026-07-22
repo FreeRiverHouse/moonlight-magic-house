@@ -144,7 +144,7 @@ namespace MoonlightMagicHouse
 
         // ── Actions ────────────────────────────────────────────────────────
 
-        public void Feed(FoodItem food)
+        public void Feed(FoodItem food, bool playHaptic = true)
         {
             if (!SpendCoins(food.cost)) return;
             stats.hunger  = Mathf.Min(100, stats.hunger + food.hungerBoost);
@@ -154,7 +154,7 @@ namespace MoonlightMagicHouse
             GainXP(food.xpReward);
             GetComponentInChildren<MoonlightAnimator>()?.TriggerEat();
             AudioManager.Instance?.Play("eat");
-            HapticFeedback.Light();
+            if (playHaptic) HapticFeedback.Light();
             AchievementSystem.Instance?.OnFirstFeed();
         }
 
@@ -186,14 +186,14 @@ namespace MoonlightMagicHouse
             AchievementSystem.Instance?.OnRoomVisited(room);
         }
 
-        public void PerformMagic(int magicGain, int coinReward)
+        public void PerformMagic(int magicGain, int coinReward, bool playHaptic = true)
         {
             stats.magic  = Mathf.Min(100, stats.magic  + magicGain);
             stats.wonder = Mathf.Min(100, stats.wonder + 10f);
             EarnCoins(coinReward);
             GainXP(20);
             AudioManager.Instance?.Play("reward");
-            HapticFeedback.Success();
+            if (playHaptic) HapticFeedback.Success();
         }
 
         public void Play()
@@ -233,17 +233,17 @@ namespace MoonlightMagicHouse
             GainXP(10);
         }
 
-        public void CompleteGardening()
+        public void CompleteGardening(bool playHaptic = true)
         {
             stats.wonder = Mathf.Min(100, stats.wonder + 16f);
             stats.magic = Mathf.Min(100, stats.magic + 12f);
             EarnCoins(3);
             GainXP(10);
             AchievementSystem.Instance?.Check("room_garden");
-            HapticFeedback.Success();
+            if (playHaptic) HapticFeedback.Success();
         }
 
-        public void CompleteReading()
+        public void CompleteReading(bool playHaptic = true)
         {
             stats.wonder = Mathf.Min(100, stats.wonder + 14f);
             stats.warmth = Mathf.Min(100, stats.warmth + 10f);
@@ -251,7 +251,7 @@ namespace MoonlightMagicHouse
             EarnCoins(2);
             GainXP(12);
             AchievementSystem.Instance?.Check("room_library");
-            HapticFeedback.Success();
+            if (playHaptic) HapticFeedback.Success();
         }
 
         // ── Economy ────────────────────────────────────────────────────────

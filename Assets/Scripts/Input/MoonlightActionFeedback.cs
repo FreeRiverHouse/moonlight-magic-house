@@ -4,10 +4,19 @@ using UnityEngine;
 
 namespace MoonlightMagicHouse
 {
+    public enum MoonlightActionQualityTier
+    {
+        Good,
+        Great,
+        Perfect
+    }
+
     public class MoonlightActionFeedback : MonoBehaviour
     {
         public const float MinimumActionAccentExtent = 0.18f;
         public const float MaximumActionAccentExtent = 0.80f;
+        public const float GreatActionQualityScore = 0.72f;
+        public const float PerfectActionQualityScore = 0.88f;
 
         [SerializeField] float cooldownSeconds = 1.15f;
 
@@ -131,6 +140,11 @@ namespace MoonlightMagicHouse
         public int LastMasteryCelebrationParticles { get; private set; }
         public int LastMasteryCelebrationCombo { get; private set; }
         public string MasteryCelebrationQAMarker { get; private set; } = "";
+        public MoonlightActionQualityTier ActionQualityTier { get; private set; } =
+            MoonlightActionQualityTier.Great;
+        public string ActionQualityQAMarker { get; private set; } =
+            "MOONLIGHT_ACTION_QUALITY_GREAT";
+        public int ActionQualityBurstCount { get; private set; }
 
         void Awake()
         {
@@ -140,6 +154,11 @@ namespace MoonlightMagicHouse
 
         public bool TryBegin(MoonlightSpatialActionKind kind, string label, string shortState,
             int activityStep = 0, int activityRequiredSteps = 1)
+            => TryBegin(kind, label, shortState, activityStep, activityRequiredSteps,
+                GreatActionQualityScore);
+
+        public bool TryBegin(MoonlightSpatialActionKind kind, string label, string shortState,
+            int activityStep, int activityRequiredSteps, float acceptedGestureScore)
         {
             if (!CanBeginAction)
             {
@@ -167,6 +186,9 @@ namespace MoonlightMagicHouse
             _activityKind = kind;
             _activityStep = Mathf.Max(0, activityStep);
             _activityRequiredSteps = Mathf.Max(1, activityRequiredSteps);
+            ActionQualityTier = ActionQualityTierFor(acceptedGestureScore);
+            ActionQualityQAMarker = ActionQualityQAMarkerFor(ActionQualityTier);
+            ActionQualityBurstCount = ActionQualityBurstCountFor(kind, ActionQualityTier);
             _cooldownUntil = Time.time + Mathf.Max(
                 cooldownSeconds,
                 DurationFor(kind, shortState) + 0.18f);
@@ -192,6 +214,22 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightActivityQA] mastery-celebration-queued tier={_queuedMasteryTier} " +
                 $"average={averageScore:0.00} combo={_queuedMasteryCombo} bonus={bonusCoins} " +
                 "marker=MOONLIGHT_MASTERY_CELEBRATION_QUEUED");
+        }
+
+        public void PlayActionQualityHaptic()
+        {
+            switch (ActionQualityHapticRankFor(ActionQualityTier))
+            {
+                case 0:
+                    HapticFeedback.Light();
+                    break;
+                case 1:
+                    HapticFeedback.Medium();
+                    break;
+                default:
+                    HapticFeedback.Success();
+                    break;
+            }
         }
 
         string ActivityVerb()
@@ -237,6 +275,7 @@ namespace MoonlightMagicHouse
                 _activityStage = GetComponent<MoonlightActivityStage>() ?? gameObject.AddComponent<MoonlightActivityStage>();
             var color = ColorFor(kind, state);
             float duration = DurationFor(kind, state);
+            float flashIntensity = ActionQualityFlashIntensityFor(ActionQualityTier);
             BeginCameraFocus(kind);
             _activityStage.Begin(kind, _activityStep, _activityRequiredSteps);
             ActionMotionProfile = MotionProfileFor(kind, _activityStep);
@@ -251,12 +290,13 @@ namespace MoonlightMagicHouse
                 $"visual=\"{ActionVisualSignature}\" marker={ActionVisualSignatureMarker} " +
                 $"accents={ActionAccentRendererCount} colliders={ActionAccentColliderCount} " +
                 $"materials={ActionAccentMaterialCount} bounds={ActionAccentBoundsSize:F3} " +
-                $"accentExtent={ActionAccentWorldExtent:0.000}");
+                $"accentExtent={ActionAccentWorldExtent:0.000} quality={ActionQualityTier} " +
+                $"qualityBurst={ActionQualityBurstCount} qualityMarker={ActionQualityQAMarker}");
 
             if (_flash != null)
             {
                 _flash.color = color;
-                _flash.intensity = 0.85f;
+                _flash.intensity = flashIntensity;
             }
 
             if (_particles != null)
@@ -271,7 +311,7 @@ namespace MoonlightMagicHouse
                 shape.shapeType = ParticleSystemShapeType.Sphere;
                 shape.radius = 0.45f;
                 var emission = _particles.emission;
-                emission.SetBurst(0, new ParticleSystem.Burst(0f, BurstCountFor(kind)));
+                emission.SetBurst(0, new ParticleSystem.Burst(0f, (short)ActionQualityBurstCount));
                 _particles.Play(true);
             }
 
@@ -287,7 +327,7 @@ namespace MoonlightMagicHouse
                 UpdateActionOrb(kind, state, t);
                 _activityStage.UpdateStage(kind, t);
                 if (_flash != null)
-                    _flash.intensity = Mathf.Lerp(0.85f, 0f, t);
+                    _flash.intensity = Mathf.Lerp(flashIntensity, 0f, t);
                 yield return null;
             }
 
@@ -1211,17 +1251,19 @@ namespace MoonlightMagicHouse
                 3 => Mathf.Max(0.25f, ActionContactWeight * 0.70f),
                 _ => 0f
             };
+            float qualityEnergy = ActionQualityAccentEnergyFor(ActionQualityTier);
             for (int i = 0; i < _actionAccentParts.Count; i++)
             {
                 float wave = Mathf.Sin((Mathf.Clamp01(t) * 2f + i * 0.23f) * Mathf.PI * 2f);
                 Transform part = _actionAccentParts[i];
                 part.localPosition = _actionAccentBasePositions[i] +
-                    Vector3.up * wave * (0.006f + contactEnergy * 0.012f);
+                    Vector3.up * wave * (0.006f + contactEnergy * 0.012f) * qualityEnergy;
                 part.localRotation = _actionAccentBaseRotations[i] *
-                    Quaternion.Euler(0f, contactEnergy * wave * 8f,
-                        wave * (3f + i) + contactEnergy * (i % 2 == 0 ? 10f : -10f));
+                    Quaternion.Euler(0f, contactEnergy * wave * 8f * qualityEnergy,
+                        (wave * (3f + i) + contactEnergy * (i % 2 == 0 ? 10f : -10f)) *
+                        qualityEnergy);
                 part.localScale = _actionAccentBaseScales[i] *
-                    (1f + contactEnergy * (0.06f + i * 0.01f));
+                    (1f + contactEnergy * (0.06f + i * 0.01f) * qualityEnergy);
             }
 
             ActionAccentContactDistance = contactProp
@@ -1875,6 +1917,102 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.SleepCuddle when state == "Resting" => 1.65f,
             MoonlightSpatialActionKind.SleepCuddle when state == "Cuddled" => 1.05f,
             _ => 1f
+        };
+
+        public static MoonlightActionQualityTier ActionQualityTierFor(float score)
+        {
+            float clampedScore = Mathf.Clamp01(score);
+            if (clampedScore < GreatActionQualityScore) return MoonlightActionQualityTier.Good;
+            if (clampedScore < PerfectActionQualityScore) return MoonlightActionQualityTier.Great;
+            return MoonlightActionQualityTier.Perfect;
+        }
+
+        public static bool ValidateActionQualityContract(out string detail)
+        {
+            bool thresholds =
+                ActionQualityTierFor(0f) == MoonlightActionQualityTier.Good &&
+                ActionQualityTierFor(GreatActionQualityScore - 0.001f) == MoonlightActionQualityTier.Good &&
+                ActionQualityTierFor(GreatActionQualityScore) == MoonlightActionQualityTier.Great &&
+                ActionQualityTierFor(PerfectActionQualityScore - 0.001f) == MoonlightActionQualityTier.Great &&
+                ActionQualityTierFor(PerfectActionQualityScore) == MoonlightActionQualityTier.Perfect &&
+                ActionQualityTierFor(1f) == MoonlightActionQualityTier.Perfect;
+            bool monotonic = true;
+            bool bounded = true;
+            MoonlightSpatialActionKind[] activities =
+            {
+                MoonlightSpatialActionKind.Cook,
+                MoonlightSpatialActionKind.Play,
+                MoonlightSpatialActionKind.Garden,
+                MoonlightSpatialActionKind.Read
+            };
+            foreach (MoonlightSpatialActionKind activity in activities)
+            {
+                int good = ActionQualityBurstCountFor(activity, MoonlightActionQualityTier.Good);
+                int great = ActionQualityBurstCountFor(activity, MoonlightActionQualityTier.Great);
+                int perfect = ActionQualityBurstCountFor(activity, MoonlightActionQualityTier.Perfect);
+                monotonic &= good < great && great < perfect;
+                bounded &= good > 0 && perfect <= 64;
+            }
+
+            float goodFlash = ActionQualityFlashIntensityFor(MoonlightActionQualityTier.Good);
+            float greatFlash = ActionQualityFlashIntensityFor(MoonlightActionQualityTier.Great);
+            float perfectFlash = ActionQualityFlashIntensityFor(MoonlightActionQualityTier.Perfect);
+            float goodEnergy = ActionQualityAccentEnergyFor(MoonlightActionQualityTier.Good);
+            float greatEnergy = ActionQualityAccentEnergyFor(MoonlightActionQualityTier.Great);
+            float perfectEnergy = ActionQualityAccentEnergyFor(MoonlightActionQualityTier.Perfect);
+            int goodHaptic = ActionQualityHapticRankFor(MoonlightActionQualityTier.Good);
+            int greatHaptic = ActionQualityHapticRankFor(MoonlightActionQualityTier.Great);
+            int perfectHaptic = ActionQualityHapticRankFor(MoonlightActionQualityTier.Perfect);
+            monotonic &= goodFlash < greatFlash && greatFlash < perfectFlash &&
+                goodEnergy < greatEnergy && greatEnergy < perfectEnergy &&
+                goodHaptic < greatHaptic && greatHaptic < perfectHaptic;
+            bounded &= goodFlash >= 0.65f && perfectFlash <= 1.10f &&
+                goodEnergy >= 0.90f && perfectEnergy <= 1.12f &&
+                goodHaptic >= 0 && perfectHaptic <= 2;
+            detail = $"thresholds={thresholds} split={GreatActionQualityScore:0.00}/{PerfectActionQualityScore:0.00} " +
+                $"burst={ActionQualityBurstCountFor(MoonlightSpatialActionKind.Read, MoonlightActionQualityTier.Good)}-" +
+                $"{ActionQualityBurstCountFor(MoonlightSpatialActionKind.Play, MoonlightActionQualityTier.Perfect)}/64 " +
+                $"flash={goodFlash:0.00}/{greatFlash:0.00}/{perfectFlash:0.00} " +
+                $"energy={goodEnergy:0.00}/{greatEnergy:0.00}/{perfectEnergy:0.00} " +
+                $"haptic={goodHaptic}/{greatHaptic}/{perfectHaptic} " +
+                $"monotonic={monotonic} bounded={bounded}";
+            return thresholds && monotonic && bounded;
+        }
+
+        static string ActionQualityQAMarkerFor(MoonlightActionQualityTier tier) =>
+            $"MOONLIGHT_ACTION_QUALITY_{tier.ToString().ToUpperInvariant()}";
+
+        static int ActionQualityBurstCountFor(MoonlightSpatialActionKind kind,
+                                               MoonlightActionQualityTier tier)
+        {
+            int tierOffset = tier switch
+            {
+                MoonlightActionQualityTier.Good => -4,
+                MoonlightActionQualityTier.Perfect => 6,
+                _ => 0
+            };
+            return Mathf.Clamp(BurstCountFor(kind) + tierOffset, 1, 64);
+        }
+
+        static float ActionQualityFlashIntensityFor(MoonlightActionQualityTier tier) => tier switch
+        {
+            MoonlightActionQualityTier.Good => 0.68f,
+            MoonlightActionQualityTier.Perfect => 1.08f,
+            _ => 0.85f
+        };
+
+        static float ActionQualityAccentEnergyFor(MoonlightActionQualityTier tier) => tier switch
+        {
+            MoonlightActionQualityTier.Good => 0.90f,
+            MoonlightActionQualityTier.Perfect => 1.12f,
+            _ => 1f
+        };
+
+        static int ActionQualityHapticRankFor(MoonlightActionQualityTier tier) => tier switch
+        {
+            MoonlightActionQualityTier.Good => 0,
+            MoonlightActionQualityTier.Perfect => 2,
+            _ => 1
         };
 
         static short BurstCountFor(MoonlightSpatialActionKind kind) => kind switch
