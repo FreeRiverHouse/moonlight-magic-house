@@ -3633,8 +3633,8 @@ namespace MoonlightMagicHouse
             root.anchorMin = Vector2.zero;
             root.anchorMax = Vector2.zero;
             root.pivot = new Vector2(0.5f, 0.5f);
-            root.anchoredPosition = new Vector2(350f, 112f);
-            root.sizeDelta = new Vector2(196f, 104f);
+            root.anchoredPosition = new Vector2(310f, 112f);
+            root.sizeDelta = new Vector2(128f, 104f);
             var group = rootObject.GetComponent<CanvasGroup>();
             group.interactable = false;
             group.blocksRaycasts = false;
@@ -3652,7 +3652,7 @@ namespace MoonlightMagicHouse
             MakeChevronStroke("RightStroke", chevron, new Vector2(8f, 1f), -40f);
 
             var label = MakeTMPLabel("NavigationTargetLabel", root,
-                new Vector2(0f, -23f), new Vector2(196f, 48f), "", 18f, Color.white);
+                new Vector2(0f, -23f), new Vector2(128f, 48f), "", 18f, Color.white);
             label.fontStyle = FontStyles.Bold;
             label.alignment = TextAlignmentOptions.Center;
             label.enableAutoSizing = true;

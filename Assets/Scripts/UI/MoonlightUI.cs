@@ -81,6 +81,8 @@ namespace MoonlightMagicHouse
         bool _qaReportPending;
 
         static readonly Vector2 IPadMinimumTouchTarget = new Vector2(96f, 88f);
+        public const float NavigationCueSeparationPaddingPixels = 8f;
+        public const int NavigationCueMaximumLabelCharacters = 10;
         const float IPadProgressTrackWidth = 84f;
 
         static readonly string[] MoodEmojis = { "😴", "😠", "😑", "🌸", "✨", "🌟" };
@@ -111,6 +113,7 @@ namespace MoonlightMagicHouse
         public float NavigationCueAngleDegrees { get; private set; }
         public Vector2 NavigationCueCameraRelativeDirection { get; private set; }
         public string NavigationCueTargetName { get; private set; } = "";
+        public string NavigationCueRenderedLabel { get; private set; } = "";
         public float NavigationCueTargetDistance { get; private set; } = float.MaxValue;
         public float NavigationCueVisualAngleDegrees => _iPadNavigationChevron != null
             ? Mathf.DeltaAngle(0f, _iPadNavigationChevron.localEulerAngles.z)
@@ -119,7 +122,11 @@ namespace MoonlightMagicHouse
         public Rect JoystickScreenRect => ScreenRect(_iPadJoystickRect);
         public bool NavigationCueIsInsideSafeArea => ContainsRect(Screen.safeArea, NavigationCueScreenRect);
         public bool NavigationCueDoesNotOverlapJoystick =>
-            !OverlapsWithPadding(NavigationCueScreenRect, JoystickScreenRect, 8f);
+            !OverlapsWithPadding(NavigationCueScreenRect, JoystickScreenRect,
+                NavigationCueSeparationPaddingPixels);
+        public bool NavigationCueDoesNotOverlapActionTarget =>
+            !OverlapsWithPadding(NavigationCueScreenRect, ActionTouchTargetScreenRect,
+                NavigationCueSeparationPaddingPixels);
         public bool NavigationCueGraphicsDoNotBlockRaycasts
         {
             get
@@ -137,12 +144,14 @@ namespace MoonlightMagicHouse
             {
                 if (!IsIPadNavigationCueVisible) return "MOONLIGHT_IPAD_NAVIGATION_CUE_HIDDEN";
                 return NavigationCueIsInsideSafeArea && NavigationCueDoesNotOverlapJoystick &&
+                    NavigationCueDoesNotOverlapActionTarget &&
                     NavigationCueGraphicsDoNotBlockRaycasts &&
                     NavigationCueCameraRelativeDirection.sqrMagnitude > 0.999f &&
                     !float.IsNaN(NavigationCueAngleDegrees) &&
                     !float.IsInfinity(NavigationCueAngleDegrees) &&
                     !float.IsNaN(NavigationCueVisualAngleDegrees) &&
                     !string.IsNullOrEmpty(NavigationCueTargetName) &&
+                    IsValidCompactNavigationLabel(NavigationCueRenderedLabel) &&
                     NavigationCueTargetDistance < float.MaxValue
                         ? "MOONLIGHT_IPAD_NAVIGATION_CUE_READY"
                         : "MOONLIGHT_IPAD_NAVIGATION_CUE_INVALID";
@@ -639,6 +648,19 @@ namespace MoonlightMagicHouse
         public static bool ShouldShowIPadNavigationCue(bool isIPadLayout, bool hasTarget, bool busy) =>
             isIPadLayout && hasTarget && !busy;
 
+        public static string CompactNavigationLabel(MoonlightSpatialActionKind kind) => kind switch
+        {
+            MoonlightSpatialActionKind.Cook => "KITCHEN",
+            MoonlightSpatialActionKind.Play => "STAR BALL",
+            MoonlightSpatialActionKind.Garden => "GARDEN",
+            MoonlightSpatialActionKind.Read => "STORY",
+            MoonlightSpatialActionKind.SleepCuddle => "BED",
+            _ => "ACTIVITY"
+        };
+
+        public static bool IsValidCompactNavigationLabel(string label) =>
+            !string.IsNullOrWhiteSpace(label) && label.Length <= NavigationCueMaximumLabelCharacters;
+
         public static bool ValidateIPadNavigationCueContract(out string detail)
         {
             Vector2 forward = CameraRelativeNavigationDirection(Vector2.up, Vector2.up, Vector2.right);
@@ -649,6 +671,22 @@ namespace MoonlightMagicHouse
             float rightAngle = CameraRelativeNavigationAngle(right);
             float backAngle = Mathf.Abs(CameraRelativeNavigationAngle(back));
             float leftAngle = CameraRelativeNavigationAngle(left);
+            var compactLabelDetails = new List<string>();
+            bool compactLabelsValid = true;
+            foreach (MoonlightSpatialActionKind kind in Enum.GetValues(typeof(MoonlightSpatialActionKind)))
+            {
+                string label = CompactNavigationLabel(kind);
+                compactLabelDetails.Add($"{kind}:{label}");
+                compactLabelsValid &= IsValidCompactNavigationLabel(label);
+            }
+            bool compactLabelSemantics = CompactNavigationLabel(MoonlightSpatialActionKind.Cook) == "KITCHEN" &&
+                CompactNavigationLabel(MoonlightSpatialActionKind.Play) == "STAR BALL" &&
+                CompactNavigationLabel(MoonlightSpatialActionKind.Garden) == "GARDEN" &&
+                CompactNavigationLabel(MoonlightSpatialActionKind.Read) == "STORY" &&
+                CompactNavigationLabel(MoonlightSpatialActionKind.SleepCuddle) == "BED";
+            string fallbackLabel = CompactNavigationLabel((MoonlightSpatialActionKind)int.MaxValue);
+            bool compactFallbackValid = fallbackLabel == "ACTIVITY" &&
+                IsValidCompactNavigationLabel(fallbackLabel);
             bool pass = ApproximatelyAngle(forwardAngle, 0f) &&
                 ApproximatelyAngle(rightAngle, -90f) && ApproximatelyAngle(backAngle, 180f) &&
                 ApproximatelyAngle(leftAngle, 90f) &&
@@ -657,10 +695,15 @@ namespace MoonlightMagicHouse
                 ShouldShowIPadNavigationCue(true, true, false) &&
                 !ShouldShowIPadNavigationCue(true, true, true) &&
                 !ShouldShowIPadNavigationCue(true, false, false) &&
-                !ShouldShowIPadNavigationCue(false, true, false);
+                !ShouldShowIPadNavigationCue(false, true, false) &&
+                NavigationCueSeparationPaddingPixels >= 8f && compactLabelsValid &&
+                compactLabelSemantics && compactFallbackValid;
             detail = $"angles={forwardAngle:0}/{rightAngle:0}/{backAngle:0}/{leftAngle:0} " +
                 $"normalized={forward.magnitude:0.000}/{right.magnitude:0.000}/" +
-                $"{back.magnitude:0.000}/{left.magnitude:0.000} visibility=out-of-range-not-busy";
+                $"{back.magnitude:0.000}/{left.magnitude:0.000} visibility=out-of-range-not-busy " +
+                $"separationPadding={NavigationCueSeparationPaddingPixels:0}px " +
+                $"compactLabels={string.Join(",", compactLabelDetails)} " +
+                $"compactFallback={fallbackLabel} compactMax={NavigationCueMaximumLabelCharacters}";
             return pass;
         }
 
@@ -687,19 +730,21 @@ namespace MoonlightMagicHouse
                 NavigationCueAngleDegrees = CameraRelativeNavigationAngle(
                     NavigationCueCameraRelativeDirection);
                 NavigationCueTargetName = interactor.NearestZone.DisplayName;
+                NavigationCueRenderedLabel = CompactNavigationLabel(interactor.NearestZone.Kind);
                 NavigationCueTargetDistance = interactor.NearestDistance;
                 if (_iPadNavigationChevron != null)
                     _iPadNavigationChevron.localRotation = Quaternion.Euler(0f, 0f,
                         NavigationCueAngleDegrees);
                 if (_iPadNavigationLabel != null)
                     _iPadNavigationLabel.text =
-                        $"{NavigationCueTargetName.ToUpperInvariant()}\n{NavigationCueTargetDistance:0.0}m";
+                        $"{NavigationCueRenderedLabel}\n{NavigationCueTargetDistance:0.0}m";
             }
             else
             {
                 NavigationCueCameraRelativeDirection = Vector2.zero;
                 NavigationCueAngleDegrees = 0f;
                 NavigationCueTargetName = "";
+                NavigationCueRenderedLabel = "";
                 NavigationCueTargetDistance = float.MaxValue;
             }
 
@@ -867,7 +912,10 @@ namespace MoonlightMagicHouse
                 $"promptCenterOffset={ActivityPromptCenterOffsetPixels:0.0}px " +
                 $"navigationCue={NavigationCueQAMarker} cueSafe={NavigationCueIsInsideSafeArea} " +
                 $"cueJoystickSeparated={NavigationCueDoesNotOverlapJoystick} " +
+                $"cueActionSeparated={NavigationCueDoesNotOverlapActionTarget} " +
+                $"cueRect={NavigationCueScreenRect} actionRect={ActionTouchTargetScreenRect} " +
                 $"cueAngle={NavigationCueAngleDegrees:0.0} cueTarget={NavigationCueTargetName} " +
+                $"cueLabel={NavigationCueRenderedLabel}/{NavigationCueRenderedLabel.Length} " +
                 $"cueDistance={NavigationCueTargetDistance:0.0}m");
         }
 

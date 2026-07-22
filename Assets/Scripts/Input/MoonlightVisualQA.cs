@@ -538,11 +538,15 @@ namespace MoonlightMagicHouse
                     : Vector2.zero;
                 float expectedNavigationAngle =
                     MoonlightUI.CameraRelativeNavigationAngle(expectedCameraDirection);
+                string expectedNavigationLabel = spatialInteractor.NearestZone != null
+                    ? MoonlightUI.CompactNavigationLabel(spatialInteractor.NearestZone.Kind)
+                    : "";
                 bool navigationCuePass = hasExplicitOutOfRangePosition &&
                     spatialInteractor.HasNavigationTarget &&
                     Mathf.Abs(spatialInteractor.NearestZoneDirectionXZ.magnitude - 1f) <= 0.001f &&
                     ui.IsIPadNavigationCueVisible && ui.NavigationCueIsInsideSafeArea &&
                     ui.NavigationCueDoesNotOverlapJoystick &&
+                    ui.NavigationCueDoesNotOverlapActionTarget &&
                     ui.NavigationCueGraphicsDoNotBlockRaycasts &&
                     ui.NavigationCueCameraRelativeDirection.sqrMagnitude >= 0.999f &&
                     Vector2.Distance(ui.NavigationCueCameraRelativeDirection,
@@ -554,6 +558,8 @@ namespace MoonlightMagicHouse
                     Mathf.Abs(Mathf.DeltaAngle(ui.NavigationCueVisualAngleDegrees,
                         expectedNavigationAngle)) <= 0.1f &&
                     ui.NavigationCueTargetName == spatialInteractor.NearestZone.DisplayName &&
+                    ui.NavigationCueRenderedLabel == expectedNavigationLabel &&
+                    MoonlightUI.IsValidCompactNavigationLabel(ui.NavigationCueRenderedLabel) &&
                     Approximately(ui.NavigationCueTargetDistance, spatialInteractor.NearestDistance) &&
                     ui.NavigationCueQAMarker == "MOONLIGHT_IPAD_NAVIGATION_CUE_READY";
                 bool layoutPass = ui.IsIPadHUDLayoutActive &&
@@ -585,11 +591,16 @@ namespace MoonlightMagicHouse
                         $"navigationTarget={spatialInteractor.HasNavigationTarget} " +
                         $"direction={spatialInteractor.NearestZoneDirectionXZ:F3} " +
                         $"cueVisible={ui.IsIPadNavigationCueVisible} cueSafe={ui.NavigationCueIsInsideSafeArea} " +
-                        $"cueSeparated={ui.NavigationCueDoesNotOverlapJoystick} " +
+                        $"cueJoystickSeparated={ui.NavigationCueDoesNotOverlapJoystick} " +
+                        $"cueActionSeparated={ui.NavigationCueDoesNotOverlapActionTarget} " +
+                        $"cueRect={ui.NavigationCueScreenRect} actionRect={ui.ActionTouchTargetScreenRect} " +
                         $"cueRaycasts={ui.NavigationCueGraphicsDoNotBlockRaycasts} " +
                         $"cueAngle={ui.NavigationCueAngleDegrees:0.0}/" +
                         $"{ui.NavigationCueVisualAngleDegrees:0.0}/{expectedNavigationAngle:0.0} " +
                         $"cueTarget={ui.NavigationCueTargetName}/{ui.NavigationCueTargetDistance:0.0}m " +
+                        $"cueLabel={ui.NavigationCueRenderedLabel}/{expectedNavigationLabel} " +
+                        $"cueLabelLength={ui.NavigationCueRenderedLabel.Length} " +
+                        $"cueLabelValid={MoonlightUI.IsValidCompactNavigationLabel(ui.NavigationCueRenderedLabel)} " +
                         $"cueMarker={ui.NavigationCueQAMarker} " +
                         $"promptOffset={ui.ActivityPromptCenterOffsetPixels:0.0} " +
                         $"roomNav={ui.RoomNavigationQAMarker}");
@@ -603,10 +614,15 @@ namespace MoonlightMagicHouse
                     $"touchJoystick={touchJoystick.gameObject.activeInHierarchy} " +
                     $"joystick={touchJoystick.ResponseQAMarker} size={touchJoystick.TouchTargetSize} " +
                     $"navigationDirection={spatialInteractor.NearestZoneDirectionXZ:F3} " +
-                    $"cueRect={ui.NavigationCueScreenRect} " +
+                    $"cueRect={ui.NavigationCueScreenRect} actionRect={ui.ActionTouchTargetScreenRect} " +
+                    $"cueJoystickSeparated={ui.NavigationCueDoesNotOverlapJoystick} " +
+                    $"cueActionSeparated={ui.NavigationCueDoesNotOverlapActionTarget} " +
                     $"cueAngle={ui.NavigationCueAngleDegrees:0.0}/" +
                     $"{ui.NavigationCueVisualAngleDegrees:0.0}/{expectedNavigationAngle:0.0} " +
                     $"cueTarget={ui.NavigationCueTargetName}/{ui.NavigationCueTargetDistance:0.0}m " +
+                    $"cueLabel={ui.NavigationCueRenderedLabel}/{expectedNavigationLabel} " +
+                    $"cueLabelLength={ui.NavigationCueRenderedLabel.Length} " +
+                    $"cueLabelValid={MoonlightUI.IsValidCompactNavigationLabel(ui.NavigationCueRenderedLabel)} " +
                     $"cueMarker={ui.NavigationCueQAMarker} " +
                     $"promptOffset={ui.ActivityPromptCenterOffsetPixels:0.0} " +
                     $"roomNav={ui.RoomNavigationQAMarker} " +
