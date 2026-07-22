@@ -188,6 +188,13 @@ namespace MoonlightMagicHouse
         public const float CareGlowMinimumAuraScaleDelta = 0.08f;
         public const float CareGlowMinimumLightIntensityDelta = 0.15f;
         public const int CareGlowMinimumMoteCountDelta = 1;
+        public const int BedtimeVariantCount = 2;
+        public const int BedtimeAllocatedRendererBudget = 8;
+        public const int BedtimeVisibleRendererCount = 5;
+        public const int BedtimeMaterialBudget = 5;
+        public const int BedtimeLightBudget = 1;
+        public const int BedtimeColliderBudget = 0;
+        public const float BedtimeLingerSeconds = 2.0f;
         public const string CookAddChoreographyReadyMarker =
             "MOONLIGHT_COOK_ADD_CHOREOGRAPHY_READY";
         public const string CookStirChoreographyReadyMarker =
@@ -214,6 +221,64 @@ namespace MoonlightMagicHouse
             Magic
         }
 
+        readonly struct BedtimePartSpec
+        {
+            public readonly PrimitiveType Primitive;
+            public readonly string Name;
+            public readonly Vector3 Position;
+            public readonly Vector3 Scale;
+            public readonly Vector3 Euler;
+            public readonly Color Color;
+            public readonly float Emission;
+            public readonly int MaterialSlot;
+            public readonly bool RestingVisible;
+            public readonly bool CuddledVisible;
+
+            public BedtimePartSpec(PrimitiveType primitive, string name, Vector3 position,
+                Vector3 scale, Vector3 euler, Color color, float emission, int materialSlot,
+                bool restingVisible, bool cuddledVisible)
+            {
+                Primitive = primitive;
+                Name = name;
+                Position = position;
+                Scale = scale;
+                Euler = euler;
+                Color = color;
+                Emission = emission;
+                MaterialSlot = materialSlot;
+                RestingVisible = restingVisible;
+                CuddledVisible = cuddledVisible;
+            }
+        }
+
+        static readonly BedtimePartSpec[] BedtimeParts =
+        {
+            new(PrimitiveType.Cube, "BedtimeBedFrame", new Vector3(0f, 0.08f, 0.12f),
+                new Vector3(1.72f, 0.12f, 1.02f), Vector3.zero,
+                new Color(0.34f, 0.25f, 0.42f), 0f, 0, true, true),
+            new(PrimitiveType.Cube, "BedtimeBlanket", new Vector3(0.08f, 0.20f, 0.12f),
+                new Vector3(1.38f, 0.13f, 0.78f), new Vector3(0f, 0f, -2f),
+                new Color(0.29f, 0.54f, 0.68f), 0f, 1, true, true),
+            new(PrimitiveType.Cube, "RestingPillow", new Vector3(-0.48f, 0.32f, 0.12f),
+                new Vector3(0.48f, 0.14f, 0.52f), new Vector3(0f, 0f, -8f),
+                new Color(0.84f, 0.88f, 0.94f), 0f, 2, true, false),
+            new(PrimitiveType.Cylinder, "RestingDreamMoon", new Vector3(-0.52f, 1.05f, 0.16f),
+                new Vector3(0.31f, 0.045f, 0.31f), new Vector3(90f, 0f, 0f),
+                new Color(0.76f, 0.84f, 1f), 0.35f, 3, true, false),
+            new(PrimitiveType.Cube, "RestingDreamStar", new Vector3(-0.06f, 0.89f, 0.13f),
+                new Vector3(0.15f, 0.15f, 0.06f), new Vector3(0f, 0f, 45f),
+                new Color(0.76f, 0.84f, 1f), 0.35f, 3, true, false),
+            new(PrimitiveType.Sphere, "CuddledHeartLeft", new Vector3(-0.16f, 0.70f, 0.12f),
+                new Vector3(0.42f, 0.40f, 0.18f), Vector3.zero,
+                new Color(1f, 0.48f, 0.68f), 0.30f, 4, false, true),
+            new(PrimitiveType.Sphere, "CuddledHeartRight", new Vector3(0.16f, 0.70f, 0.12f),
+                new Vector3(0.42f, 0.40f, 0.18f), Vector3.zero,
+                new Color(1f, 0.48f, 0.68f), 0.30f, 4, false, true),
+            new(PrimitiveType.Cube, "CuddledHeartPoint", new Vector3(0f, 0.51f, 0.12f),
+                new Vector3(0.40f, 0.40f, 0.18f), new Vector3(0f, 0f, 45f),
+                new Color(1f, 0.48f, 0.68f), 0.30f, 4, false, true)
+        };
+
         readonly List<Material> _materials = new();
         readonly Dictionary<MaterialKey, Material> _materialCache = new();
         readonly HashSet<ActivitySurfaceProfile> _configuredSurfaceProfiles = new();
@@ -223,6 +288,7 @@ namespace MoonlightMagicHouse
         readonly List<Light> _lightBuffer = new();
         readonly HashSet<int> _cookMaterialIdentityBuffer = new();
         readonly HashSet<int> _gardenMagicFlowerMaterialIds = new();
+        static readonly Dictionary<PrimitiveType, Mesh> BedtimePrimitiveMeshes = new();
         bool _cookBakeDoorClearancePass = true;
         int[] _activeMaterialIds = System.Array.Empty<int>();
         GameObject _root;
@@ -273,6 +339,7 @@ namespace MoonlightMagicHouse
         Transform _careMirror;
         Transform _careMirrorAura;
         Transform _authoredCareStation;
+        Transform[] _bedtimeParts;
         Renderer _playBallRenderer;
         TrailRenderer _ballTrail;
         Light _activityLight;
@@ -305,6 +372,8 @@ namespace MoonlightMagicHouse
         float _gardenProgress;
         float _readProgress;
         float _careProgress;
+        float _bedtimeProgress;
+        string _bedtimeState = "";
         MoonlightGestureSample _gestureSample;
 
         public bool IsVisible => _root != null;
@@ -332,11 +401,30 @@ namespace MoonlightMagicHouse
         public float LastCareLingerEndedAtSecondsForQA { get; private set; }
         public float LastCareLingerObservedSecondsForQA { get; private set; }
         public bool LastCareLingerCompletedNaturallyForQA { get; private set; }
+        public float LastBedtimeLingerRequestedSecondsForQA { get; private set; }
+        public float LastBedtimeLingerStartedAtSecondsForQA { get; private set; }
+        public float LastBedtimeLingerEndedAtSecondsForQA { get; private set; }
+        public float LastBedtimeLingerObservedSecondsForQA { get; private set; }
+        public bool LastBedtimeLingerCompletedNaturallyForQA { get; private set; }
+        public string LastBedtimeLingerStateForQA { get; private set; } = "";
         public MoonlightSpatialActionKind CurrentKind { get; private set; }
         public int CurrentStep { get; private set; }
         public int ActiveRendererCount { get; private set; }
         public int ActiveUniqueMaterialCount { get; private set; }
         public int ActiveLightCount { get; private set; }
+        public string BedtimeStateForQA => _bedtimeState;
+        public string BedtimeLayoutSignatureForQA => BedtimeLayoutSignatureFor(_bedtimeState);
+        public int BedtimeAllocatedRendererCountForQA => _root != null &&
+            CurrentKind == MoonlightSpatialActionKind.SleepCuddle
+                ? _root.GetComponentsInChildren<Renderer>(true).Length
+                : 0;
+        public int BedtimeVisibleRendererCountForQA => CountVisibleBedtimeParts();
+        public int BedtimeAllocatedMaterialCountForQA =>
+            CurrentKind == MoonlightSpatialActionKind.SleepCuddle ? _materials.Count : 0;
+        public int BedtimeColliderCountForQA => _root != null &&
+            CurrentKind == MoonlightSpatialActionKind.SleepCuddle
+                ? _root.GetComponentsInChildren<Collider>(true).Length
+                : 0;
         public MoonlightGestureSample ActiveGestureSample => _gestureSample;
         public int CookStageRootInstanceId =>
             CurrentKind == MoonlightSpatialActionKind.Cook && _root != null
@@ -1344,6 +1432,10 @@ namespace MoonlightMagicHouse
 
         public void Begin(MoonlightSpatialActionKind kind, int stepIndex, int requiredSteps,
             MoonlightGestureSample gestureSample)
+            => Begin(kind, stepIndex, requiredSteps, gestureSample, "");
+
+        public void Begin(MoonlightSpatialActionKind kind, int stepIndex, int requiredSteps,
+            MoonlightGestureSample gestureSample, string currentState)
         {
             if (TryBeginRetainedCookStep(kind, stepIndex, requiredSteps, gestureSample))
                 return;
@@ -1353,6 +1445,9 @@ namespace MoonlightMagicHouse
             End();
             CurrentKind = kind;
             _gestureSample = gestureSample;
+            _bedtimeState = kind == MoonlightSpatialActionKind.SleepCuddle
+                ? NormalizeBedtimeState(currentState)
+                : "";
             _requiredSteps = kind is MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
                 MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
                 MoonlightSpatialActionKind.Care
@@ -1367,8 +1462,8 @@ namespace MoonlightMagicHouse
                 : 0;
             _root = new GameObject($"ActivityStage-{kind}");
             _root.transform.SetParent(null, true);
-            bool allowPersistentStation = ShouldBindPersistentStation(kind,
-                _careLiveHarnessIsolationEnabledForQA);
+            bool allowPersistentStation = kind != MoonlightSpatialActionKind.SleepCuddle &&
+                ShouldBindPersistentStation(kind, _careLiveHarnessIsolationEnabledForQA);
             _persistentStation = allowPersistentStation
                 ? MoonlightActivityStation.FindNearestActive(kind, transform.position)
                 : null;
@@ -1389,6 +1484,8 @@ namespace MoonlightMagicHouse
                         ? new Vector3(1.08f, 0.05f, 0.30f)
                     : kind == MoonlightSpatialActionKind.Care
                         ? new Vector3(0.92f, 0.05f, 0.24f)
+                    : kind == MoonlightSpatialActionKind.SleepCuddle
+                        ? new Vector3(0f, 0f, 0.18f)
                     : new Vector3(-0.58f, 0f, -0.10f));
             _root.transform.position = _center;
             _root.transform.localScale = _persistentStation != null
@@ -1400,6 +1497,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Garden => Vector3.one * 1.08f,
                 MoonlightSpatialActionKind.Read => Vector3.one * 1.08f,
                 MoonlightSpatialActionKind.Care => Vector3.one * 1.06f,
+                MoonlightSpatialActionKind.SleepCuddle => Vector3.one * 0.92f,
                 _ => Vector3.one
             };
 
@@ -1412,6 +1510,8 @@ namespace MoonlightMagicHouse
             else if (kind == MoonlightSpatialActionKind.Garden) BuildGardenStage();
             else if (kind == MoonlightSpatialActionKind.Read) BuildReadStage();
             else if (kind == MoonlightSpatialActionKind.Care) BuildCareStage();
+            else if (kind == MoonlightSpatialActionKind.SleepCuddle)
+                BuildBedtimeStage(_bedtimeState);
 
             RefreshStageLights();
             UpdateStage(kind, 0f);
@@ -1537,11 +1637,16 @@ namespace MoonlightMagicHouse
 
         public bool LingerFinalState(float seconds)
         {
-            if (_root == null || _requiredSteps <= 1 || CurrentStep != _requiredSteps - 1)
+            bool bedtimeSingleStep = SingleStepLingerAllowedForQA(CurrentKind,
+                _requiredSteps, CurrentStep);
+            if (_root == null || (!bedtimeSingleStep && _requiredSteps <= 1) ||
+                CurrentStep != _requiredSteps - 1)
                 return false;
 
             if (CurrentKind == MoonlightSpatialActionKind.Care)
                 seconds = CareFinalPresentationSeconds;
+            else if (bedtimeSingleStep)
+                seconds = BedtimeLingerSeconds;
 
             if (_lingerRoutine != null)
                 StopCoroutine(_lingerRoutine);
@@ -1550,8 +1655,9 @@ namespace MoonlightMagicHouse
             _isHoldingCookStepTerminal = false;
             _isHoldingPlayStepTerminal = false;
             _playContinuationActive = false;
-            _applyPersistentCompletionOnEnd = ShouldBindPersistentStation(CurrentKind,
-                _careLiveHarnessIsolationEnabledForQA);
+            _applyPersistentCompletionOnEnd = !bedtimeSingleStep &&
+                ShouldBindPersistentStation(CurrentKind,
+                    _careLiveHarnessIsolationEnabledForQA);
             IsLingering = true;
             _lingerUntil = Time.time + Mathf.Max(0.5f, seconds);
             _lingerCompletingNaturally = false;
@@ -1562,6 +1668,15 @@ namespace MoonlightMagicHouse
                 LastCareLingerEndedAtSecondsForQA = 0f;
                 LastCareLingerObservedSecondsForQA = 0f;
                 LastCareLingerCompletedNaturallyForQA = false;
+            }
+            else if (CurrentKind == MoonlightSpatialActionKind.SleepCuddle)
+            {
+                LastBedtimeLingerRequestedSecondsForQA = _lingerUntil - Time.time;
+                LastBedtimeLingerStartedAtSecondsForQA = Time.time;
+                LastBedtimeLingerEndedAtSecondsForQA = 0f;
+                LastBedtimeLingerObservedSecondsForQA = 0f;
+                LastBedtimeLingerCompletedNaturallyForQA = false;
+                LastBedtimeLingerStateForQA = _bedtimeState;
             }
             _lingerRoutine = StartCoroutine(LingerThenEnd());
             Debug.Log($"[MoonlightActivityQA] final-presentation kind={CurrentKind} " +
@@ -1582,6 +1697,10 @@ namespace MoonlightMagicHouse
         }
 
         public void UpdateStage(MoonlightSpatialActionKind kind, float t)
+            => UpdateStage(kind, t, _bedtimeState);
+
+        public void UpdateStage(MoonlightSpatialActionKind kind, float t,
+            string currentState)
         {
             if (_root == null) return;
             t = Mathf.Clamp01(t);
@@ -1590,6 +1709,8 @@ namespace MoonlightMagicHouse
             else if (CurrentKind == MoonlightSpatialActionKind.Garden) UpdateGarden(t);
             else if (CurrentKind == MoonlightSpatialActionKind.Read) UpdateRead(t);
             else if (CurrentKind == MoonlightSpatialActionKind.Care) UpdateCare(t);
+            else if (CurrentKind == MoonlightSpatialActionKind.SleepCuddle)
+                UpdateBedtime(currentState, t);
 
             if (_activityLight != null)
             {
@@ -1731,8 +1852,10 @@ namespace MoonlightMagicHouse
 
         void Update()
         {
+            bool activeBedtime = CurrentKind == MoonlightSpatialActionKind.SleepCuddle &&
+                _root != null;
             if (!IsLingering && !IsHoldingPlayStepTerminal &&
-                !IsHoldingCookStepTerminal) return;
+                !IsHoldingCookStepTerminal && !activeBedtime) return;
 
             var interactor = GetComponent<MoonlightSpatialInteractor>();
             var currentZone = interactor != null ? interactor.CurrentZone : null;
@@ -1750,6 +1873,9 @@ namespace MoonlightMagicHouse
             if (IsLingering)
                 Debug.Log($"[MoonlightActivityQA] final-presentation-cancel kind={CurrentKind} " +
                     "reason=left-zone marker=MOONLIGHT_ACTIVITY_FINAL_PRESENTATION_CANCELLED");
+            else if (activeBedtime)
+                Debug.Log("[MoonlightActivityQA] bedtime-stage-cancel kind=SleepCuddle " +
+                    "reason=left-zone marker=MOONLIGHT_BEDTIME_STAGE_EXIT_CLEANED");
             else
                 Debug.Log($"[MoonlightActivityQA] step-hold-cancel kind={CurrentKind} " +
                     "reason=left-zone marker=MOONLIGHT_ACTIVITY_STEP_HOLD_CANCELLED");
@@ -1765,6 +1891,14 @@ namespace MoonlightMagicHouse
                     LastCareLingerEndedAtSecondsForQA -
                     LastCareLingerStartedAtSecondsForQA);
                 LastCareLingerCompletedNaturallyForQA = _lingerCompletingNaturally;
+            }
+            if (IsLingering && CurrentKind == MoonlightSpatialActionKind.SleepCuddle)
+            {
+                LastBedtimeLingerEndedAtSecondsForQA = Time.time;
+                LastBedtimeLingerObservedSecondsForQA = Mathf.Max(0f,
+                    LastBedtimeLingerEndedAtSecondsForQA -
+                    LastBedtimeLingerStartedAtSecondsForQA);
+                LastBedtimeLingerCompletedNaturallyForQA = _lingerCompletingNaturally;
             }
             if (_applyPersistentCompletionOnEnd)
             {
@@ -1902,6 +2036,9 @@ namespace MoonlightMagicHouse
             _careMirror = null;
             _careMirrorAura = null;
             _authoredCareStation = null;
+            _bedtimeParts = null;
+            _bedtimeProgress = 0f;
+            _bedtimeState = "";
             UsesProceduralCareStationFallback = false;
             CareStationVisualSource = "missing";
             CareStationSourceQAMarker = "MOONLIGHT_CARE_STATION_SOURCE_MISSING";
@@ -5972,6 +6109,276 @@ namespace MoonlightMagicHouse
             for (int i = 0; i < _careMotes.Length; i++)
                 if (_careMotes[i] != null && _careMotes[i].gameObject.activeSelf) count++;
             return count;
+        }
+
+        public static bool SingleStepLingerAllowedForQA(MoonlightSpatialActionKind kind,
+            int requiredSteps, int currentStep) =>
+            kind == MoonlightSpatialActionKind.SleepCuddle && requiredSteps == 1 &&
+            currentStep == 0;
+
+        public static string BedtimeLayoutSignatureFor(string state) =>
+            NormalizeBedtimeState(state) == "Cuddled"
+                ? "bedtime-cuddled-heart-pair"
+                : "bedtime-resting-dream-moon";
+
+        static string NormalizeBedtimeState(string state) =>
+            state == "Cuddled" ? "Cuddled" : "Resting";
+
+        static bool BedtimePartVisible(BedtimePartSpec spec, string state) =>
+            NormalizeBedtimeState(state) == "Cuddled"
+                ? spec.CuddledVisible
+                : spec.RestingVisible;
+
+        static int BedtimeLayoutHash(string state)
+        {
+            int hash = 17;
+            for (int i = 0; i < BedtimeParts.Length; i++)
+            {
+                BedtimePartSpec part = BedtimeParts[i];
+                if (!BedtimePartVisible(part, state)) continue;
+                unchecked
+                {
+                    hash = hash * 31 + (int)part.Primitive;
+                    hash = hash * 31 + part.Position.GetHashCode();
+                    hash = hash * 31 + part.Scale.GetHashCode();
+                    hash = hash * 31 + part.Euler.GetHashCode();
+                }
+            }
+            return hash;
+        }
+
+        public static bool ValidateBedtimeStaticContract(out string detail)
+        {
+            string[] states = { "Resting", "Cuddled" };
+            var signatures = new HashSet<string>();
+            var layoutHashes = new HashSet<int>();
+            var materialSlots = new HashSet<int>();
+            int validVariants = 0;
+            int minimumVisible = int.MaxValue;
+            int maximumVisible = 0;
+            int minimumSemanticShapes = int.MaxValue;
+            for (int stateIndex = 0; stateIndex < states.Length; stateIndex++)
+            {
+                string state = states[stateIndex];
+                int visible = 0;
+                int semanticShapes = 0;
+                for (int i = 0; i < BedtimeParts.Length; i++)
+                {
+                    BedtimePartSpec part = BedtimeParts[i];
+                    materialSlots.Add(part.MaterialSlot);
+                    if (!BedtimePartVisible(part, state)) continue;
+                    visible++;
+                    if (part.Primitive != PrimitiveType.Sphere) semanticShapes++;
+                }
+                signatures.Add(BedtimeLayoutSignatureFor(state));
+                layoutHashes.Add(BedtimeLayoutHash(state));
+                minimumVisible = Mathf.Min(minimumVisible, visible);
+                maximumVisible = Mathf.Max(maximumVisible, visible);
+                minimumSemanticShapes = Mathf.Min(minimumSemanticShapes, semanticShapes);
+                if (visible == BedtimeVisibleRendererCount && semanticShapes >= 3)
+                    validVariants++;
+            }
+
+            bool lingerPolicy = SingleStepLingerAllowedForQA(
+                    MoonlightSpatialActionKind.SleepCuddle, 1, 0) &&
+                !SingleStepLingerAllowedForQA(MoonlightSpatialActionKind.Feed, 1, 0) &&
+                !SingleStepLingerAllowedForQA(MoonlightSpatialActionKind.Play, 1, 0) &&
+                Mathf.Approximately(BedtimeLingerSeconds, 2.0f);
+            detail = $"variants={validVariants}/{BedtimeVariantCount} " +
+                $"allocated={BedtimeParts.Length}/{BedtimeAllocatedRendererBudget} " +
+                $"visible={minimumVisible}-{maximumVisible}/{BedtimeVisibleRendererCount} " +
+                $"materials={materialSlots.Count}/<={BedtimeMaterialBudget} " +
+                $"lights={BedtimeLightBudget} colliders={BedtimeColliderBudget} " +
+                $"signatures={signatures.Count}/2 layouts={layoutHashes.Count}/2 " +
+                $"semanticShapes>={minimumSemanticShapes} linger={BedtimeLingerSeconds:0.0}s " +
+                $"singleStepExclusive={lingerPolicy}";
+            return validVariants == BedtimeVariantCount &&
+                BedtimeParts.Length == BedtimeAllocatedRendererBudget &&
+                materialSlots.Count <= BedtimeMaterialBudget && signatures.Count == 2 &&
+                layoutHashes.Count == 2 && lingerPolicy;
+        }
+
+        public bool ValidateBedtimeRuntimeContract(string expectedState, out string detail)
+        {
+            string state = NormalizeBedtimeState(expectedState);
+            bool stateMatches = _bedtimeState == state;
+            bool signatureMatches = BedtimeLayoutSignatureForQA ==
+                BedtimeLayoutSignatureFor(state);
+            bool visibilityMatches = BedtimeVisibilityMatches(state);
+            int allocatedRenderers = BedtimeAllocatedRendererCountForQA;
+            int visibleRenderers = BedtimeVisibleRendererCountForQA;
+            int colliders = BedtimeColliderCountForQA;
+            bool pass = CurrentKind == MoonlightSpatialActionKind.SleepCuddle && IsVisible &&
+                stateMatches && signatureMatches && visibilityMatches &&
+                allocatedRenderers == BedtimeAllocatedRendererBudget &&
+                visibleRenderers == BedtimeVisibleRendererCount &&
+                ActiveRendererCount == BedtimeVisibleRendererCount &&
+                BedtimeAllocatedMaterialCountForQA > 0 &&
+                BedtimeAllocatedMaterialCountForQA <= BedtimeMaterialBudget &&
+                ActiveUniqueMaterialCount > 0 &&
+                ActiveUniqueMaterialCount <= BedtimeMaterialBudget &&
+                ActiveLightCount == BedtimeLightBudget && colliders == BedtimeColliderBudget;
+            detail = $"state={_bedtimeState}/{state} visibleState={visibilityMatches} " +
+                $"signature={BedtimeLayoutSignatureForQA}/{BedtimeLayoutSignatureFor(state)} " +
+                $"renderers={allocatedRenderers}/{BedtimeAllocatedRendererBudget} allocated," +
+                $"{visibleRenderers}/{BedtimeVisibleRendererCount} visible " +
+                $"active={ActiveRendererCount} materials={BedtimeAllocatedMaterialCountForQA}/" +
+                $"{ActiveUniqueMaterialCount}/<={BedtimeMaterialBudget} " +
+                $"lights={ActiveLightCount}/{BedtimeLightBudget} " +
+                $"colliders={colliders}/{BedtimeColliderBudget} rootVisible={IsVisible}";
+            return pass;
+        }
+
+        public bool ValidateLastBedtimeLingerRuntimeContract(string expectedState,
+            float toleranceSeconds, out string detail)
+        {
+            string state = NormalizeBedtimeState(expectedState);
+            float tolerance = Mathf.Clamp(toleranceSeconds, 0.05f, 0.50f);
+            bool entered = LastBedtimeLingerStartedAtSecondsForQA > 0f &&
+                LastBedtimeLingerEndedAtSecondsForQA >=
+                    LastBedtimeLingerStartedAtSecondsForQA;
+            bool requested = Mathf.Abs(LastBedtimeLingerRequestedSecondsForQA -
+                BedtimeLingerSeconds) <= 0.01f;
+            bool observed = Mathf.Abs(LastBedtimeLingerObservedSecondsForQA -
+                BedtimeLingerSeconds) <= tolerance;
+            bool cleaned = !IsVisible && !IsLingering && ActiveRendererCount == 0 &&
+                ActiveUniqueMaterialCount == 0 && ActiveLightCount == 0;
+            detail = $"state={LastBedtimeLingerStateForQA}/{state} entered={entered} " +
+                $"natural={LastBedtimeLingerCompletedNaturallyForQA} " +
+                $"requested={LastBedtimeLingerRequestedSecondsForQA:0.000}s " +
+                $"observed={LastBedtimeLingerObservedSecondsForQA:0.000}s " +
+                $"expected={BedtimeLingerSeconds:0.000}s tolerance={tolerance:0.000}s " +
+                $"cleaned={cleaned}";
+            return LastBedtimeLingerStateForQA == state && entered && requested && observed &&
+                LastBedtimeLingerCompletedNaturallyForQA && cleaned;
+        }
+
+        int CountVisibleBedtimeParts()
+        {
+            if (_bedtimeParts == null) return 0;
+            int count = 0;
+            for (int i = 0; i < _bedtimeParts.Length; i++)
+            {
+                Transform part = _bedtimeParts[i];
+                if (part != null && part.gameObject.activeSelf) count++;
+            }
+            return count;
+        }
+
+        bool BedtimeVisibilityMatches(string state)
+        {
+            if (_bedtimeParts == null || _bedtimeParts.Length != BedtimeParts.Length)
+                return false;
+            for (int i = 0; i < BedtimeParts.Length; i++)
+            {
+                if (_bedtimeParts[i] == null ||
+                    _bedtimeParts[i].gameObject.activeSelf !=
+                        BedtimePartVisible(BedtimeParts[i], state))
+                    return false;
+            }
+            return true;
+        }
+
+        void BuildBedtimeStage(string state)
+        {
+            _bedtimeState = NormalizeBedtimeState(state);
+            _bedtimeParts = new Transform[BedtimeParts.Length];
+            for (int i = 0; i < BedtimeParts.Length; i++)
+                _bedtimeParts[i] = BuildBedtimePart(BedtimeParts[i]);
+
+            LastBedtimeLingerRequestedSecondsForQA = 0f;
+            LastBedtimeLingerStartedAtSecondsForQA = 0f;
+            LastBedtimeLingerEndedAtSecondsForQA = 0f;
+            LastBedtimeLingerObservedSecondsForQA = 0f;
+            LastBedtimeLingerCompletedNaturallyForQA = false;
+            LastBedtimeLingerStateForQA = "";
+            AddActivityLight(_bedtimeState == "Cuddled"
+                ? new Color(1f, 0.58f, 0.74f)
+                : new Color(0.58f, 0.72f, 1f));
+            _activityLight.gameObject.name = "BedtimeSpotlight";
+            Debug.Log($"[MoonlightActivityStage] bedtime-stage state={_bedtimeState} " +
+                $"signature={BedtimeLayoutSignatureForQA} " +
+                $"renderers={BedtimeParts.Length}/{BedtimeAllocatedRendererBudget} allocated " +
+                $"visible={BedtimeVisibleRendererCount} materials={_materials.Count}/" +
+                $"{BedtimeMaterialBudget} lights=1 colliders=0 " +
+                "marker=MOONLIGHT_BEDTIME_STAGE_READY");
+        }
+
+        Transform BuildBedtimePart(BedtimePartSpec spec)
+        {
+            var part = new GameObject(spec.Name);
+            part.transform.SetParent(_root.transform, false);
+            part.transform.localPosition = spec.Position;
+            part.transform.localScale = spec.Scale;
+            part.transform.localRotation = Quaternion.Euler(spec.Euler);
+            var meshFilter = part.AddComponent<MeshFilter>();
+            meshFilter.sharedMesh = BedtimeMeshFor(spec.Primitive);
+            var renderer = part.AddComponent<MeshRenderer>();
+            renderer.sharedMaterial = NewMaterial(spec.Color, spec.Emission, false,
+                ResolveSurfaceProfile(spec.Name, spec.Emission, false));
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            _renderers.Add(renderer);
+            part.SetActive(BedtimePartVisible(spec, _bedtimeState));
+            return part.transform;
+        }
+
+        static Mesh BedtimeMeshFor(PrimitiveType primitive)
+        {
+            if (BedtimePrimitiveMeshes.TryGetValue(primitive, out Mesh cachedMesh) &&
+                cachedMesh != null)
+                return cachedMesh;
+            GameObject source = GameObject.CreatePrimitive(primitive);
+            source.SetActive(false);
+            Mesh mesh = source.GetComponent<MeshFilter>().sharedMesh;
+            BedtimePrimitiveMeshes[primitive] = mesh;
+            Object.Destroy(source);
+            return mesh;
+        }
+
+        void UpdateBedtime(string state, float t)
+        {
+            if (_bedtimeParts == null || _bedtimeParts.Length != BedtimeParts.Length) return;
+            _bedtimeState = NormalizeBedtimeState(state);
+            _bedtimeProgress = Mathf.Clamp01(t);
+            for (int i = 0; i < BedtimeParts.Length; i++)
+            {
+                BedtimePartSpec spec = BedtimeParts[i];
+                Transform part = _bedtimeParts[i];
+                if (part == null) continue;
+                part.gameObject.SetActive(BedtimePartVisible(spec, _bedtimeState));
+                part.localPosition = spec.Position;
+                part.localScale = spec.Scale;
+                part.localRotation = Quaternion.Euler(spec.Euler);
+            }
+
+            float envelope = Mathf.Sin(_bedtimeProgress * Mathf.PI);
+            Transform blanket = _bedtimeParts[1];
+            blanket.localScale = Vector3.Scale(BedtimeParts[1].Scale,
+                new Vector3(1f, 1f + envelope * 0.10f, 1f));
+            if (_bedtimeState == "Resting")
+            {
+                Transform pillow = _bedtimeParts[2];
+                pillow.localPosition += Vector3.down * Mathf.SmoothStep(0f, 0.035f,
+                    _bedtimeProgress);
+                Transform moon = _bedtimeParts[3];
+                moon.localPosition += Vector3.up * Mathf.Sin(_bedtimeProgress * Mathf.PI * 2f) *
+                    0.035f;
+                moon.localRotation = Quaternion.Euler(BedtimeParts[3].Euler +
+                    new Vector3(0f, _bedtimeProgress * 28f, 0f));
+                Transform star = _bedtimeParts[4];
+                star.localScale = BedtimeParts[4].Scale * (1f + envelope * 0.22f);
+            }
+            else
+            {
+                float heartbeat = 1f + Mathf.Sin(_bedtimeProgress * Mathf.PI * 4f) *
+                    envelope * 0.10f;
+                for (int i = 5; i <= 7; i++)
+                    _bedtimeParts[i].localScale = BedtimeParts[i].Scale * heartbeat;
+                _bedtimeParts[5].localPosition += Vector3.right * envelope * 0.025f;
+                _bedtimeParts[6].localPosition += Vector3.left * envelope * 0.025f;
+                _bedtimeParts[7].localPosition += Vector3.up * envelope * 0.025f;
+            }
         }
 
         void BuildCareStage()

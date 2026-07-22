@@ -175,6 +175,57 @@ namespace MoonlightMagicHouse
             public MoonlightActivityStage Stage;
         }
 
+        sealed class BedtimeRuntimeObservation
+        {
+            public bool Passed;
+            public bool SawVisibleLinger;
+            public int HeldPresentationFrames;
+            public float ObservedLingerSeconds;
+            public bool HadCamera;
+            public int CameraInstanceId;
+            public Vector3 CameraPositionBefore;
+            public Quaternion CameraRotationBefore = Quaternion.identity;
+            public bool HadCameraController;
+            public int CameraControllerInstanceId;
+            public bool CameraControllerEnabledBefore;
+            public string Detail = "not-run";
+        }
+
+        sealed class BedtimeStageCleanupObservation
+        {
+            public bool Passed;
+            public string Detail = "not-run";
+        }
+
+        readonly struct BedtimeOraclePart
+        {
+            public readonly string Name;
+            public readonly string MeshToken;
+            public readonly bool RestingVisible;
+            public readonly bool CuddledVisible;
+
+            public BedtimeOraclePart(string name, string meshToken, bool restingVisible,
+                bool cuddledVisible)
+            {
+                Name = name;
+                MeshToken = meshToken;
+                RestingVisible = restingVisible;
+                CuddledVisible = cuddledVisible;
+            }
+        }
+
+        static readonly BedtimeOraclePart[] BedtimeOracleParts =
+        {
+            new("BedtimeBedFrame", "Cube", true, true),
+            new("BedtimeBlanket", "Cube", true, true),
+            new("RestingPillow", "Cube", true, false),
+            new("RestingDreamMoon", "Cylinder", true, false),
+            new("RestingDreamStar", "Cube", true, false),
+            new("CuddledHeartLeft", "Sphere", false, true),
+            new("CuddledHeartRight", "Sphere", false, true),
+            new("CuddledHeartPoint", "Cube", false, true)
+        };
+
         readonly struct PlayRewardSnapshot
         {
             public readonly float Wonder;
@@ -704,6 +755,12 @@ namespace MoonlightMagicHouse
                 }
 
                 string prompt = interactor.CurrentPrompt;
+                BedtimeRuntimeObservation bedtimeNaturalObservation = null;
+                if (zone.Kind == MoonlightSpatialActionKind.SleepCuddle)
+                {
+                    bedtimeNaturalObservation = new BedtimeRuntimeObservation();
+                    CaptureBedtimeCameraBaseline(bedtimeNaturalObservation);
+                }
                 string result = interactor.ExecuteCurrent();
                 ui?.ShowContextResult(result);
                 var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
@@ -760,10 +817,22 @@ namespace MoonlightMagicHouse
                 }
 
                 var activityStage = moonlight.GetComponent<MoonlightActivityStage>();
-                if (zone.RequiredSteps > 1 && (activityStage == null || !activityStage.IsVisible))
+                bool requiresVisibleStage = zone.RequiredSteps > 1 ||
+                    zone.Kind == MoonlightSpatialActionKind.SleepCuddle;
+                if (requiresVisibleStage && (activityStage == null || !activityStage.IsVisible))
                 {
                     Debug.LogError($"[MoonlightVisualQA][FAIL] action={zone.Kind} staged activity props missing");
                     Application.Quit(9);
+                    yield break;
+                }
+                bool restingStagePass = ValidateBedtimeRuntimeOracle(feedback, "Resting",
+                    false, out string restingStageDetail);
+                if (zone.Kind == MoonlightSpatialActionKind.SleepCuddle &&
+                    !restingStagePass)
+                {
+                    Debug.LogError($"[MoonlightVisualQA][FAIL] bedtime-runtime state=Resting " +
+                        restingStageDetail);
+                    Application.Quit(80);
                     yield break;
                 }
 
@@ -784,8 +853,27 @@ namespace MoonlightMagicHouse
                     $"marker=MOONLIGHT_ACTIVITY_EYE_EXPRESSION_VERIFIED screenshot={actionOutput}");
                 passedActions++;
                 float settleDeadline = Time.time + 3f;
-                while ((feedback.IsPerformingAction || feedback.IsCoolingDown) && Time.time < settleDeadline)
-                    yield return null;
+                if (zone.Kind == MoonlightSpatialActionKind.SleepCuddle)
+                {
+                    BedtimeRuntimeObservation restingObservation = bedtimeNaturalObservation;
+                    yield return ObserveBedtimeRuntime(feedback, activityStage, "Resting",
+                        restingObservation);
+                    if (!restingObservation.Passed)
+                    {
+                        Debug.LogError($"[MoonlightVisualQA][FAIL] bedtime-runtime " +
+                            $"state=Resting {restingObservation.Detail}");
+                        Application.Quit(81);
+                        yield break;
+                    }
+                    Debug.Log($"[MoonlightVisualQA][PASS] bedtime-runtime state=Resting " +
+                        $"{restingObservation.Detail} marker=MOONLIGHT_BEDTIME_RUNTIME_VARIANT_VERIFIED");
+                }
+                else
+                {
+                    while ((feedback.IsPerformingAction || feedback.IsCoolingDown) &&
+                           Time.time < settleDeadline)
+                        yield return null;
+                }
                 yield return new WaitForSeconds(0.2f);
 
                 for (int step = 1; step < zone.RequiredSteps; step++)
@@ -840,9 +928,12 @@ namespace MoonlightMagicHouse
                 moonlight.stats.rest = 100f;
                 yield return null;
                 string cuddlePrompt = interactor.CurrentPrompt;
+                var cuddledObservation = new BedtimeRuntimeObservation();
+                CaptureBedtimeCameraBaseline(cuddledObservation);
                 string cuddleResult = interactor.ExecuteCurrent();
                 ui?.ShowContextResult(cuddleResult);
                 feedback = moonlight.GetComponent<MoonlightActionFeedback>();
+                activityStage = moonlight.GetComponent<MoonlightActivityStage>();
                 expectedVisualMarker = MoonlightActionFeedback.ActionVisualSignatureMarkerFor(
                     MoonlightSpatialActionKind.SleepCuddle, 0, "Cuddled");
                 if (feedback == null || !feedback.IsPerformingAction ||
@@ -854,6 +945,15 @@ namespace MoonlightMagicHouse
                         $"effect={feedback?.ActiveEffectName ?? "missing"} " +
                         actionAccentDetail);
                     Application.Quit(6);
+                    yield break;
+                }
+                bool cuddledStagePass = ValidateBedtimeRuntimeOracle(feedback, "Cuddled",
+                    false, out string cuddledStageDetail);
+                if (!cuddledStagePass)
+                {
+                    Debug.LogError($"[MoonlightVisualQA][FAIL] bedtime-runtime state=Cuddled " +
+                        cuddledStageDetail);
+                    Application.Quit(82);
                     yield break;
                 }
                 yield return new WaitForSeconds(0.35f);
@@ -874,7 +974,34 @@ namespace MoonlightMagicHouse
                     $"signatureMarker={feedback.ActionVisualSignatureMarker} " +
                     $"screenshot={cuddleOutput}");
                 passedActions++;
-                yield return new WaitForSeconds(1.2f);
+                yield return ObserveBedtimeRuntime(feedback, activityStage, "Cuddled",
+                    cuddledObservation);
+                if (!cuddledObservation.Passed)
+                {
+                    Debug.LogError($"[MoonlightVisualQA][FAIL] bedtime-runtime " +
+                        $"state=Cuddled {cuddledObservation.Detail}");
+                    Application.Quit(83);
+                    yield break;
+                }
+                Debug.Log($"[MoonlightVisualQA][PASS] bedtime-runtime state=Cuddled " +
+                    $"{cuddledObservation.Detail} marker=MOONLIGHT_BEDTIME_RUNTIME_VARIANT_VERIFIED");
+                var cleanupObservation = new BedtimeStageCleanupObservation();
+                yield return ObserveBedtimeStageCleanupRuntime(controller, zone,
+                    activityStage, cleanupObservation);
+                if (!cleanupObservation.Passed)
+                {
+                    Debug.LogError($"[MoonlightVisualQA][FAIL] bedtime-stage-cleanup-runtime " +
+                        cleanupObservation.Detail);
+                    Application.Quit(84);
+                    yield break;
+                }
+                Debug.Log($"[MoonlightVisualQA][PASS] bedtime-stage-cleanup-runtime " +
+                    $"{cleanupObservation.Detail} " +
+                    "marker=MOONLIGHT_BEDTIME_STAGE_CLEANUP_PATHS_VERIFIED");
+                Debug.Log("[MoonlightVisualQA][PASS] bedtime-runtime-contract variants=2/2 " +
+                    "visibleStates=2/2 naturalFeedback=2/2 stageExit=1/1 " +
+                    "stageDisable=1/1 stageDestroy=1/1 " +
+                    "marker=MOONLIGHT_BEDTIME_RUNTIME_2_OF_2_VERIFIED");
             }
 
             Debug.Log($"[MoonlightVisualQA][PASS] spatial-suite start={start:F2} end={controller.transform.position:F2} " +
@@ -1042,6 +1169,27 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] action-visual-signatures " +
                 $"{actionVisualDetail} marker=MOONLIGHT_ACTIVITY_VISUAL_SIGNATURES_VERIFIED");
+            bool bedtimeStageStaticPass = MoonlightActivityStage.ValidateBedtimeStaticContract(
+                out string bedtimeStageStaticDetail);
+            bool bedtimeAccentStaticPass =
+                MoonlightActionFeedback.ValidateBedtimeActionVisualContract(
+                    out string bedtimeAccentStaticDetail);
+            bool bedtimeViewportStaticPass = ValidateBedtimeViewportStaticContract(
+                out string bedtimeViewportStaticDetail);
+            if (!bedtimeStageStaticPass || !bedtimeAccentStaticPass ||
+                !bedtimeViewportStaticPass)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] bedtime-static-contract " +
+                    $"stage=({bedtimeStageStaticDetail}) " +
+                    $"accent=({bedtimeAccentStaticDetail}) " +
+                    $"viewports=({bedtimeViewportStaticDetail})");
+                Application.Quit(160);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] bedtime-static-contract " +
+                $"stage=({bedtimeStageStaticDetail}) accent=({bedtimeAccentStaticDetail}) " +
+                $"viewports=({bedtimeViewportStaticDetail}) " +
+                "marker=MOONLIGHT_BEDTIME_STATIC_2_OF_2_VERIFIED");
             if (!MoonlightActionFeedback.ValidateActionQualityContract(
                     out string actionQualityDetail))
             {
@@ -6324,6 +6472,317 @@ namespace MoonlightMagicHouse
                 $"{MoonlightActionFeedback.MaximumActionAccentExtent:0.00} " +
                 $"contactDistance={contactDistance:0.000}";
             return pass;
+        }
+
+        static IEnumerator ObserveBedtimeRuntime(MoonlightActionFeedback feedback,
+            MoonlightActivityStage stage, string expectedState,
+            BedtimeRuntimeObservation observation)
+        {
+            if (feedback == null || stage == null)
+            {
+                observation.Detail = "feedback-or-stage-missing";
+                yield break;
+            }
+
+            bool liveStagePass = true;
+            bool finished = false;
+            float lingerStartedAt = -1f;
+            string liveStageDetail = "linger-not-observed";
+            float deadline = Time.time + 5.0f;
+            while (Time.time < deadline)
+            {
+                if (stage.IsLingering)
+                {
+                    if (lingerStartedAt < 0f) lingerStartedAt = Time.time;
+                    observation.SawVisibleLinger = true;
+                    bool framePass = ValidateBedtimeRuntimeOracle(feedback, expectedState,
+                        true,
+                        out liveStageDetail);
+                    if (framePass) observation.HeldPresentationFrames++;
+                    liveStagePass &= framePass;
+                }
+
+                if (!feedback.IsPerformingAction && !feedback.IsPresentingResult)
+                {
+                    finished = true;
+                    break;
+                }
+                yield return null;
+            }
+
+            observation.ObservedLingerSeconds = lingerStartedAt >= 0f
+                ? Mathf.Max(0f, Time.time - lingerStartedAt)
+                : 0f;
+            if (finished) yield return null;
+            string expectedAccent = expectedState == "Cuddled"
+                ? "ActionAccent-cuddle-heart-pair"
+                : "ActionAccent-dream-moon-pair";
+            Camera restoredCamera = Camera.main;
+            bool cameraIdentityPass = observation.HadCamera
+                ? restoredCamera != null &&
+                  restoredCamera.GetInstanceID() == observation.CameraInstanceId
+                : restoredCamera == null;
+            float cameraPositionDelta = cameraIdentityPass && restoredCamera != null
+                ? Vector3.Distance(restoredCamera.transform.position,
+                    observation.CameraPositionBefore)
+                : float.PositiveInfinity;
+            float cameraRotationDelta = cameraIdentityPass && restoredCamera != null
+                ? Quaternion.Angle(restoredCamera.transform.rotation,
+                    observation.CameraRotationBefore)
+                : float.PositiveInfinity;
+            CameraController restoredController = restoredCamera != null
+                ? restoredCamera.GetComponent<CameraController>()
+                : null;
+            bool controllerStatePass = observation.HadCameraController
+                ? restoredController != null &&
+                  restoredController.GetInstanceID() == observation.CameraControllerInstanceId &&
+                  restoredController.enabled == observation.CameraControllerEnabledBefore
+                : restoredController == null;
+            bool cameraRestorePass = cameraIdentityPass &&
+                cameraPositionDelta <= 0.05f && cameraRotationDelta <= 1.0f &&
+                controllerStatePass;
+            bool naturalCleanup = FindBedtimeStageRoot() == null &&
+                GameObject.Find(expectedAccent) == null && !feedback.IsCameraFocusActive &&
+                feedback.VisualPoseRestoredForQA && cameraRestorePass;
+            bool lingerPass = Mathf.Abs(observation.ObservedLingerSeconds - 2.0f) <= 0.35f;
+            observation.Passed = observation.SawVisibleLinger && liveStagePass && finished &&
+                observation.HeldPresentationFrames > 0 && lingerPass && naturalCleanup;
+            observation.Detail = $"visibleLinger={observation.SawVisibleLinger} " +
+                $"holdFrames={observation.HeldPresentationFrames} " +
+                $"liveStage={liveStagePass} finished={finished} " +
+                $"linger={observation.ObservedLingerSeconds:0.000}/2.000s " +
+                $"cameraRestore={cameraRestorePass} identity={cameraIdentityPass} " +
+                $"positionDelta={cameraPositionDelta:0.000}/<=0.050m " +
+                $"rotationDelta={cameraRotationDelta:0.000}/<=1.000deg " +
+                $"controller={controllerStatePass} " +
+                $"controllerEnabled={observation.CameraControllerEnabledBefore}/" +
+                $"{(restoredController != null ? restoredController.enabled.ToString() : "missing")} " +
+                $"naturalCleanup={naturalCleanup} live=({liveStageDetail})";
+        }
+
+        static void CaptureBedtimeCameraBaseline(BedtimeRuntimeObservation observation)
+        {
+            Camera camera = Camera.main;
+            observation.HadCamera = camera != null;
+            if (camera == null) return;
+
+            observation.CameraInstanceId = camera.GetInstanceID();
+            observation.CameraPositionBefore = camera.transform.position;
+            observation.CameraRotationBefore = camera.transform.rotation;
+            CameraController controller = camera.GetComponent<CameraController>();
+            observation.HadCameraController = controller != null;
+            if (controller == null) return;
+
+            observation.CameraControllerInstanceId = controller.GetInstanceID();
+            observation.CameraControllerEnabledBefore = controller.enabled;
+        }
+
+        static GameObject FindBedtimeStageRoot() =>
+            GameObject.Find("ActivityStage-SleepCuddle");
+
+        static bool ValidateBedtimeRuntimeOracle(MoonlightActionFeedback feedback,
+            string expectedState, bool requirePresentationHold, out string detail)
+        {
+            GameObject root = FindBedtimeStageRoot();
+            if (root == null)
+            {
+                detail = "root=missing";
+                return false;
+            }
+
+            Renderer[] renderers = root.GetComponentsInChildren<Renderer>(true);
+            Renderer[] visibleRenderers = renderers.Where(renderer => renderer != null &&
+                renderer.enabled && renderer.gameObject.activeInHierarchy &&
+                !renderer.forceRenderingOff).ToArray();
+            var allocatedMaterials = new HashSet<Material>();
+            var visibleMaterials = new HashSet<Material>();
+            foreach (Renderer renderer in renderers)
+                foreach (Material material in renderer.sharedMaterials)
+                    if (material != null) allocatedMaterials.Add(material);
+            foreach (Renderer renderer in visibleRenderers)
+                foreach (Material material in renderer.sharedMaterials)
+                    if (material != null) visibleMaterials.Add(material);
+
+            Light[] lights = root.GetComponentsInChildren<Light>(true);
+            Collider[] colliders = root.GetComponentsInChildren<Collider>(true);
+            Transform[] transforms = root.GetComponentsInChildren<Transform>(true);
+            bool cuddled = expectedState == "Cuddled";
+            bool partContract = true;
+            int matchingParts = 0;
+            for (int i = 0; i < BedtimeOracleParts.Length; i++)
+            {
+                BedtimeOraclePart expected = BedtimeOracleParts[i];
+                Transform part = transforms.FirstOrDefault(candidate =>
+                    candidate != null && candidate.name == expected.Name);
+                bool expectedVisible = cuddled
+                    ? expected.CuddledVisible
+                    : expected.RestingVisible;
+                MeshFilter meshFilter = part != null ? part.GetComponent<MeshFilter>() : null;
+                bool primitiveMatches = meshFilter != null && meshFilter.sharedMesh != null &&
+                    meshFilter.sharedMesh.name.Contains(expected.MeshToken,
+                        System.StringComparison.OrdinalIgnoreCase);
+                bool visibleMatches = part != null && part.gameObject.activeSelf == expectedVisible;
+                if (part != null) matchingParts++;
+                partContract &= part != null && primitiveMatches && visibleMatches;
+            }
+
+            Transform blanket = transforms.FirstOrDefault(candidate =>
+                candidate != null && candidate.name == "BedtimeBlanket");
+            Transform pillow = transforms.FirstOrDefault(candidate =>
+                candidate != null && candidate.name == "RestingPillow");
+            Transform moon = transforms.FirstOrDefault(candidate =>
+                candidate != null && candidate.name == "RestingDreamMoon");
+            Transform star = transforms.FirstOrDefault(candidate =>
+                candidate != null && candidate.name == "RestingDreamStar");
+            Transform heartLeft = transforms.FirstOrDefault(candidate =>
+                candidate != null && candidate.name == "CuddledHeartLeft");
+            Transform heartRight = transforms.FirstOrDefault(candidate =>
+                candidate != null && candidate.name == "CuddledHeartRight");
+            Transform heartPoint = transforms.FirstOrDefault(candidate =>
+                candidate != null && candidate.name == "CuddledHeartPoint");
+            bool semanticLayout = cuddled
+                ? heartLeft != null && heartRight != null && heartPoint != null &&
+                  heartLeft.localPosition.x < heartPoint.localPosition.x &&
+                  heartPoint.localPosition.x < heartRight.localPosition.x &&
+                  heartLeft.localPosition.y > heartPoint.localPosition.y &&
+                  heartRight.localPosition.y > heartPoint.localPosition.y
+                : blanket != null && pillow != null && moon != null && star != null &&
+                  moon.localPosition.y > pillow.localPosition.y + 0.40f &&
+                  star.localPosition.y > blanket.localPosition.y + 0.40f &&
+                  moon.localPosition.x < star.localPosition.x;
+
+            bool lightContract = lights.Length == 1 && lights[0] != null &&
+                lights[0].enabled && lights[0].gameObject.activeInHierarchy &&
+                lights[0].type == LightType.Spot &&
+                lights[0].gameObject.name == "BedtimeSpotlight";
+            string expectedAccentName = cuddled
+                ? "ActionAccent-cuddle-heart-pair"
+                : "ActionAccent-dream-moon-pair";
+            string expectedOrbName = cuddled
+                ? "ActionOrb-cuddle-orbit"
+                : "ActionOrb-dream-orbit";
+            GameObject accent = GameObject.Find(expectedAccentName);
+            int accentRenderers = accent != null
+                ? accent.GetComponentsInChildren<Renderer>(true).Count(renderer =>
+                    renderer.enabled && renderer.gameObject.activeInHierarchy)
+                : 0;
+            Camera camera = Camera.main;
+            Vector3 cameraTarget = root.transform.position + Vector3.up * 0.70f;
+            float cameraDistance = camera != null
+                ? Vector3.Distance(camera.transform.position, cameraTarget)
+                : float.PositiveInfinity;
+            float cameraFacingAngle = camera != null
+                ? Vector3.Angle(camera.transform.forward,
+                    (cameraTarget - camera.transform.position).normalized)
+                : 180f;
+            bool cameraFraming = !requirePresentationHold ||
+                (camera != null && cameraDistance >= 3.20f && cameraDistance <= 4.80f &&
+                 cameraFacingAngle <= 3f);
+            bool presentationHold = !requirePresentationHold ||
+                (feedback != null && feedback.IsPresentingResult &&
+                 feedback.IsCameraFocusActive && !feedback.VisualPoseRestoredForQA &&
+                 accentRenderers == 5 && GameObject.Find(expectedOrbName) != null &&
+                 cameraFraming);
+            bool pass = root.activeInHierarchy && renderers.Length == 8 &&
+                visibleRenderers.Length == 5 && allocatedMaterials.Count > 0 &&
+                allocatedMaterials.Count <= 5 && visibleMaterials.Count > 0 &&
+                visibleMaterials.Count <= 5 && lightContract && colliders.Length == 0 &&
+                matchingParts == 8 && partContract && semanticLayout &&
+                feedback != null && feedback.IsCameraFocusActive && presentationHold;
+            detail = $"state={expectedState} root={root.activeInHierarchy} " +
+                $"renderers={renderers.Length}/8 visible={visibleRenderers.Length}/5 " +
+                $"materials={allocatedMaterials.Count}/{visibleMaterials.Count}/<=5 " +
+                $"lights={lights.Length}/1 spot={lightContract} colliders={colliders.Length}/0 " +
+                $"parts={matchingParts}/8 primitiveMask={partContract} " +
+                $"semanticLayout={semanticLayout} focus={feedback?.IsCameraFocusActive ?? false} " +
+                $"hold={presentationHold} accents={accentRenderers}/5 " +
+                $"camera={cameraDistance:0.000}m/{cameraFacingAngle:0.00}deg";
+            return pass;
+        }
+
+        public static bool ValidateBedtimeViewportStaticContract(out string detail)
+        {
+            string[] names = { "desktop", "ipad" };
+            int[] widths = { 1366, 1024 };
+            int[] heights = { 1024, 768 };
+            const float stageWidth = 1.72f;
+            const float stageHeight = 1.26f;
+            const float conservativeCameraDistance = 3.55f;
+            float verticalSpan = 2f * conservativeCameraDistance *
+                Mathf.Tan(30f * Mathf.Deg2Rad);
+            int passed = 0;
+            string evidence = "";
+            for (int i = 0; i < names.Length; i++)
+            {
+                float aspect = widths[i] / (float)heights[i];
+                float horizontalSpan = verticalSpan * aspect;
+                float horizontalOccupancy = stageWidth / horizontalSpan;
+                float verticalOccupancy = stageHeight / verticalSpan;
+                bool profilePass = widths[i] >= 1024 && heights[i] >= 768 &&
+                    aspect >= 1.30f && horizontalOccupancy <= 0.50f &&
+                    verticalOccupancy <= 0.42f;
+                if (profilePass) passed++;
+                if (evidence.Length > 0) evidence += ";";
+                evidence += $"{names[i]}={widths[i]}x{heights[i]}:" +
+                    $"{horizontalOccupancy:0.000}/{verticalOccupancy:0.000}:" +
+                    $"{profilePass}";
+            }
+            detail = $"profiles={passed}/2 framing={evidence} " +
+                "limits=0.50w/0.42h source=qa-local-bedtime-envelope";
+            return passed == 2;
+        }
+
+        static IEnumerator ObserveBedtimeStageCleanupRuntime(
+            MoonlightPlayerController controller, MoonlightSpatialActionZone zone,
+            MoonlightActivityStage stage, BedtimeStageCleanupObservation observation)
+        {
+            if (controller == null || zone == null || stage == null)
+            {
+                observation.Detail = "setup=missing";
+                yield break;
+            }
+
+            MoonlightGestureSample sample = MoonlightGestureSample.Synthetic(
+                MoonlightGestureKind.Hold, 0.95f);
+            Vector3 originalPosition = controller.transform.position;
+            stage.Begin(MoonlightSpatialActionKind.SleepCuddle, 0, 1, sample, "Resting");
+            Vector3 outsidePosition = zone.transform.position +
+                Vector3.right * (zone.Radius + 2.0f);
+            outsidePosition.y = originalPosition.y;
+            controller.transform.position = outsidePosition;
+            float exitDeadline = Time.time + 1.5f;
+            while (stage.IsVisible && Time.time < exitDeadline)
+                yield return null;
+            yield return null;
+            bool exitPass = !stage.IsVisible && FindBedtimeStageRoot() == null;
+            controller.transform.position = originalPosition;
+            yield return new WaitForSeconds(0.20f);
+
+            stage.Begin(MoonlightSpatialActionKind.SleepCuddle, 0, 1, sample, "Cuddled");
+            stage.enabled = false;
+            yield return null;
+            bool disablePass = !stage.IsVisible && FindBedtimeStageRoot() == null;
+            stage.enabled = true;
+
+            var destroyProbe = new GameObject("MoonlightBedtimeDestroyCleanupProbe");
+            var destroyStage = destroyProbe.AddComponent<MoonlightActivityStage>();
+            destroyStage.enabled = false;
+            destroyStage.Begin(MoonlightSpatialActionKind.SleepCuddle, 0, 1, sample,
+                "Resting");
+            GameObject destroyStageRoot = FindBedtimeStageRoot();
+            int destroyStageRootId = destroyStageRoot != null
+                ? destroyStageRoot.GetInstanceID()
+                : 0;
+            Object.Destroy(destroyProbe);
+            yield return null;
+            GameObject remainingStageRoot = FindBedtimeStageRoot();
+            bool destroyPass = destroyStageRootId != 0 &&
+                (remainingStageRoot == null ||
+                 remainingStageRoot.GetInstanceID() != destroyStageRootId);
+
+            observation.Passed = exitPass && disablePass && destroyPass;
+            observation.Detail = $"stageExit={exitPass} stageDisable={disablePass} " +
+                $"stageDestroy={destroyPass} scope=stage-root-components";
         }
 
         IEnumerator RunRoomCaptureQa(string[] args)
