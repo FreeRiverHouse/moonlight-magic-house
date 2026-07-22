@@ -14,6 +14,51 @@ namespace MoonlightMagicHouse
         public const int HeroMaterialBudget = 8;
         public const float HeroEyeIdleEmission = 0.18f;
         public const float HeroEyeActionEmission = 0.28f;
+        public const int RoomSurfaceProfileMinimum = 8;
+        public const int RoomAuthoredMaterialMinimum = 8;
+        public const int RoomAuthoredMaterialMaximum = 16;
+
+        sealed class RoomSurfaceProfile
+        {
+            public readonly string Id;
+            public readonly float Smoothness;
+            public readonly float Metallic;
+            public readonly float Emission;
+
+            public RoomSurfaceProfile(string id, float smoothness, float metallic, float emission)
+            {
+                Id = id;
+                Smoothness = smoothness;
+                Metallic = metallic;
+                Emission = emission;
+            }
+        }
+
+        // One bounded profile per semantic surface family in the authored room.
+        // These are data only: material allocation remains one clone per source material.
+        static readonly RoomSurfaceProfile[] RoomSurfaceProfiles =
+        {
+            new RoomSurfaceProfile("plaster",        0.18f, 0.00f, 0.00f),
+            new RoomSurfaceProfile("painted-trim",   0.32f, 0.00f, 0.00f),
+            new RoomSurfaceProfile("wood-floor",     0.28f, 0.00f, 0.00f),
+            new RoomSurfaceProfile("wood-furniture", 0.24f, 0.00f, 0.00f),
+            new RoomSurfaceProfile("textile-bed",    0.14f, 0.00f, 0.00f),
+            new RoomSurfaceProfile("foliage",        0.18f, 0.00f, 0.00f),
+            new RoomSurfaceProfile("glass-sky",      0.72f, 0.00f, 0.00f),
+            new RoomSurfaceProfile("moon-glow",      0.58f, 0.00f, 0.18f)
+        };
+
+        static readonly string[] RequiredRoomSemanticMaterials =
+        {
+            "Room_Cream", "Trim_Ivory", "Floor_Honey", "Wood_Maple",
+            "Blanket_Blush", "Mint_Deep", "Sky_Dusk", "Moon_Butter"
+        };
+
+        static readonly string[] RequiredRoomSurfaceProfiles =
+        {
+            "plaster", "painted-trim", "wood-floor", "wood-furniture",
+            "textile-bed", "foliage", "glass-sky", "moon-glow"
+        };
 
         // The authored Blender house is the playable default. The image-plate
         // presentation remains available for dedicated visual comparisons.
@@ -2256,7 +2301,7 @@ namespace MoonlightMagicHouse
             root.transform.position = Vector3.zero;
             root.transform.rotation = Quaternion.Euler(-90f, 180f, 0f);
             root.transform.localScale = Vector3.one;
-            ApplyHeroMaterials(root);
+            ApplyRoomMaterials(root);
             AddHeroFurniturePass(root.transform);
 
             // Fill-only practicals: contact shadows come from the single studio
@@ -3943,6 +3988,165 @@ namespace MoonlightMagicHouse
             }
         }
 
+        static void ApplyRoomMaterials(GameObject root)
+        {
+            var sourceMaterialKeys = new System.Collections.Generic.HashSet<string>();
+            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            foreach (Material sourceMaterial in renderer.sharedMaterials)
+            {
+                if (sourceMaterial != null)
+                    sourceMaterialKeys.Add(NormalizeRoomMaterialName(sourceMaterial.name));
+            }
+            int semanticMaterialCount = 0;
+            for (int i = 0; i < RequiredRoomSemanticMaterials.Length; i++)
+            {
+                string materialName = RequiredRoomSemanticMaterials[i];
+                if (!sourceMaterialKeys.Contains(materialName.ToLowerInvariant())) continue;
+                semanticMaterialCount++;
+            }
+
+            // Preserve the existing one-clone-per-source allocation, then tune those
+            // authored instances in place. The room profile pass allocates no materials.
+            ApplyHeroMaterials(root);
+            var runtimeMaterials = new System.Collections.Generic.HashSet<Material>();
+            var runtimeSemanticProfileMatches =
+                new System.Collections.Generic.HashSet<string>();
+            var surfaceProfiles = new System.Collections.Generic.HashSet<string>();
+            int rendererCount = 0;
+            int shadowCasterCount = 0;
+            int shadowReceiverCount = 0;
+            int emissiveMaterialCount = 0;
+            int texturedMaterialCount = 0;
+
+            foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                rendererCount++;
+                foreach (Material material in renderer.sharedMaterials)
+                {
+                    if (material == null) continue;
+                    string materialName = NormalizeRoomMaterialName(material.name);
+                    bool firstRuntimeUse = runtimeMaterials.Add(material);
+
+                    RoomSurfaceProfile profile = RoomSurfaceProfileFor(materialName);
+                    if (firstRuntimeUse)
+                    {
+                        for (int semanticIndex = 0;
+                             semanticIndex < RequiredRoomSemanticMaterials.Length;
+                             semanticIndex++)
+                        {
+                            if (materialName == RequiredRoomSemanticMaterials[semanticIndex].ToLowerInvariant() &&
+                                profile.Id == RequiredRoomSurfaceProfiles[semanticIndex])
+                                runtimeSemanticProfileMatches.Add(materialName);
+                        }
+                    }
+                    if (material.HasProperty("_Glossiness"))
+                        material.SetFloat("_Glossiness", profile.Smoothness);
+                    if (material.HasProperty("_Smoothness"))
+                        material.SetFloat("_Smoothness", profile.Smoothness);
+                    if (material.HasProperty("_Metallic"))
+                        material.SetFloat("_Metallic", profile.Metallic);
+                    if (material.HasProperty("_SpecularHighlights"))
+                        material.SetFloat("_SpecularHighlights", 1f);
+                    if (material.HasProperty("_EmissionColor"))
+                    {
+                        Color color = material.HasProperty("_Color")
+                            ? material.GetColor("_Color")
+                            : HeroPaletteColor(materialName);
+                        material.SetColor("_EmissionColor", color * profile.Emission);
+                        if (profile.Emission > 0f)
+                        {
+                            material.EnableKeyword("_EMISSION");
+                            if (firstRuntimeUse) emissiveMaterialCount++;
+                        }
+                        else material.DisableKeyword("_EMISSION");
+                    }
+                    if (firstRuntimeUse && material.mainTexture != null) texturedMaterialCount++;
+                    surfaceProfiles.Add(profile.Id);
+                }
+
+                if (renderer.shadowCastingMode != ShadowCastingMode.Off) shadowCasterCount++;
+                if (renderer.receiveShadows) shadowReceiverCount++;
+            }
+
+            var quality = root.GetComponent<MoonlightRoomVisualQuality>() ??
+                root.AddComponent<MoonlightRoomVisualQuality>();
+            quality.Configure(rendererCount, shadowCasterCount, shadowReceiverCount,
+                sourceMaterialKeys.Count, runtimeMaterials.Count, semanticMaterialCount,
+                runtimeSemanticProfileMatches.Count, surfaceProfiles.Count, emissiveMaterialCount,
+                texturedMaterialCount);
+        }
+
+        static string NormalizeRoomMaterialName(string materialName)
+        {
+            string normalized = materialName ?? string.Empty;
+            const string runtimeSuffix = "_Runtime";
+            const string instanceSuffix = " (Instance)";
+            if (normalized.EndsWith(instanceSuffix, System.StringComparison.Ordinal))
+                normalized = normalized.Substring(0, normalized.Length - instanceSuffix.Length);
+            if (normalized.EndsWith(runtimeSuffix, System.StringComparison.Ordinal))
+                normalized = normalized.Substring(0, normalized.Length - runtimeSuffix.Length);
+            return normalized.ToLowerInvariant();
+        }
+
+        static RoomSurfaceProfile RoomSurfaceProfileFor(string materialName)
+        {
+            string n = (materialName ?? string.Empty).ToLowerInvariant();
+            if (n.Contains("trim") || n.Contains("baseboard") || n.Contains("chairrail"))
+                return RoomSurfaceProfiles[1];
+            if (n.Contains("floor")) return RoomSurfaceProfiles[2];
+            if (n.Contains("wood") || n.Contains("maple")) return RoomSurfaceProfiles[3];
+            if (n.Contains("bed") || n.Contains("blanket") || n.Contains("pillow") ||
+                n.Contains("textile"))
+                return RoomSurfaceProfiles[4];
+            if (n.Contains("mint") || n.Contains("foliage") || n.Contains("leaf") ||
+                n.Contains("plant"))
+                return RoomSurfaceProfiles[5];
+            if (n.Contains("sky") || n.Contains("glass") || n.Contains("window"))
+                return RoomSurfaceProfiles[6];
+            if (n.Contains("moon") || n.Contains("glow") || n.Contains("celestial") ||
+                n.Contains("highlight"))
+                return RoomSurfaceProfiles[7];
+            return RoomSurfaceProfiles[0];
+        }
+
+        public static bool ValidateRoomSurfaceProfileContract(out string detail)
+        {
+            var ids = new System.Collections.Generic.HashSet<string>();
+            int mapped = 0;
+            int emissive = 0;
+            float minimumSmoothness = 1f;
+            float maximumSmoothness = 0f;
+            float maximumMetallic = 0f;
+            bool bounded = true;
+
+            foreach (RoomSurfaceProfile profile in RoomSurfaceProfiles)
+            {
+                ids.Add(profile.Id);
+                minimumSmoothness = Mathf.Min(minimumSmoothness, profile.Smoothness);
+                maximumSmoothness = Mathf.Max(maximumSmoothness, profile.Smoothness);
+                maximumMetallic = Mathf.Max(maximumMetallic, profile.Metallic);
+                if (profile.Emission > 0f) emissive++;
+                bounded &= profile.Smoothness >= 0.08f && profile.Smoothness <= 0.75f &&
+                    profile.Metallic >= 0f && profile.Metallic <= 0.05f &&
+                    profile.Emission >= 0f && profile.Emission <= 0.25f;
+            }
+            for (int i = 0; i < RequiredRoomSemanticMaterials.Length; i++)
+            {
+                if (RoomSurfaceProfileFor(RequiredRoomSemanticMaterials[i]).Id ==
+                    RequiredRoomSurfaceProfiles[i])
+                    mapped++;
+            }
+
+            detail = $"profiles={ids.Count}/{RoomSurfaceProfileMinimum} " +
+                $"semanticMap={mapped}/{RequiredRoomSemanticMaterials.Length} " +
+                $"smooth={minimumSmoothness:0.00}-{maximumSmoothness:0.00} " +
+                $"metallicMax={maximumMetallic:0.00} emissiveProfiles={emissive}";
+            return RoomSurfaceProfiles.Length >= RoomSurfaceProfileMinimum &&
+                ids.Count == RoomSurfaceProfiles.Length &&
+                mapped == RequiredRoomSemanticMaterials.Length &&
+                bounded && emissive >= 1;
+        }
+
         static bool HasHeroEyeGeometry(GameObject root)
         {
             if (root == null) return false;
@@ -4094,6 +4298,58 @@ namespace MoonlightMagicHouse
             TexturedMaterialCount = texturedMaterialCount;
             Debug.Log($"[MoonlightHeroQA] renderers={RendererCount} shadows={ShadowRendererCount} " +
                 $"materials={MaterialCount}/{MoonlightHouseSetup.HeroMaterialBudget} " +
+                $"profiles={SurfaceProfileCount} emissive={EmissiveMaterialCount} " +
+                $"textured={TexturedMaterialCount} marker={QAMarker}");
+        }
+    }
+
+    public sealed class MoonlightRoomVisualQuality : MonoBehaviour
+    {
+        public int RendererCount { get; private set; }
+        public int ShadowCasterCount { get; private set; }
+        public int ShadowReceiverCount { get; private set; }
+        public int SourceMaterialCount { get; private set; }
+        public int RuntimeMaterialCount { get; private set; }
+        public int RuntimeMaterialCountDelta => RuntimeMaterialCount - SourceMaterialCount;
+        public int SemanticMaterialCount { get; private set; }
+        public int SemanticProfileMatchCount { get; private set; }
+        public int SurfaceProfileCount { get; private set; }
+        public int EmissiveMaterialCount { get; private set; }
+        public int TexturedMaterialCount { get; private set; }
+        public string QAMarker => RendererCount > 0 &&
+            ShadowCasterCount == RendererCount && ShadowReceiverCount == RendererCount &&
+            SourceMaterialCount >= MoonlightHouseSetup.RoomAuthoredMaterialMinimum &&
+            SourceMaterialCount <= MoonlightHouseSetup.RoomAuthoredMaterialMaximum &&
+            RuntimeMaterialCountDelta == 0 &&
+            SemanticMaterialCount >= MoonlightHouseSetup.RoomSurfaceProfileMinimum &&
+            SemanticProfileMatchCount == SemanticMaterialCount &&
+            SurfaceProfileCount >= MoonlightHouseSetup.RoomSurfaceProfileMinimum &&
+            EmissiveMaterialCount >= 1
+                ? "MOONLIGHT_ROOM_SURFACE_SHADING_READY"
+                : "MOONLIGHT_ROOM_SURFACE_SHADING_INCOMPLETE";
+
+        public void Configure(int rendererCount, int shadowCasterCount, int shadowReceiverCount,
+                              int sourceMaterialCount, int runtimeMaterialCount,
+                              int semanticMaterialCount, int semanticProfileMatchCount,
+                              int surfaceProfileCount, int emissiveMaterialCount,
+                              int texturedMaterialCount)
+        {
+            RendererCount = rendererCount;
+            ShadowCasterCount = shadowCasterCount;
+            ShadowReceiverCount = shadowReceiverCount;
+            SourceMaterialCount = sourceMaterialCount;
+            RuntimeMaterialCount = runtimeMaterialCount;
+            SemanticMaterialCount = semanticMaterialCount;
+            SemanticProfileMatchCount = semanticProfileMatchCount;
+            SurfaceProfileCount = surfaceProfileCount;
+            EmissiveMaterialCount = emissiveMaterialCount;
+            TexturedMaterialCount = texturedMaterialCount;
+            Debug.Log($"[MoonlightRoomSurfaceQA] renderers={RendererCount} " +
+                $"casters={ShadowCasterCount} receivers={ShadowReceiverCount} " +
+                $"materials={SourceMaterialCount}/{RuntimeMaterialCount} " +
+                $"delta={RuntimeMaterialCountDelta} semantic={SemanticMaterialCount}/" +
+                $"{MoonlightHouseSetup.RoomSurfaceProfileMinimum} " +
+                $"semanticProfiles={SemanticProfileMatchCount}/{SemanticMaterialCount} " +
                 $"profiles={SurfaceProfileCount} emissive={EmissiveMaterialCount} " +
                 $"textured={TexturedMaterialCount} marker={QAMarker}");
         }

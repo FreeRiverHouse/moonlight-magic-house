@@ -2080,6 +2080,37 @@ namespace MoonlightMagicHouse
             {
                 RoomType.LivingRoom, RoomType.Kitchen, RoomType.Bedroom, RoomType.Garden, RoomType.Library
             };
+            bool roomSurfaceProfilePass =
+                MoonlightHouseSetup.ValidateRoomSurfaceProfileContract(out string roomSurfaceProfileDetail);
+            var livingRoom = GameObject.Find("LivingRoom");
+            var roomSurfaceQuality = livingRoom != null
+                ? livingRoom.GetComponent<MoonlightRoomVisualQuality>()
+                : null;
+            bool roomSurfaceRuntimePass = roomSurfaceQuality != null &&
+                roomSurfaceQuality.QAMarker == "MOONLIGHT_ROOM_SURFACE_SHADING_READY";
+            bool roomSurfacePass = roomSurfaceProfilePass && roomSurfaceRuntimePass;
+            string roomSurfaceRuntimeDetail = roomSurfaceQuality != null
+                ? $"renderers={roomSurfaceQuality.RendererCount} " +
+                  $"casters={roomSurfaceQuality.ShadowCasterCount} " +
+                  $"receivers={roomSurfaceQuality.ShadowReceiverCount} " +
+                  $"materials={roomSurfaceQuality.SourceMaterialCount}/" +
+                  $"{roomSurfaceQuality.RuntimeMaterialCount} " +
+                  $"delta={roomSurfaceQuality.RuntimeMaterialCountDelta} " +
+                  $"semantic={roomSurfaceQuality.SemanticMaterialCount}/" +
+                  $"{MoonlightHouseSetup.RoomSurfaceProfileMinimum} " +
+                  $"semanticProfiles={roomSurfaceQuality.SemanticProfileMatchCount}/" +
+                  $"{roomSurfaceQuality.SemanticMaterialCount} " +
+                  $"profiles={roomSurfaceQuality.SurfaceProfileCount} " +
+                  $"emissive={roomSurfaceQuality.EmissiveMaterialCount}"
+                : "quality=missing";
+            Debug.Log(roomSurfacePass
+                ? "[MoonlightRoomQA][PASS] room-surface-shading " +
+                  $"profile=({roomSurfaceProfileDetail}) runtime=({roomSurfaceRuntimeDetail}) " +
+                  "marker=MOONLIGHT_ROOM_SURFACE_SHADING_READY"
+                : "[MoonlightRoomQA][FAIL] room-surface-shading " +
+                  $"profilePass={roomSurfaceProfilePass} profile=({roomSurfaceProfileDetail}) " +
+                  $"runtimePass={roomSurfaceRuntimePass} runtime=({roomSurfaceRuntimeDetail}) " +
+                  $"marker={(roomSurfaceQuality != null ? roomSurfaceQuality.QAMarker : "missing")}");
             bool heroDressingPass = ValidateHeroDressing(out string heroDressingDetail);
             Debug.Log(heroDressingPass
                 ? "[MoonlightRoomQA][PASS] hero-dressing " + heroDressingDetail
@@ -2093,7 +2124,7 @@ namespace MoonlightMagicHouse
                 Debug.Log($"[MoonlightRoomQA][PASS] room={captureRooms[i]} position={controller.transform.position:F2} screenshot={shot}");
             }
 
-            Application.Quit(heroDressingPass ? 0 : 31);
+            Application.Quit(!heroDressingPass ? 31 : roomSurfacePass ? 0 : 32);
         }
 
         static bool ValidateHeroDressing(out string detail)
