@@ -323,6 +323,15 @@ namespace MoonlightMagicHouse
             public string ArenaSource = "";
             public bool ArenaSourceContractPassed = true;
             public string OrderMode = "middle";
+            public bool CatchTapOraclePassed;
+            public bool CatchTapSamplesDistinct;
+            public bool CatchTapFiniteAndBounded = true;
+            public bool CatchTapNoIntersectionOrOvershoot = true;
+            public int CatchTapSamplesPerTrajectory;
+            public float CatchTapSeparationAt020;
+            public float CatchTapMaximumContactError;
+            public float CatchTapMaximumHeldError;
+            public float CatchTapCenterMaximumDelta;
         }
 
         sealed class CookContinuityObservation
@@ -2558,6 +2567,7 @@ namespace MoonlightMagicHouse
                         BaselineRewards = new PlayRewardSnapshot(moonlight),
                         OrderMode = playContinuityOrderMode
                     };
+                    MeasurePlayCatchTapTrajectories(playContinuity);
                     playContinuity.Progression.Add(zone.ProgressStep);
                     var priorStage = moonlight.GetComponent<MoonlightActivityStage>();
                     if (priorStage != null)
@@ -5143,6 +5153,7 @@ namespace MoonlightMagicHouse
                             playContinuity.ContinuationClockAdvanced &&
                             playContinuity.MaximumContinuationClockDelta <=
                                 MoonlightActivityStage.PlayContinuationMaximumDeltaSeconds &&
+                            playContinuity.CatchTapOraclePassed &&
                             firstThreeRewardsUnchanged && finalRewardPass &&
                             zone.LastCompletedBestCombo == 4 &&
                             zone.LastCompletedPerfectSteps == 4 &&
@@ -5169,6 +5180,15 @@ namespace MoonlightMagicHouse
                                 $"trajectory={playContinuity.TrajectoryStepsObserved}/4 " +
                                 $"samples={playContinuity.TrajectorySampleCount} " +
                                 $"bounded={playContinuity.TrajectoryFiniteAndBounded} " +
+                                $"catchTap={playContinuity.CatchTapOraclePassed}/" +
+                                $"distinct:{playContinuity.CatchTapSamplesDistinct}/" +
+                                $"samples:{playContinuity.CatchTapSamplesPerTrajectory}x2/" +
+                                $"sep020:{playContinuity.CatchTapSeparationAt020:0.000}/" +
+                                $"contact:{playContinuity.CatchTapMaximumContactError:0.000000}/" +
+                                $"held:{playContinuity.CatchTapMaximumHeldError:0.000000}/" +
+                                $"bounded:{playContinuity.CatchTapFiniteAndBounded}/" +
+                                $"noCrossOvershoot:{playContinuity.CatchTapNoIntersectionOrOvershoot}/" +
+                                $"center:{playContinuity.CatchTapCenterMaximumDelta:0.000000} " +
                                 $"clock={MoonlightActivityStage.PlayContinuationClockSourceForQA}/" +
                                 $"{playContinuity.MaximumContinuationClockDelta:0.000000}/" +
                                 $"{playContinuity.ContinuationClockAdvanced} " +
@@ -5207,6 +5227,11 @@ namespace MoonlightMagicHouse
                             $"{playContinuity.TrailMaterialId} counts=" +
                             $"{string.Join(",", playContinuity.MaterialCounts)} " +
                             $"trajectorySamples={playContinuity.TrajectorySampleCount} " +
+                            $"catchTap=41x2/sep020:" +
+                            $"{playContinuity.CatchTapSeparationAt020:0.000}m/" +
+                            $"contact:{playContinuity.CatchTapMaximumContactError:0.000000}m/" +
+                            $"held:{playContinuity.CatchTapMaximumHeldError:0.000000}m/" +
+                            $"center:{playContinuity.CatchTapCenterMaximumDelta:0.000000}m " +
                             $"clock={MoonlightActivityStage.PlayContinuationClockSourceForQA}/" +
                             $"{playContinuity.MaximumContinuationClockDelta:0.000000} " +
                             $"landmarkVisibility=" +
@@ -5540,6 +5565,90 @@ namespace MoonlightMagicHouse
             };
             return MoonlightGestureSample.Create(score, 0.42f, points);
         }
+
+        static void MeasurePlayCatchTapTrajectories(PlayContinuityObservation observation)
+        {
+            MoonlightGestureSample leftTap = PlayCatchTapSample(new Vector2(-0.60f, 0f));
+            MoonlightGestureSample rightTap = PlayCatchTapSample(new Vector2(0.60f, 0f));
+            MoonlightGestureSample centerTap = PlayCatchTapSample(Vector2.zero);
+            observation.CatchTapSamplesDistinct = !leftTap.ContentEquals(rightTap);
+            observation.CatchTapSeparationAt020 = Vector3.Distance(
+                MoonlightActivityStage.EvaluatePlayTrajectory(3, 0.20f, leftTap),
+                MoonlightActivityStage.EvaluatePlayTrajectory(3, 0.20f, rightTap));
+
+            float previousLeftDistance = float.PositiveInfinity;
+            float previousRightDistance = float.PositiveInfinity;
+            for (int i = 0; i <= 40; i++)
+            {
+                float progress = i / 40f;
+                Vector3 leftPoint = MoonlightActivityStage.EvaluatePlayTrajectory(
+                    3, progress, leftTap);
+                Vector3 rightPoint = MoonlightActivityStage.EvaluatePlayTrajectory(
+                    3, progress, rightTap);
+                observation.CatchTapSamplesPerTrajectory++;
+                observation.CatchTapFiniteAndBounded &=
+                    PlayCatchOraclePointIsFiniteAndBounded(leftPoint) &&
+                    PlayCatchOraclePointIsFiniteAndBounded(rightPoint);
+
+                float leftDistance = Vector3.Distance(
+                    leftPoint, MoonlightActivityStage.PlayCatchPoint);
+                float rightDistance = Vector3.Distance(
+                    rightPoint, MoonlightActivityStage.PlayCatchPoint);
+                observation.CatchTapNoIntersectionOrOvershoot &=
+                    leftDistance <= previousLeftDistance + 0.00001f &&
+                    rightDistance <= previousRightDistance + 0.00001f;
+                if (progress < MoonlightActivityStage.PlayCatchContactProgress)
+                    observation.CatchTapNoIntersectionOrOvershoot &=
+                        Vector3.Distance(leftPoint, rightPoint) > 0.0001f;
+                else
+                    observation.CatchTapMaximumHeldError = Mathf.Max(
+                        observation.CatchTapMaximumHeldError,
+                        Mathf.Max(leftDistance, rightDistance));
+                previousLeftDistance = leftDistance;
+                previousRightDistance = rightDistance;
+
+                float legacyT = progress >= MoonlightActivityStage.PlayCatchContactProgress
+                    ? 1f
+                    : Mathf.SmoothStep(0f, 1f,
+                        progress / MoonlightActivityStage.PlayCatchContactProgress);
+                Vector3 legacyCenter = Vector3.Lerp(
+                    new Vector3(0.48f, 1.12f, -0.18f),
+                    MoonlightActivityStage.PlayCatchPoint, legacyT);
+                Vector3 actualCenter = MoonlightActivityStage.EvaluatePlayTrajectory(
+                    3, progress, centerTap);
+                observation.CatchTapCenterMaximumDelta = Mathf.Max(
+                    observation.CatchTapCenterMaximumDelta,
+                    Vector3.Distance(actualCenter, legacyCenter));
+            }
+
+            observation.CatchTapMaximumContactError = Mathf.Max(
+                Vector3.Distance(MoonlightActivityStage.EvaluatePlayTrajectory(3,
+                    MoonlightActivityStage.PlayCatchContactProgress, leftTap),
+                    MoonlightActivityStage.PlayCatchPoint),
+                Vector3.Distance(MoonlightActivityStage.EvaluatePlayTrajectory(3,
+                    MoonlightActivityStage.PlayCatchContactProgress, rightTap),
+                    MoonlightActivityStage.PlayCatchPoint));
+            observation.CatchTapOraclePassed = observation.CatchTapSamplesDistinct &&
+                observation.CatchTapSamplesPerTrajectory == 41 &&
+                observation.CatchTapFiniteAndBounded &&
+                observation.CatchTapNoIntersectionOrOvershoot &&
+                observation.CatchTapSeparationAt020 >= 0.40f &&
+                observation.CatchTapMaximumContactError <= 0.0001f &&
+                observation.CatchTapMaximumHeldError <= 0.0001f &&
+                observation.CatchTapCenterMaximumDelta <= 0.0001f;
+        }
+
+        static MoonlightGestureSample PlayCatchTapSample(Vector2 position)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++) points[i] = position;
+            return MoonlightGestureSample.Create(0.95f, 0.12f, points);
+        }
+
+        static bool PlayCatchOraclePointIsFiniteAndBounded(Vector3 point) =>
+            PlayCoordinateIsFinite(point.x) && PlayCoordinateIsFinite(point.y) &&
+            PlayCoordinateIsFinite(point.z) && Mathf.Abs(point.x) <= 1.25f &&
+            point.y >= 0.18f && point.y <= 1.65f && Mathf.Abs(point.z) <= 1.25f;
 
         IEnumerator ObservePlayContinuityTrajectory(MoonlightActionFeedback feedback,
             MoonlightActivityStage stage, PlayContinuityObservation observation)

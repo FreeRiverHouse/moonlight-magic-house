@@ -90,6 +90,9 @@ namespace MoonlightMagicHouse
         public const float PlayMinimumJumpHeight = 0.72f;
         public const float PlayMaximumJumpHeight = 1.18f;
         public const float PlayCatchContactProgress = 0.38f;
+        const float PlayCatchTapMaximumInput = 0.80f;
+        const float PlayCatchTapHorizontalScale = 0.85f;
+        const float PlayCatchTapDepthScale = 0.45f;
         public const int RequiredAuthoritativePlayBallCount = 1;
         public const int PlayPhaseCount = 4;
         public const int RequiredPlayPhaseLandmarkCount = 11;
@@ -110,6 +113,7 @@ namespace MoonlightMagicHouse
         public const string PlayPhaseLandmarkRuntimeQAMarker =
             "MOONLIGHT_PLAY_PHASE_LANDMARK_RUNTIME_VERIFIED";
         public static readonly Vector3 PlayCatchPoint = new(0.94f, 0.54f, -0.46f);
+        static readonly Vector3 PlayCatchArcCenterStart = new(0.48f, 1.12f, -0.18f);
         static readonly string[] PlayPhaseLandmarkNames =
         {
             "ToyWand", "ToyWandStar", "ToyHoop", "FinishFlagPole", "FinishFlag",
@@ -4006,8 +4010,16 @@ namespace MoonlightMagicHouse
             }
 
             if (t >= PlayCatchContactProgress) return PlayCatchPoint;
+            Vector2 tapStart = sample.Start;
+            tapStart.x = Mathf.Clamp(IsFinite(tapStart.x) ? tapStart.x : 0f,
+                -PlayCatchTapMaximumInput, PlayCatchTapMaximumInput);
+            tapStart.y = Mathf.Clamp(IsFinite(tapStart.y) ? tapStart.y : 0f,
+                -PlayCatchTapMaximumInput, PlayCatchTapMaximumInput);
+            Vector3 catchStart = PlayCatchArcCenterStart + new Vector3(
+                tapStart.x * PlayCatchTapHorizontalScale, 0f,
+                -tapStart.y * PlayCatchTapDepthScale);
             float catchT = Mathf.SmoothStep(0f, 1f, t / PlayCatchContactProgress);
-            return Vector3.Lerp(new Vector3(0.48f, 1.12f, -0.18f), PlayCatchPoint, catchT);
+            return Vector3.Lerp(catchStart, PlayCatchPoint, catchT);
         }
 
         public static bool ValidateGestureResponsivePlayContract(out string detail)
@@ -4054,6 +4066,49 @@ namespace MoonlightMagicHouse
             float jumpHeight = jumpPeak.y - jumpStart.y;
             Vector3 catchContact = EvaluatePlayTrajectory(3, PlayCatchContactProgress, right);
             Vector3 catchFinal = EvaluatePlayTrajectory(3, 1f, left);
+            MoonlightGestureSample leftTap = PlayTapSample(new Vector2(-0.60f, 0f));
+            MoonlightGestureSample centerTap = PlayTapSample(Vector2.zero);
+            MoonlightGestureSample rightTap = PlayTapSample(new Vector2(0.60f, 0f));
+            float catchTapSeparation = Vector3.Distance(
+                EvaluatePlayTrajectory(3, 0.20f, leftTap),
+                EvaluatePlayTrajectory(3, 0.20f, rightTap));
+            float catchTapContactError = Mathf.Max(
+                Vector3.Distance(EvaluatePlayTrajectory(3, PlayCatchContactProgress, leftTap),
+                    PlayCatchPoint),
+                Vector3.Distance(EvaluatePlayTrajectory(3, PlayCatchContactProgress, rightTap),
+                    PlayCatchPoint));
+            float catchTapHeldError = 0f;
+            float centerCatchMaximumDelta = 0f;
+            bool catchTapFiniteAndBounded = true;
+            bool catchTapNoOvershoot = true;
+            float previousLeftDistance = float.PositiveInfinity;
+            float previousRightDistance = float.PositiveInfinity;
+            for (int i = 0; i <= 40; i++)
+            {
+                float progress = i / 40f;
+                Vector3 leftTapPoint = EvaluatePlayTrajectory(3, progress, leftTap);
+                Vector3 rightTapPoint = EvaluatePlayTrajectory(3, progress, rightTap);
+                catchTapFiniteAndBounded &= PlayPointIsFiniteAndBounded(leftTapPoint) &&
+                    PlayPointIsFiniteAndBounded(rightTapPoint);
+                float leftDistance = Vector3.Distance(leftTapPoint, PlayCatchPoint);
+                float rightDistance = Vector3.Distance(rightTapPoint, PlayCatchPoint);
+                catchTapNoOvershoot &= leftDistance <= previousLeftDistance + 0.00001f &&
+                    rightDistance <= previousRightDistance + 0.00001f;
+                previousLeftDistance = leftDistance;
+                previousRightDistance = rightDistance;
+                if (progress >= PlayCatchContactProgress)
+                    catchTapHeldError = Mathf.Max(catchTapHeldError,
+                        Mathf.Max(leftDistance, rightDistance));
+
+                float centerT = progress >= PlayCatchContactProgress
+                    ? 1f
+                    : Mathf.SmoothStep(0f, 1f, progress / PlayCatchContactProgress);
+                Vector3 legacyCenterPoint = Vector3.Lerp(
+                    PlayCatchArcCenterStart, PlayCatchPoint, centerT);
+                centerCatchMaximumDelta = Mathf.Max(centerCatchMaximumDelta,
+                    Vector3.Distance(EvaluatePlayTrajectory(3, progress, centerTap),
+                        legacyCenterPoint));
+            }
 
             bool finiteAndBounded = true;
             Vector2[] directions =
@@ -4079,11 +4134,21 @@ namespace MoonlightMagicHouse
             bool catchBounds = PlayPointIsFiniteAndBounded(catchContact) &&
                 Vector3.Distance(catchContact, catchFinal) <= 0.0001f &&
                 Vector3.Distance(catchFinal, PlayCatchPoint) <= 0.0001f;
+            bool catchTapResponse = catchTapSeparation >= 0.40f &&
+                catchTapContactError <= 0.0001f && catchTapHeldError <= 0.0001f &&
+                centerCatchMaximumDelta <= 0.0001f && catchTapFiniteAndBounded &&
+                catchTapNoOvershoot;
             detail = $"points={zigZag.PointCount} finiteClamped={finiteAndBounded} " +
                 $"mirrored={mirroredGeometry}/{mirroredSeparation:0.000} " +
                 $"throwExtent={shortExtent:0.000}-" +
                 $"{longExtent:0.000} zigTurns={zigZagTurns} jump={jumpExtent:0.000}/" +
-                $"{jumpHeight:0.000} catchHeld={catchBounds}";
+                $"{jumpHeight:0.000} catchHeld={catchBounds} " +
+                $"catchTapSep020={catchTapSeparation:0.000} " +
+                $"catchContact={catchTapContactError:0.000000} " +
+                $"catchHeldError={catchTapHeldError:0.000000} " +
+                $"catchSamples=41x2 catchBounded={catchTapFiniteAndBounded} " +
+                $"catchNoOvershoot={catchTapNoOvershoot} " +
+                $"catchCenterDelta={centerCatchMaximumDelta:0.000000}";
             bool authoritativeBallContract = RequiredAuthoritativePlayBallCount == 1 &&
                 !MoonlightActionFeedback.ShouldCreateOpaqueActionOrb(
                     MoonlightSpatialActionKind.Play);
@@ -4092,7 +4157,7 @@ namespace MoonlightMagicHouse
             return zigZag.PointCount == 7 && zigZag.HasSevenFiniteNormalizedPoints &&
                 finiteAndBounded && mirroredGeometry && mirroredSeparation >= 0.80f &&
                 longExtent > shortExtent + 0.40f && zigZagTurns >= 3 && jumpBounds && catchBounds &&
-                authoritativeBallContract;
+                catchTapResponse && authoritativeBallContract;
         }
 
         public static bool ValidatePlayPhaseLandmarkContract(out string detail)
@@ -4230,6 +4295,13 @@ namespace MoonlightMagicHouse
                 points[i] = direction * Mathf.Lerp(-displacement * 0.5f,
                     displacement * 0.5f, i / (float)(points.Length - 1));
             return MoonlightGestureSample.Create(0.95f, 0.35f, points);
+        }
+
+        static MoonlightGestureSample PlayTapSample(Vector2 position)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++) points[i] = position;
+            return MoonlightGestureSample.Create(0.95f, 0.12f, points);
         }
 
         static Vector2 InterpolateSamplePoint(MoonlightGestureSample sample, float t)
