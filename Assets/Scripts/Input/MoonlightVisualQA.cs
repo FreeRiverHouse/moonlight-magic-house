@@ -521,7 +521,8 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-live-hold-readiness " +
                 $"{liveHoldReadinessDetail} " +
-                "marker=MOONLIGHT_IPAD_LIVE_HOLD_STATIC_CONTRACT_VERIFIED");
+                "marker=MOONLIGHT_IPAD_LIVE_HOLD_STATIC_CONTRACT_VERIFIED " +
+                "marker=MOONLIGHT_IPAD_LIVE_HOLD_4_OF_4_STATIC_VERIFIED");
             bool freeHopControllerStatic =
                 MoonlightPlayerController.ValidateFreeHopStaticContract(
                     out string freeHopControllerDetail);
@@ -752,6 +753,11 @@ namespace MoonlightMagicHouse
                 "marker=MOONLIGHT_GESTURE_TRACE_READY MOONLIGHT_IPAD_GESTURE_GUIDE_READY");
 
             bool expectIPadHud = args.Contains("-moonlightIPadHudQa");
+            bool verifyLiveHoldRuntime = expectIPadHud &&
+                args.Contains("-moonlightLiveHoldRuntimeQa");
+            int verifiedLiveHoldRuntimeActions = 0;
+            bool verifiedLiveHoldCancelCleanup = false;
+            bool verifiedLiveHoldFocusLossCleanup = false;
             var touchJoystick = FindAnyObjectByType<MoonlightTouchJoystick>();
             if (expectIPadHud)
             {
@@ -1772,6 +1778,7 @@ namespace MoonlightMagicHouse
                     touchJoystick.ClearInputForQA();
 
                 var verifiedCareContacts = new System.Collections.Generic.HashSet<string>();
+                float expectedSessionScoreTotal = 0f;
                 for (int step = 0; step < zone.RequiredSteps; step++)
                 {
                     var expected = zone.RequiredGesture;
@@ -1840,8 +1847,91 @@ namespace MoonlightMagicHouse
                         : -1;
                     if (expectIPadHud)
                         touchJoystick.ArmHeldInputForQA(new Vector2(0.72f, 0.38f));
-                    bool acceptedActionStarted = pad.SubmitSynthetic(expected, 0.95f);
+                    bool verifyThisLiveHold = verifyLiveHoldRuntime &&
+                        zone.SupportsLiveHoldReadiness;
+                    bool acceptedActionStarted;
+                    if (verifyThisLiveHold)
+                    {
+                        int progressBeforeLiveHold = zone.ProgressStep;
+                        var liveHoldPointer = new PointerEventData(EventSystem.current)
+                        {
+                            pointerId = 7100 + verifiedLiveHoldRuntimeActions,
+                            position = RectTransformUtility.WorldToScreenPoint(null,
+                                ui.actionBtn.transform.position)
+                        };
+                        pad.OnPointerDown(liveHoldPointer);
+                        bool cancellationOverlayObserved = pad.IsTrackingGesture &&
+                            pad.IsLiveHoldReadinessActive &&
+                            pad.LiveHoldReadinessOverlayVisible;
+                        bool useFocusLossCleanup = verifiedLiveHoldRuntimeActions % 2 == 1;
+                        if (useFocusLossCleanup)
+                            pad.SimulateApplicationFocusLossForQA();
+                        else
+                            pad.OnCancel(null);
+                        string expectedCleanupReason = useFocusLossCleanup
+                            ? "focus-lost"
+                            : "event-cancel";
+                        bool cancellationCleanupPass = cancellationOverlayObserved &&
+                            !pad.IsTrackingGesture && pad.LiveHoldReadinessStateIsClean &&
+                            !pad.LiveHoldReadinessOverlayVisible &&
+                            pad.LastLiveHoldCancellationCleanupObserved &&
+                            pad.LastLiveHoldCancellationReason == expectedCleanupReason &&
+                            zone.ProgressStep == progressBeforeLiveHold;
+                        if (!cancellationCleanupPass)
+                        {
+                            Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-live-hold-cleanup " +
+                                $"action={zone.Kind} reason={pad.LastLiveHoldCancellationReason}/" +
+                                $"{expectedCleanupReason} overlay={cancellationOverlayObserved} " +
+                                $"tracking={pad.IsTrackingGesture} " +
+                                $"stateClean={pad.LiveHoldReadinessStateIsClean} " +
+                                $"cleanup={pad.LastLiveHoldCancellationCleanupObserved} " +
+                                $"step={zone.ProgressStep}/{progressBeforeLiveHold}");
+                            Application.Quit(140);
+                            yield break;
+                        }
+                        verifiedLiveHoldCancelCleanup |= !useFocusLossCleanup;
+                        verifiedLiveHoldFocusLossCleanup |= useFocusLossCleanup;
+
+                        pad.OnPointerDown(liveHoldPointer);
+                        float liveHoldDeadline = Time.unscaledTime + 1.5f;
+                        while (pad.LiveHoldScore <
+                               MoonlightActionFeedback.PerfectActionQualityScore &&
+                               Time.unscaledTime < liveHoldDeadline)
+                            yield return null;
+                        bool liveReadinessPass = pad.IsTrackingGesture &&
+                            pad.IsLiveHoldReadinessActive && pad.LiveHoldIsReady &&
+                            pad.LiveHoldReadinessOverlayVisible &&
+                            pad.LiveHoldReadinessHapticPlayed &&
+                            pad.LiveHoldReadinessHapticCount == 1;
+                        yield return null;
+                        liveReadinessPass &= pad.LiveHoldReadinessHapticCount == 1;
+                        pad.OnPointerUp(liveHoldPointer);
+                        acceptedActionStarted = zone.LastGesturePassed;
+                        bool runtimeContractPass =
+                            pad.ValidateLastLiveHoldReadinessRuntimeContract(
+                                zone.Kind, out string liveHoldRuntimeDetail);
+                        if (!liveReadinessPass || !runtimeContractPass)
+                        {
+                            Debug.LogError($"[MoonlightGameplayQA][FAIL] " +
+                                $"ipad-live-hold-runtime action={zone.Kind} " +
+                                $"readiness={liveReadinessPass} " +
+                                $"score={pad.LastScore:0.000} " +
+                                $"contract=({liveHoldRuntimeDetail})");
+                            Application.Quit(141);
+                            yield break;
+                        }
+                        verifiedLiveHoldRuntimeActions++;
+                        Debug.Log($"[MoonlightGameplayQA][PASS] ipad-live-hold-runtime " +
+                            $"{liveHoldRuntimeDetail} cancel={expectedCleanupReason} " +
+                            $"marker=MOONLIGHT_IPAD_LIVE_HOLD_RUNTIME_ACTION_VERIFIED");
+                    }
+                    else
+                    {
+                        acceptedActionStarted = pad.SubmitSynthetic(expected, 0.95f);
+                    }
                     yield return new WaitForSeconds(0.08f);
+                    expectedSessionScoreTotal += zone.LastGestureScore;
+                    float expectedSessionAverage = expectedSessionScoreTotal / (step + 1f);
                     var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
                     if (zone.Kind == MoonlightSpatialActionKind.Care)
                     {
@@ -1938,12 +2028,12 @@ namespace MoonlightMagicHouse
                     bool finalMasteryStep = step == zone.RequiredSteps - 1;
                     bool masteryStatePass = finalMasteryStep
                         ? zone.ActivitySessionAcceptedSteps == 0 &&
-                          Approximately(zone.LastCompletedAverageScore, 0.95f) &&
+                          Approximately(zone.LastCompletedAverageScore, expectedSessionAverage) &&
                           zone.LastCompletedBestCombo == zone.RequiredSteps &&
                           zone.LastCompletedPerfectSteps == zone.RequiredSteps &&
                           zone.LastMasteryBonusCoins == 3
                         : zone.ActivitySessionAcceptedSteps == step + 1 &&
-                          Approximately(zone.ActivitySessionAverageScore, 0.95f) &&
+                          Approximately(zone.ActivitySessionAverageScore, expectedSessionAverage) &&
                           zone.ActivityCurrentCombo == step + 1 &&
                           zone.ActivityBestCombo == step + 1 &&
                           zone.ActivityPerfectSteps == step + 1;
@@ -3254,6 +3344,24 @@ namespace MoonlightMagicHouse
                 }
                 completedActivities++;
             }
+
+            if (verifyLiveHoldRuntime &&
+                (verifiedLiveHoldRuntimeActions != 4 ||
+                 !verifiedLiveHoldCancelCleanup || !verifiedLiveHoldFocusLossCleanup))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-live-hold-runtime-matrix " +
+                    $"actions={verifiedLiveHoldRuntimeActions}/4 " +
+                    $"cancelCleanup={verifiedLiveHoldCancelCleanup} " +
+                    $"focusLossCleanup={verifiedLiveHoldFocusLossCleanup}");
+                Application.Quit(142);
+                yield break;
+            }
+            if (verifyLiveHoldRuntime)
+                Debug.Log($"[MoonlightGameplayQA][PASS] ipad-live-hold-runtime-matrix " +
+                    $"actions={verifiedLiveHoldRuntimeActions}/4 " +
+                    $"cancelCleanup={verifiedLiveHoldCancelCleanup} " +
+                    $"focusLossCleanup={verifiedLiveHoldFocusLossCleanup} " +
+                    $"marker=MOONLIGHT_IPAD_LIVE_HOLD_RUNTIME_4_OF_4_VERIFIED");
 
             if (completedActivities != 5 || verifiedPersistentStations != 5 ||
                 verifiedVisualSignatures.Count != 20)

@@ -247,7 +247,20 @@ namespace MoonlightMagicHouse
         bool _liveHoldReadinessActive;
         bool _liveHoldReady;
         bool _liveHoldHapticPlayed;
+        bool _liveHoldOverlayObserved;
+        int _liveHoldHapticCount;
         float _liveHoldScore;
+        bool _hasLastLiveHoldRuntimeEvidence;
+        MoonlightSpatialActionKind _lastLiveHoldActionKind;
+        int _lastLiveHoldStartStep;
+        int _lastLiveHoldEndStep;
+        bool _lastLiveHoldOverlayObserved;
+        int _lastLiveHoldHapticCount;
+        bool _lastLiveHoldCompletionAccepted;
+        bool _lastLiveHoldCompletionHapticSuppressed;
+        bool _lastLiveHoldCleanupObserved;
+        bool _lastLiveHoldCancellationCleanupObserved;
+        string _lastLiveHoldCancellationReason = "";
         bool _trackingFreeHop;
 
         public MoonlightGestureKind ActiveGesture => _gesture;
@@ -269,7 +282,16 @@ namespace MoonlightMagicHouse
         public bool IsLiveHoldReadinessActive => _liveHoldReadinessActive;
         public bool LiveHoldIsReady => _liveHoldReady;
         public bool LiveHoldReadinessHapticPlayed => _liveHoldHapticPlayed;
+        public int LiveHoldReadinessHapticCount => _liveHoldHapticCount;
         public float LiveHoldScore => _liveHoldScore;
+        public bool LiveHoldReadinessOverlayVisible => _liveHoldReadinessActive &&
+            _resultOverlay != null && _resultOverlay.color.a > 0f;
+        public bool LiveHoldReadinessStateIsClean => IsLiveHoldReadinessStateClean(
+            _liveHoldReadinessActive, _liveHoldReady, _liveHoldHapticPlayed,
+            _liveHoldScore, _liveHoldHapticCount);
+        public bool LastLiveHoldCancellationCleanupObserved =>
+            _lastLiveHoldCancellationCleanupObserved;
+        public string LastLiveHoldCancellationReason => _lastLiveHoldCancellationReason;
         public bool IsResultFeedbackActive => _feedbackUntil > Time.unscaledTime;
         public string ResultFeedbackQAMarker =>
             ValidateResultFeedbackContract(out _) && ResultOverlayIsReady
@@ -411,6 +433,8 @@ namespace MoonlightMagicHouse
             _startedAt = Time.unscaledTime;
             _points.Clear();
             ResetLiveHoldReadiness(false);
+            _lastLiveHoldCancellationCleanupObserved = false;
+            _lastLiveHoldCancellationReason = "";
             _liveHoldReadinessActive = ShouldUseLiveHoldReadiness(
                 _ui != null && _ui.IsIPadHUDLayoutActive,
                 zone != null && zone.SupportsLiveHoldReadiness);
@@ -439,11 +463,20 @@ namespace MoonlightMagicHouse
             var startedZone = _startedZone;
             bool wasTrackingFreeHop = _trackingFreeHop;
             float duration = Time.unscaledTime - _startedAt;
+            bool wasLiveHoldReadinessActive = _liveHoldReadinessActive;
+            MoonlightSpatialActionKind liveHoldActionKind = startedZone != null
+                ? startedZone.Kind
+                : default;
+            int liveHoldStartStep = startedZone != null ? startedZone.ProgressStep : -1;
+            bool liveHoldOverlayObserved = _liveHoldOverlayObserved;
+            int liveHoldHapticCount = _liveHoldHapticCount;
             bool acceptedHapticAlreadyPlayed = _liveHoldHapticPlayed;
             _pointerId = int.MinValue;
             _startedZone = null;
             _trackingFreeHop = false;
             ResetLiveHoldReadiness(true);
+            bool liveHoldCleanupObserved = LiveHoldReadinessStateIsClean &&
+                ResultOverlayIsClear;
             RestoreTrackingVisual();
             RefreshGuideVisibility();
 
@@ -470,6 +503,20 @@ namespace MoonlightMagicHouse
             LastSample = MoonlightGestureSample.Create(LastScore, duration, _points);
             Debug.Log($"[MoonlightActivityQA] gesture kind={_gesture} score={LastScore:0.00} points={_points.Count}");
             _ui?.ExecuteContextGesture(_gesture, LastSample, acceptedHapticAlreadyPlayed);
+            if (wasLiveHoldReadinessActive)
+            {
+                _hasLastLiveHoldRuntimeEvidence = true;
+                _lastLiveHoldActionKind = liveHoldActionKind;
+                _lastLiveHoldStartStep = liveHoldStartStep;
+                _lastLiveHoldEndStep = startedZone.ProgressStep;
+                _lastLiveHoldOverlayObserved = liveHoldOverlayObserved;
+                _lastLiveHoldHapticCount = liveHoldHapticCount;
+                _lastLiveHoldCompletionAccepted = startedZone.LastGesturePassed;
+                _lastLiveHoldCompletionHapticSuppressed =
+                    startedZone.LastAcceptedHapticWasPreplayed &&
+                    !startedZone.LastAcceptedGesturePlayedCompletionHaptic;
+                _lastLiveHoldCleanupObserved = liveHoldCleanupObserved;
+            }
             SetResultVisual(startedZone.LastGesturePassed, LastScore);
             _points.Clear();
         }
@@ -517,6 +564,8 @@ namespace MoonlightMagicHouse
             if (!hasFocus) CancelTracking("focus-lost");
         }
 
+        public void SimulateApplicationFocusLossForQA() => OnApplicationFocus(false);
+
         void OnApplicationPause(bool paused)
         {
             if (paused) CancelTracking("paused");
@@ -525,6 +574,7 @@ namespace MoonlightMagicHouse
         void CancelTracking(string reason)
         {
             bool wasTracking = _pointerId != int.MinValue;
+            bool wasLiveHoldReadinessActive = _liveHoldReadinessActive;
             _pointerId = int.MinValue;
             _startedZone = null;
             _trackingFreeHop = false;
@@ -534,6 +584,12 @@ namespace MoonlightMagicHouse
             ClearResultFeedback();
             RestoreTrackingVisual();
             RefreshGuideVisibility();
+            if (wasLiveHoldReadinessActive)
+            {
+                _lastLiveHoldCancellationReason = reason;
+                _lastLiveHoldCancellationCleanupObserved =
+                    LiveHoldReadinessStateIsClean && ResultOverlayIsClear;
+            }
             if (wasTracking)
                 Debug.Log($"[MoonlightActivityQA] gesture-cancelled reason={reason}");
         }
@@ -684,6 +740,7 @@ namespace MoonlightMagicHouse
                     _liveHoldScore, _startedZone.PassingScore))
             {
                 _liveHoldHapticPlayed = true;
+                _liveHoldHapticCount++;
                 HapticFeedback.Success();
             }
         }
@@ -707,6 +764,7 @@ namespace MoonlightMagicHouse
             _resultOverlay.color = color;
             _resultOverlayRect.localScale = Vector3.one * Mathf.Lerp(
                 MinimumResultFillScale, MaximumResultFillScale, Mathf.Clamp01(score));
+            _liveHoldOverlayObserved = true;
         }
 
         void ResetLiveHoldReadiness(bool clearOverlay)
@@ -714,9 +772,40 @@ namespace MoonlightMagicHouse
             _liveHoldReadinessActive = false;
             _liveHoldReady = false;
             _liveHoldHapticPlayed = false;
+            _liveHoldOverlayObserved = false;
+            _liveHoldHapticCount = 0;
             _liveHoldScore = 0f;
             if (clearOverlay)
                 ClearResultFeedback();
+        }
+
+        bool ResultOverlayIsClear => _resultOverlay == null || _resultOverlay.color.a <= 0f;
+
+        static bool IsLiveHoldReadinessStateClean(bool active, bool ready,
+            bool hapticPlayed, float score, int hapticCount) =>
+            !active && !ready && !hapticPlayed && Mathf.Approximately(score, 0f) &&
+            hapticCount == 0;
+
+        public bool ValidateLastLiveHoldReadinessRuntimeContract(
+            MoonlightSpatialActionKind expectedActionKind, out string detail)
+        {
+            int expectedStartStep = expectedActionKind == MoonlightSpatialActionKind.Cook ? 2 : 3;
+            int expectedEndStep = expectedActionKind == MoonlightSpatialActionKind.Cook ? 3 : 0;
+            bool identityPass = _hasLastLiveHoldRuntimeEvidence &&
+                _lastLiveHoldActionKind == expectedActionKind &&
+                _lastLiveHoldStartStep == expectedStartStep &&
+                _lastLiveHoldEndStep == expectedEndStep;
+            bool hapticOnce = _lastLiveHoldHapticCount == 1 &&
+                _lastLiveHoldCompletionHapticSuppressed;
+            detail = $"action={_lastLiveHoldActionKind}/{expectedActionKind} " +
+                $"step={_lastLiveHoldStartStep}->{_lastLiveHoldEndStep}/" +
+                $"{expectedStartStep}->{expectedEndStep} overlay={_lastLiveHoldOverlayObserved} " +
+                $"haptic={_lastLiveHoldHapticCount}/1 " +
+                $"completion={_lastLiveHoldCompletionAccepted} " +
+                $"completionHapticSuppressed={_lastLiveHoldCompletionHapticSuppressed} " +
+                $"cleanup={_lastLiveHoldCleanupObserved}";
+            return identityPass && _lastLiveHoldOverlayObserved && hapticOnce &&
+                _lastLiveHoldCompletionAccepted && _lastLiveHoldCleanupObserved;
         }
 
         void RestoreTrackingVisual()
@@ -1435,12 +1524,29 @@ namespace MoonlightMagicHouse
             float greatScore = ScoreGesture(MoonlightGestureKind.Hold, cleanHold, greatDuration);
             float perfectScore = ScoreGesture(MoonlightGestureKind.Hold, cleanHold, perfectDuration);
             float movedScore = ScoreGesture(MoonlightGestureKind.Hold, excessiveMovement, 1f);
-            bool cookBakeOnly = MoonlightSpatialActionZone.IsLiveHoldReadinessStep(
-                    MoonlightSpatialActionKind.Cook, 2, MoonlightGestureKind.Hold) &&
+            MoonlightSpatialActionKind[] liveHoldActionKinds =
+            {
+                MoonlightSpatialActionKind.Cook,
+                MoonlightSpatialActionKind.Garden,
+                MoonlightSpatialActionKind.Read,
+                MoonlightSpatialActionKind.Care
+            };
+            int[] liveHoldProgressSteps = { 2, 3, 3, 3 };
+            int supportedLiveHoldActions = 0;
+            for (int index = 0; index < liveHoldActionKinds.Length; index++)
+            {
+                if (MoonlightSpatialActionZone.IsLiveHoldReadinessStep(
+                        liveHoldActionKinds[index], liveHoldProgressSteps[index],
+                        MoonlightGestureKind.Hold))
+                    supportedLiveHoldActions++;
+            }
+            bool fourOfFourActivities = supportedLiveHoldActions == 4 &&
                 !MoonlightSpatialActionZone.IsLiveHoldReadinessStep(
                     MoonlightSpatialActionKind.Cook, 1, MoonlightGestureKind.Hold) &&
                 !MoonlightSpatialActionZone.IsLiveHoldReadinessStep(
-                    MoonlightSpatialActionKind.Garden, 3, MoonlightGestureKind.Hold);
+                    MoonlightSpatialActionKind.Garden, 3, MoonlightGestureKind.Swipe) &&
+                !MoonlightSpatialActionZone.IsLiveHoldReadinessStep(
+                    MoonlightSpatialActionKind.Play, 3, MoonlightGestureKind.Hold);
             bool labelsPass = MoonlightUI.LiveHoldReadinessLabel(earlyScore, passingScore) ==
                     "HOLD 0%" &&
                 MoonlightUI.LiveHoldReadinessLabel(readyScore, passingScore) == "GOOD" &&
@@ -1452,13 +1558,22 @@ namespace MoonlightMagicHouse
                 movedScore < passingScore;
             float bakeProgress = MoonlightUI.CalculateActivityProgress01(2, 0f, 4);
             string bakeProgressLabel = MoonlightUI.ActivityProgressLabel(3, 4);
+            float finalHoldProgress = MoonlightUI.CalculateActivityProgress01(3, 0f, 4);
+            string finalHoldProgressLabel = MoonlightUI.ActivityProgressLabel(4, 4);
             bool hapticOnce = !ShouldPlayLiveHoldReadinessHaptic(
                     false, earlyScore, passingScore) &&
                 ShouldPlayLiveHoldReadinessHaptic(false, readyScore, passingScore) &&
                 !ShouldPlayLiveHoldReadinessHaptic(true, greatScore, passingScore) &&
-                !ShouldPlayLiveHoldReadinessHaptic(true, movedScore, passingScore);
+                !ShouldPlayLiveHoldReadinessHaptic(true, movedScore, passingScore) &&
+                !MoonlightSpatialActionZone.ShouldPlayAcceptedGestureHaptic(true, true) &&
+                MoonlightSpatialActionZone.ShouldPlayAcceptedGestureHaptic(true, false);
             bool existingNonRaycastOverlay = ResultOverlayObjectName ==
                     "GestureResultOverlay" && !ResultOverlayRaycastTarget;
+            bool cleanupContract = IsLiveHoldReadinessStateClean(
+                    false, false, false, 0f, 0) &&
+                !IsLiveHoldReadinessStateClean(true, false, false, 0f, 0) &&
+                !IsLiveHoldReadinessStateClean(false, true, false, 0f, 0) &&
+                !IsLiveHoldReadinessStateClean(false, false, true, readyScore, 1);
             bool ipadGate = ShouldUseLiveHoldReadiness(true, true) &&
                 !ShouldUseLiveHoldReadiness(false, true) &&
                 !ShouldUseLiveHoldReadiness(true, false) &&
@@ -1467,12 +1582,16 @@ namespace MoonlightMagicHouse
                 $"{perfectDuration:0.000} scores={earlyScore:0.000}/{readyScore:0.000}/" +
                 $"{greatScore:0.000}/{perfectScore:0.000} moved={movedScore:0.000} " +
                 $"threshold={passingScore:0.00} labels={labelsPass} " +
-                $"progress={bakeProgressLabel}:{bakeProgress:0.000} " +
+                $"progress={bakeProgressLabel}:{bakeProgress:0.000}/" +
+                $"{finalHoldProgressLabel}:{finalHoldProgress:0.000} " +
                 $"hapticOnce={hapticOnce} overlayExistingNonRaycast={existingNonRaycastOverlay} " +
-                $"cookBakeOnly={cookBakeOnly} ipadGate={ipadGate}";
-            return scoresPass && labelsPass && bakeProgressLabel == "3/4" && hapticOnce &&
-                existingNonRaycastOverlay && cookBakeOnly && ipadGate &&
-                Mathf.Approximately(bakeProgress, 0.5f);
+                $"activities={supportedLiveHoldActions}/4 cleanup={cleanupContract} " +
+                $"ipadGate={ipadGate}";
+            return Mathf.Approximately(passingScore, 0.58f) && scoresPass && labelsPass &&
+                bakeProgressLabel == "3/4" && finalHoldProgressLabel == "4/4" &&
+                hapticOnce && existingNonRaycastOverlay && fourOfFourActivities &&
+                cleanupContract && ipadGate && Mathf.Approximately(bakeProgress, 0.5f) &&
+                Mathf.Approximately(finalHoldProgress, 0.75f);
         }
     }
 }
