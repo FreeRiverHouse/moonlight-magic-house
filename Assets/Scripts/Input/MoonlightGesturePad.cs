@@ -46,6 +46,11 @@ namespace MoonlightMagicHouse
         public bool IsTrackingGesture => _pointerId != int.MinValue;
         public int TraceDotPoolCount => _traceDots.Length;
         public int VisibleTraceDotCount => _traceDotCount;
+        public Vector2 TouchSurfaceSize => _rect != null ? _rect.rect.size : Vector2.zero;
+        public string CoordinateQAMarker =>
+            ValidateCoordinateNormalization(TouchSurfaceSize, out _)
+                ? "MOONLIGHT_GESTURE_COORDINATES_ISOTROPIC"
+                : "MOONLIGHT_GESTURE_COORDINATES_DISTORTED";
         public bool TracePoolIsReady
         {
             get
@@ -111,6 +116,7 @@ namespace MoonlightMagicHouse
             ClearTrace();
             LastRejectionReason = "";
             SetTrackingVisual();
+            HapticFeedback.Light();
             AddPoint(eventData);
         }
 
@@ -203,8 +209,7 @@ namespace MoonlightMagicHouse
             local.x = Mathf.Clamp(local.x, _rect.rect.xMin + 5f, _rect.rect.xMax - 5f);
             local.y = Mathf.Clamp(local.y, _rect.rect.yMin + 5f, _rect.rect.yMax - 5f);
             Vector2 tracePosition = local;
-            local.x /= Mathf.Max(1f, size.x);
-            local.y /= Mathf.Max(1f, size.y);
+            local = NormalizeGesturePoint(local, size);
             if (_points.Count == 0 || Vector2.Distance(_points[^1], local) > 0.015f)
             {
                 _points.Add(local);
@@ -361,6 +366,52 @@ namespace MoonlightMagicHouse
             for (int i = 0; i < GestureTraceDotCapacity; i++)
                 if (_traceDots[i] != null)
                     _traceDots[i].gameObject.SetActive(false);
+        }
+
+        public static Vector2 NormalizeGesturePoint(Vector2 localPoint, Vector2 surfaceSize)
+        {
+            float referenceSize = Mathf.Max(1f,
+                Mathf.Min(Mathf.Abs(surfaceSize.x), Mathf.Abs(surfaceSize.y)));
+            return localPoint / referenceSize;
+        }
+
+        public static bool ValidateCoordinateNormalization(Vector2 surfaceSize,
+                                                           out string detail)
+        {
+            float sampleRadius = Mathf.Max(1f,
+                Mathf.Min(Mathf.Abs(surfaceSize.x), Mathf.Abs(surfaceSize.y)) * 0.35f);
+            Vector2 horizontal = NormalizeGesturePoint(
+                new Vector2(sampleRadius, 0f), surfaceSize);
+            Vector2 vertical = NormalizeGesturePoint(
+                new Vector2(0f, sampleRadius), surfaceSize);
+            float ratio = vertical.magnitude > 0.0001f
+                ? horizontal.magnitude / vertical.magnitude
+                : 0f;
+            detail = $"surface={surfaceSize.x:0}x{surfaceSize.y:0} " +
+                $"horizontal={horizontal.magnitude:0.000} vertical={vertical.magnitude:0.000} " +
+                $"ratio={ratio:0.000}";
+            return surfaceSize.x >= 1f && surfaceSize.y >= 1f &&
+                Mathf.Abs(horizontal.magnitude - vertical.magnitude) <= 0.001f &&
+                Mathf.Abs(ratio - 1f) <= 0.001f;
+        }
+
+        public static bool ValidateIPadCoordinateContract(out string detail)
+        {
+            Vector2 surface = new Vector2(280f, 100f);
+            bool isotropic = ValidateCoordinateNormalization(surface, out string coordinateDetail);
+            var pixelZigZag = new[]
+            {
+                new Vector2(-35f, -35f), new Vector2(35f, -18f),
+                new Vector2(-35f, 0f), new Vector2(35f, 18f),
+                new Vector2(-35f, 35f)
+            };
+            var normalizedZigZag = new Vector2[pixelZigZag.Length];
+            for (int i = 0; i < pixelZigZag.Length; i++)
+                normalizedZigZag[i] = NormalizeGesturePoint(pixelZigZag[i], surface);
+            float zigZagScore = ScoreGesture(MoonlightGestureKind.ZigZag,
+                normalizedZigZag, 0.8f);
+            detail = $"{coordinateDetail} pixelZigZag={zigZagScore:0.00}";
+            return isotropic && zigZagScore >= 0.70f;
         }
 
         public static float ScoreGesture(MoonlightGestureKind gesture,
