@@ -253,6 +253,14 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] gesture-recognizer {recognizerDetail} " +
                 "marker=MOONLIGHT_GESTURE_RECOGNIZER_VERIFIED");
+            if (!MoonlightSpatialActionZone.ValidateMasteryContract(out string masteryDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-mastery {masteryDetail}");
+                Application.Quit(59);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] activity-mastery {masteryDetail} " +
+                "marker=MOONLIGHT_ACTIVITY_MASTERY_CONTRACT_VERIFIED");
             if (!pad.TracePoolIsReady ||
                 pad.TraceDotPoolCount != MoonlightGesturePad.GestureTraceDotCapacity)
             {
@@ -510,6 +518,36 @@ namespace MoonlightMagicHouse
                     Debug.Log($"[MoonlightGameplayQA][PASS] busy-gesture action={zone.Kind} " +
                         $"step={step + 1} reason=\"{pad.LastRejectionReason}\" " +
                         "marker=MOONLIGHT_BUSY_GESTURE_REJECTED");
+                    bool finalMasteryStep = step == zone.RequiredSteps - 1;
+                    bool masteryStatePass = finalMasteryStep
+                        ? zone.ActivitySessionAcceptedSteps == 0 &&
+                          Approximately(zone.LastCompletedAverageScore, 0.95f) &&
+                          zone.LastCompletedBestCombo == zone.RequiredSteps &&
+                          zone.LastCompletedPerfectSteps == zone.RequiredSteps &&
+                          zone.LastMasteryBonusCoins == 3
+                        : zone.ActivitySessionAcceptedSteps == step + 1 &&
+                          Approximately(zone.ActivitySessionAverageScore, 0.95f) &&
+                          zone.ActivityCurrentCombo == step + 1 &&
+                          zone.ActivityBestCombo == step + 1 &&
+                          zone.ActivityPerfectSteps == step + 1;
+                    if (!masteryStatePass)
+                    {
+                        Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-mastery-state action={zone.Kind} " +
+                            $"step={step + 1} accepted={zone.ActivitySessionAcceptedSteps} " +
+                            $"average={zone.ActivitySessionAverageScore:0.00} combo={zone.ActivityCurrentCombo}/" +
+                            $"{zone.ActivityBestCombo} perfect={zone.ActivityPerfectSteps} " +
+                            $"lastAverage={zone.LastCompletedAverageScore:0.00} " +
+                            $"lastCombo={zone.LastCompletedBestCombo} lastPerfect={zone.LastCompletedPerfectSteps} " +
+                            $"bonus={zone.LastMasteryBonusCoins}");
+                        Application.Quit(60);
+                        yield break;
+                    }
+                    Debug.Log($"[MoonlightGameplayQA][PASS] activity-mastery-state action={zone.Kind} " +
+                        $"step={step + 1}/{zone.RequiredSteps} " +
+                        $"average={(finalMasteryStep ? zone.LastCompletedAverageScore : zone.ActivitySessionAverageScore):0.00} " +
+                        $"combo={(finalMasteryStep ? zone.LastCompletedBestCombo : zone.ActivityBestCombo)} " +
+                        $"bonus={(finalMasteryStep ? zone.LastMasteryBonusCoins : 0)} " +
+                        "marker=MOONLIGHT_ACTIVITY_MASTERY_STATE_VERIFIED");
                     if (expectIPadHud && ui != null &&
                         (ui.IsRoomNavigationVisible || !ui.IsRoomNavigationLocked))
                     {
@@ -1013,28 +1051,28 @@ namespace MoonlightMagicHouse
                                     Approximately(moonlight.stats.magic - rewardMagic, 5f) &&
                                     Approximately(moonlight.stats.hunger - rewardHunger, 20f) &&
                                     Approximately(moonlight.stats.rest - rewardRest, 0f) &&
-                                    moonlight.xp - rewardXp == 14 && moonlight.coins == rewardCoins,
+                                    moonlight.xp - rewardXp == 14 && moonlight.coins - rewardCoins == 3,
                                 MoonlightSpatialActionKind.Play =>
                                     Approximately(moonlight.stats.wonder - rewardWonder, 25f) &&
                                     Approximately(moonlight.stats.warmth - rewardWarmth, 0f) &&
                                     Approximately(moonlight.stats.magic - rewardMagic, 13f) &&
                                     Approximately(moonlight.stats.hunger - rewardHunger, 0f) &&
                                     Approximately(moonlight.stats.rest - rewardRest, 0f) &&
-                                    moonlight.xp - rewardXp == 32 && moonlight.coins - rewardCoins == 2,
+                                    moonlight.xp - rewardXp == 32 && moonlight.coins - rewardCoins == 5,
                                 MoonlightSpatialActionKind.Garden =>
                                     Approximately(moonlight.stats.wonder - rewardWonder, 16f) &&
                                     Approximately(moonlight.stats.warmth - rewardWarmth, 0f) &&
                                     Approximately(moonlight.stats.magic - rewardMagic, 12f) &&
                                     Approximately(moonlight.stats.hunger - rewardHunger, 0f) &&
                                     Approximately(moonlight.stats.rest - rewardRest, 0f) &&
-                                    moonlight.xp - rewardXp == 10 && moonlight.coins - rewardCoins == 3,
+                                    moonlight.xp - rewardXp == 10 && moonlight.coins - rewardCoins == 6,
                                 MoonlightSpatialActionKind.Read =>
                                     Approximately(moonlight.stats.wonder - rewardWonder, 14f) &&
                                     Approximately(moonlight.stats.warmth - rewardWarmth, 10f) &&
                                     Approximately(moonlight.stats.magic - rewardMagic, 0f) &&
                                     Approximately(moonlight.stats.hunger - rewardHunger, 0f) &&
                                     Approximately(moonlight.stats.rest - rewardRest, 6f) &&
-                                    moonlight.xp - rewardXp == 12 && moonlight.coins - rewardCoins == 2,
+                                    moonlight.xp - rewardXp == 12 && moonlight.coins - rewardCoins == 5,
                                 _ => false
                             };
                             if (!rewardPassed)

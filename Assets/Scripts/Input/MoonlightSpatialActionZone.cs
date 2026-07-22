@@ -18,6 +18,11 @@ namespace MoonlightMagicHouse
         [SerializeField] string displayName;
         [SerializeField, Range(0.35f, 0.9f)] float passingScore = 0.58f;
         int _progressStep;
+        float _sessionScoreTotal;
+        int _sessionAcceptedSteps;
+        int _perfectSteps;
+        int _currentCombo;
+        int _bestCombo;
 
         public MoonlightSpatialActionKind Kind => kind;
         public float Radius => radius;
@@ -64,6 +69,17 @@ namespace MoonlightMagicHouse
         public float LastGestureScore { get; private set; }
         public bool LastGesturePassed { get; private set; }
         public string LastCueKey { get; private set; } = "";
+        public int ActivitySessionAcceptedSteps => _sessionAcceptedSteps;
+        public float ActivitySessionAverageScore => _sessionAcceptedSteps > 0
+            ? _sessionScoreTotal / _sessionAcceptedSteps
+            : 0f;
+        public int ActivityCurrentCombo => _currentCombo;
+        public int ActivityBestCombo => _bestCombo;
+        public int ActivityPerfectSteps => _perfectSteps;
+        public float LastCompletedAverageScore { get; private set; }
+        public int LastCompletedBestCombo { get; private set; }
+        public int LastCompletedPerfectSteps { get; private set; }
+        public int LastMasteryBonusCoins { get; private set; }
 
         public void Configure(MoonlightSpatialActionKind actionKind, string label, float actionRadius)
         {
@@ -137,6 +153,7 @@ namespace MoonlightMagicHouse
             bool gesturePassed = gesture == RequiredGesture && LastGestureScore >= passingScore;
             if (!gesturePassed)
             {
+                _currentCombo = 0;
                 LastCueKey = "activity-try-again";
                 AudioManager.Instance?.Play(LastCueKey);
                 HapticFeedback.Light();
@@ -149,6 +166,7 @@ namespace MoonlightMagicHouse
             {
                 case MoonlightSpatialActionKind.Cook:
                     if (!TryBeginFeedback(feedback, "Cooking")) return feedback.InputBlockReason;
+                    RecordSuccessfulGesture();
                     LastCueKey = _progressStep switch
                     {
                         0 => "cook-add",
@@ -159,11 +177,11 @@ namespace MoonlightMagicHouse
                     AudioManager.Instance?.Play(LastCueKey);
                     _progressStep++;
                     if (_progressStep == 1)
-                        return $"INGREDIENTS ADDED  /  SCORE {Grade()}  /  NEXT: CIRCLE TO STIR";
+                        return $"INGREDIENTS ADDED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: CIRCLE TO STIR";
                     if (_progressStep == 2)
-                        return $"BATTER SPARKLING  /  SCORE {Grade()}  /  NEXT: HOLD TO BAKE";
+                        return $"BATTER SPARKLING  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: HOLD TO BAKE";
                     if (_progressStep == 3)
-                        return $"MOONCAKES BAKED  /  SCORE {Grade()}  /  NEXT: ZIG-ZAG TO DECORATE";
+                        return $"MOONCAKES BAKED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: ZIG-ZAG TO DECORATE";
                     var recipe = ScriptableObject.CreateInstance<FoodItem>();
                     recipe.itemName = "Mooncake bites";
                     recipe.cost = 0;
@@ -174,12 +192,14 @@ namespace MoonlightMagicHouse
                     recipe.xpReward = 14;
                     moonlight.Feed(recipe);
                     Destroy(recipe);
+                    string cookMastery = CompleteActivitySession(moonlight, 0, out int cookCoins);
                     _progressStep = 0;
                     AudioManager.Instance?.Play("activity-complete");
-                    return $"MOONCAKES DECORATED  /  {Grade()}  /  +20 HUNGER  +8 WARMTH  +5 WONDER  +5 MAGIC  +14 XP";
+                    return $"MOONCAKES DECORATED  /  {cookMastery}  /  +20 HUNGER  +8 WARMTH  +5 WONDER  +5 MAGIC  +14 XP  +{cookCoins} COINS";
 
                 case MoonlightSpatialActionKind.Play:
                     if (!TryBeginFeedback(feedback, "Playing")) return feedback.InputBlockReason;
+                    RecordSuccessfulGesture();
                     LastCueKey = _progressStep switch
                     {
                         0 => "play-throw",
@@ -190,19 +210,21 @@ namespace MoonlightMagicHouse
                     AudioManager.Instance?.Play(LastCueKey);
                     _progressStep++;
                     if (_progressStep == 1)
-                        return $"STAR BALL THROWN  /  SCORE {Grade()}  /  NEXT: ZIG-ZAG CHASE";
+                        return $"STAR BALL THROWN  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: ZIG-ZAG CHASE";
                     if (_progressStep == 2)
-                        return $"GREAT CHASE  /  SCORE {Grade()}  /  NEXT: SWIPE TO JUMP";
+                        return $"GREAT CHASE  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: SWIPE TO JUMP";
                     if (_progressStep == 3)
-                        return $"MAGIC JUMP  /  SCORE {Grade()}  /  NEXT: TAP TO CATCH";
+                        return $"MAGIC JUMP  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: TAP TO CATCH";
                     moonlight.Explore(RoomType.LivingRoom);
                     moonlight.PerformMagic(5, 2);
+                    string playMastery = CompleteActivitySession(moonlight, 2, out int playCoins);
                     _progressStep = 0;
                     AudioManager.Instance?.Play("activity-complete");
-                    return $"STAR BALL COMBO  /  {Grade()}  /  +25 WONDER  +13 MAGIC  +32 XP  +2 COINS";
+                    return $"STAR BALL COMBO  /  {playMastery}  /  +25 WONDER  +13 MAGIC  +32 XP  +{playCoins} COINS";
 
                 case MoonlightSpatialActionKind.Garden:
                     if (!TryBeginFeedback(feedback, "Gardening")) return feedback.InputBlockReason;
+                    RecordSuccessfulGesture();
                     LastCueKey = _progressStep switch
                     {
                         0 => "garden-plant",
@@ -213,18 +235,20 @@ namespace MoonlightMagicHouse
                     AudioManager.Instance?.Play(LastCueKey);
                     _progressStep++;
                     if (_progressStep == 1)
-                        return $"MOONSEEDS PLANTED  /  SCORE {Grade()}  /  NEXT: CIRCLE TO WATER";
+                        return $"MOONSEEDS PLANTED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: CIRCLE TO WATER";
                     if (_progressStep == 2)
-                        return $"DEW SPARKLING  /  SCORE {Grade()}  /  NEXT: ZIG-ZAG TO TEND";
+                        return $"DEW SPARKLING  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: ZIG-ZAG TO TEND";
                     if (_progressStep == 3)
-                        return $"SPROUTS TENDED  /  SCORE {Grade()}  /  NEXT: HOLD TO BLOOM";
+                        return $"SPROUTS TENDED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: HOLD TO BLOOM";
                     moonlight.CompleteGardening();
+                    string gardenMastery = CompleteActivitySession(moonlight, 3, out int gardenCoins);
                     _progressStep = 0;
                     AudioManager.Instance?.Play("activity-complete");
-                    return $"MOON GARDEN BLOOMED  /  {Grade()}  /  +16 WONDER  +12 MAGIC  +10 XP  +3 COINS";
+                    return $"MOON GARDEN BLOOMED  /  {gardenMastery}  /  +16 WONDER  +12 MAGIC  +10 XP  +{gardenCoins} COINS";
 
                 case MoonlightSpatialActionKind.Read:
                     if (!TryBeginFeedback(feedback, "Reading")) return feedback.InputBlockReason;
+                    RecordSuccessfulGesture();
                     LastCueKey = _progressStep switch
                     {
                         0 => "read-open",
@@ -235,15 +259,16 @@ namespace MoonlightMagicHouse
                     AudioManager.Instance?.Play(LastCueKey);
                     _progressStep++;
                     if (_progressStep == 1)
-                        return $"STORY OPENED  /  SCORE {Grade()}  /  NEXT: SWIPE TO TURN";
+                        return $"STORY OPENED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: SWIPE TO TURN";
                     if (_progressStep == 2)
-                        return $"STAR PAGE TURNED  /  SCORE {Grade()}  /  NEXT: CIRCLE TO TRACE";
+                        return $"STAR PAGE TURNED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: CIRCLE TO TRACE";
                     if (_progressStep == 3)
-                        return $"CONSTELLATION TRACED  /  SCORE {Grade()}  /  NEXT: HOLD TO REMEMBER";
+                        return $"CONSTELLATION TRACED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: HOLD TO REMEMBER";
                     moonlight.CompleteReading();
+                    string readMastery = CompleteActivitySession(moonlight, 2, out int readCoins);
                     _progressStep = 0;
                     AudioManager.Instance?.Play("activity-complete");
-                    return $"STORY REMEMBERED  /  {Grade()}  /  +14 WONDER  +10 WARMTH  +6 REST  +12 XP  +2 COINS";
+                    return $"STORY REMEMBERED  /  {readMastery}  /  +14 WONDER  +10 WARMTH  +6 REST  +12 XP  +{readCoins} COINS";
 
                 case MoonlightSpatialActionKind.SleepCuddle:
                     if (moonlight.stats.rest < 82f)
@@ -290,11 +315,75 @@ namespace MoonlightMagicHouse
             _ => "TAP TO"
         };
 
-        string Grade()
+        void RecordSuccessfulGesture()
+        {
+            _sessionScoreTotal += LastGestureScore;
+            _sessionAcceptedSteps++;
+            _currentCombo++;
+            _bestCombo = Mathf.Max(_bestCombo, _currentCombo);
+            if (LastGestureScore >= 0.88f) _perfectSteps++;
+        }
+
+        string CompleteActivitySession(MoonlightCharacter moonlight, int baseCoins,
+                                       out int totalCoins)
+        {
+            float average = ActivitySessionAverageScore;
+            int bonus = CalculateMasteryBonus(average, _perfectSteps, _bestCombo,
+                _sessionAcceptedSteps, RequiredSteps);
+            if (bonus > 0) moonlight.EarnCoins(bonus);
+
+            LastCompletedAverageScore = average;
+            LastCompletedBestCombo = _bestCombo;
+            LastCompletedPerfectSteps = _perfectSteps;
+            LastMasteryBonusCoins = bonus;
+            totalCoins = baseCoins + bonus;
+            string summary = $"RUN {GradeFor(average)} {Mathf.RoundToInt(average * 100f)} x{_bestCombo}";
+            Debug.Log($"[MoonlightActivityQA] mastery kind={kind} average={average:0.000} " +
+                $"perfect={_perfectSteps}/{RequiredSteps} combo={_bestCombo} bonusCoins={bonus} " +
+                "marker=MOONLIGHT_ACTIVITY_MASTERY_REWARDED");
+            ResetActivitySession();
+            return summary;
+        }
+
+        void ResetActivitySession()
+        {
+            _sessionScoreTotal = 0f;
+            _sessionAcceptedSteps = 0;
+            _perfectSteps = 0;
+            _currentCombo = 0;
+            _bestCombo = 0;
+        }
+
+        public static int CalculateMasteryBonus(float averageScore, int perfectSteps,
+            int bestCombo, int acceptedSteps, int requiredSteps)
+        {
+            if (requiredSteps <= 1 || acceptedSteps < requiredSteps) return 0;
+            if (averageScore >= 0.90f && perfectSteps >= requiredSteps - 1 &&
+                bestCombo >= requiredSteps)
+                return 3;
+            if (averageScore >= 0.80f && bestCombo >= requiredSteps - 1) return 2;
+            if (averageScore >= 0.70f) return 1;
+            return 0;
+        }
+
+        public static bool ValidateMasteryContract(out string detail)
+        {
+            int perfect = CalculateMasteryBonus(0.95f, 4, 4, 4, 4);
+            int great = CalculateMasteryBonus(0.83f, 2, 4, 4, 4);
+            int good = CalculateMasteryBonus(0.74f, 0, 2, 4, 4);
+            int low = CalculateMasteryBonus(0.69f, 0, 4, 4, 4);
+            int incomplete = CalculateMasteryBonus(0.95f, 3, 3, 3, 4);
+            detail = $"perfect={perfect} great={great} good={good} low={low} incomplete={incomplete}";
+            return perfect == 3 && great == 2 && good == 1 && low == 0 && incomplete == 0;
+        }
+
+        string StepGrade()
         {
             int score = Mathf.RoundToInt(LastGestureScore * 100f);
-            string grade = LastGestureScore >= 0.88f ? "PERFECT" : LastGestureScore >= 0.72f ? "GREAT" : "GOOD";
-            return $"{grade} {score}";
+            return $"{GradeFor(LastGestureScore)} {score}";
         }
+
+        static string GradeFor(float score) =>
+            score >= 0.88f ? "PERFECT" : score >= 0.72f ? "GREAT" : "GOOD";
     }
 }
