@@ -243,6 +243,17 @@ namespace MoonlightMagicHouse
                 yield break;
             }
 
+            bool recognizerPass = MoonlightGesturePad.ValidateRecognizerContract(
+                out string recognizerDetail);
+            if (!recognizerPass)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] gesture-recognizer {recognizerDetail}");
+                Application.Quit(57);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] gesture-recognizer {recognizerDetail} " +
+                "marker=MOONLIGHT_GESTURE_RECOGNIZER_VERIFIED");
+
             bool expectIPadHud = args.Contains("-moonlightIPadHudQa");
             var touchJoystick = FindAnyObjectByType<MoonlightTouchJoystick>();
             if (expectIPadHud)

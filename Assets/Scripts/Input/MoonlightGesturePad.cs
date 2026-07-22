@@ -278,38 +278,108 @@ namespace MoonlightMagicHouse
                 case MoonlightGestureKind.ZigZag:
                     int turns = 0;
                     float previousSign = 0f;
+                    float minX = points[0].x;
+                    float maxX = points[0].x;
                     for (int i = 1; i < points.Count; i++)
                     {
+                        minX = Mathf.Min(minX, points[i].x);
+                        maxX = Mathf.Max(maxX, points[i].x);
                         float dx = points[i].x - points[i - 1].x;
                         if (Mathf.Abs(dx) < 0.035f) continue;
                         float sign = Mathf.Sign(dx);
                         if (previousSign != 0f && sign != previousSign) turns++;
                         previousSign = sign;
                     }
-                    return Mathf.Clamp01(turns / 3f) * Mathf.Clamp01(path / 1.15f);
+                    float horizontalCoverage = Mathf.Clamp01(((maxX - minX) - 0.16f) / 0.32f);
+                    return Mathf.Clamp01(turns / 3f) * Mathf.Clamp01(path / 1.15f) *
+                           horizontalCoverage;
 
                 case MoonlightGestureKind.Circle:
                     if (points.Count < 7) return 0f;
                     Vector2 center = Vector2.zero;
                     foreach (var point in points) center += point;
                     center /= points.Count;
-                    float angle = 0f;
+                    float signedAngle = 0f;
+                    float absoluteAngle = 0f;
                     float radius = 0f;
+                    float twiceArea = 0f;
                     for (int i = 1; i < points.Count; i++)
                     {
                         var a = points[i - 1] - center;
                         var b = points[i] - center;
                         if (a.sqrMagnitude < 0.0004f || b.sqrMagnitude < 0.0004f) continue;
-                        angle += Mathf.Abs(Vector2.SignedAngle(a, b));
+                        float segmentAngle = Vector2.SignedAngle(a, b);
+                        signedAngle += segmentAngle;
+                        absoluteAngle += Mathf.Abs(segmentAngle);
+                        twiceArea += a.x * b.y - b.x * a.y;
                         radius += b.magnitude;
                     }
                     radius /= Mathf.Max(1, points.Count - 1);
                     float closure = 1f - Mathf.Clamp01(displacement / 0.28f);
-                    return Mathf.Clamp01((angle - 170f) / 230f) *
-                           Mathf.Clamp01(radius / 0.18f) * closure;
+                    float coverage = Mathf.Clamp01((Mathf.Abs(signedAngle) - 190f) / 140f);
+                    float directionConsistency = Mathf.Clamp01(
+                        (Mathf.Abs(signedAngle) / Mathf.Max(absoluteAngle, 1f) - 0.45f) / 0.45f);
+                    float enclosedArea = Mathf.Abs(twiceArea) * 0.5f;
+                    float areaCoverage = Mathf.Clamp01(enclosedArea /
+                        Mathf.Max(Mathf.PI * radius * radius * 0.55f, 0.0001f));
+                    return coverage * Mathf.Clamp01(radius / 0.18f) * closure *
+                           Mathf.Sqrt(directionConsistency * areaCoverage);
             }
 
             return 0f;
+        }
+
+        public static bool ValidateRecognizerContract(out string detail)
+        {
+            var tap = new[] { Vector2.zero, new Vector2(0.01f, 0f) };
+            var hold = new[] { Vector2.zero, new Vector2(0.01f, 0.01f) };
+            var swipe = new[] { new Vector2(-0.4f, 0f), new Vector2(0.4f, 0f) };
+            var zigZag = new[]
+            {
+                new Vector2(-0.4f, -0.35f), new Vector2(0.35f, -0.15f),
+                new Vector2(-0.35f, 0.05f), new Vector2(0.35f, 0.25f),
+                new Vector2(-0.4f, 0.4f)
+            };
+            var circle = new List<Vector2>();
+            for (int i = 0; i <= 16; i++)
+            {
+                float angle = i * Mathf.PI * 2f / 16f;
+                circle.Add(new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * 0.3f);
+            }
+
+            float tapScore = ScoreGesture(MoonlightGestureKind.Tap, tap, 0.12f);
+            float holdScore = ScoreGesture(MoonlightGestureKind.Hold, hold, 1f);
+            float swipeScore = ScoreGesture(MoonlightGestureKind.Swipe, swipe, 0.35f);
+            float zigZagScore = ScoreGesture(MoonlightGestureKind.ZigZag, zigZag, 0.8f);
+            float circleScore = ScoreGesture(MoonlightGestureKind.Circle, circle, 0.9f);
+
+            var shortSwipe = new[] { new Vector2(-0.05f, 0f), new Vector2(0.05f, 0f) };
+            var tinyZigZag = new[]
+            {
+                new Vector2(-0.05f, -0.35f), new Vector2(0.05f, -0.15f),
+                new Vector2(-0.05f, 0.05f), new Vector2(0.05f, 0.25f),
+                new Vector2(-0.05f, 0.4f)
+            };
+            var lineCircle = new[]
+            {
+                new Vector2(-0.3f, 0f), new Vector2(0.3f, 0f),
+                new Vector2(-0.3f, 0f), new Vector2(0.3f, 0f),
+                new Vector2(-0.3f, 0f), new Vector2(0.3f, 0f),
+                new Vector2(-0.3f, 0f)
+            };
+            float shortSwipeScore = ScoreGesture(MoonlightGestureKind.Swipe, shortSwipe, 0.5f);
+            float tinyZigZagScore = ScoreGesture(MoonlightGestureKind.ZigZag, tinyZigZag, 0.8f);
+            float lineCircleScore = ScoreGesture(MoonlightGestureKind.Circle, lineCircle, 0.9f);
+
+            bool validPass = tapScore >= 0.70f && holdScore >= 0.70f && swipeScore >= 0.70f &&
+                zigZagScore >= 0.70f && circleScore >= 0.70f;
+            bool invalidPass = shortSwipeScore <= 0.35f && tinyZigZagScore <= 0.35f &&
+                lineCircleScore <= 0.35f;
+            detail = $"valid tap={tapScore:0.00} hold={holdScore:0.00} " +
+                $"swipe={swipeScore:0.00} zigzag={zigZagScore:0.00} circle={circleScore:0.00}; " +
+                $"invalid shortSwipe={shortSwipeScore:0.00} tinyZigzag={tinyZigZagScore:0.00} " +
+                $"lineCircle={lineCircleScore:0.00}";
+            return validPass && invalidPass;
         }
     }
 }
