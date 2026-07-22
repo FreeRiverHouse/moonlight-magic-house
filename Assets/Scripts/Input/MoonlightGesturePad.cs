@@ -17,7 +17,12 @@ namespace MoonlightMagicHouse
     public sealed class MoonlightGesturePad : MonoBehaviour,
         IPointerDownHandler, IDragHandler, IPointerUpHandler, ICancelHandler
     {
+        public const int GestureTraceDotCapacity = 24;
+        const float GestureTraceFadeSeconds = 0.48f;
+
         readonly List<Vector2> _points = new();
+        readonly RectTransform[] _traceDots = new RectTransform[GestureTraceDotCapacity];
+        readonly Image[] _traceImages = new Image[GestureTraceDotCapacity];
 
         MoonlightUI _ui;
         RectTransform _rect;
@@ -30,11 +35,28 @@ namespace MoonlightMagicHouse
         Vector3 _baseScale = Vector3.one;
         float _feedbackUntil;
         Color _feedbackColor;
+        int _traceDotCursor;
+        int _traceDotCount;
+        float _traceFadeUntil;
+        Color _traceResultColor = Color.white;
 
         public MoonlightGestureKind ActiveGesture => _gesture;
         public float LastScore { get; private set; }
         public string LastRejectionReason { get; private set; } = "";
         public bool IsTrackingGesture => _pointerId != int.MinValue;
+        public int TraceDotPoolCount => _traceDots.Length;
+        public int VisibleTraceDotCount => _traceDotCount;
+        public bool TracePoolIsReady
+        {
+            get
+            {
+                for (int i = 0; i < GestureTraceDotCapacity; i++)
+                    if (_traceDots[i] == null || _traceImages[i] == null ||
+                        _traceImages[i].raycastTarget)
+                        return false;
+                return true;
+            }
+        }
         public bool IsAcceptingGesture
         {
             get
@@ -50,6 +72,7 @@ namespace MoonlightMagicHouse
             _surface = GetComponent<Image>();
             if (_surface != null) _baseColor = _surface.color;
             _baseScale = transform.localScale;
+            BuildTracePool();
         }
 
         void Update()
@@ -65,6 +88,7 @@ namespace MoonlightMagicHouse
             }
             transform.localScale = Vector3.Lerp(transform.localScale, _baseScale,
                 Time.unscaledDeltaTime * 18f);
+            UpdateTraceFade();
         }
 
         public void Bind(MoonlightUI ui) => _ui = ui;
@@ -84,6 +108,7 @@ namespace MoonlightMagicHouse
             _gesture = zone.RequiredGesture;
             _startedAt = Time.unscaledTime;
             _points.Clear();
+            ClearTrace();
             LastRejectionReason = "";
             SetTrackingVisual();
             AddPoint(eventData);
@@ -162,6 +187,7 @@ namespace MoonlightMagicHouse
             _pointerId = int.MinValue;
             _startedZone = null;
             _points.Clear();
+            ClearTrace();
             RestoreTrackingVisual();
             if (wasTracking)
                 Debug.Log($"[MoonlightActivityQA] gesture-cancelled reason={reason}");
@@ -174,10 +200,16 @@ namespace MoonlightMagicHouse
                     _rect, eventData.position, eventData.pressEventCamera, out var local)) return;
 
             var size = _rect.rect.size;
+            local.x = Mathf.Clamp(local.x, _rect.rect.xMin + 5f, _rect.rect.xMax - 5f);
+            local.y = Mathf.Clamp(local.y, _rect.rect.yMin + 5f, _rect.rect.yMax - 5f);
+            Vector2 tracePosition = local;
             local.x /= Mathf.Max(1f, size.x);
             local.y /= Mathf.Max(1f, size.y);
             if (_points.Count == 0 || Vector2.Distance(_points[^1], local) > 0.015f)
+            {
                 _points.Add(local);
+                AddTraceDot(tracePosition);
+            }
         }
 
         MoonlightSpatialActionZone CurrentZone()
@@ -249,6 +281,86 @@ namespace MoonlightMagicHouse
             _feedbackUntil = Time.unscaledTime + 0.22f;
             if (_surface != null)
                 _surface.color = Color.Lerp(_baseColor, _feedbackColor, 0.55f);
+            BeginTraceFade(passed);
+        }
+
+        void BuildTracePool()
+        {
+            for (int i = 0; i < GestureTraceDotCapacity; i++)
+            {
+                var dot = new GameObject($"GestureTraceDot-{i + 1:00}");
+                dot.transform.SetParent(transform, false);
+                dot.transform.SetAsFirstSibling();
+                var rect = dot.AddComponent<RectTransform>();
+                Vector2 traceAnchor = _rect != null ? _rect.pivot : new Vector2(0.5f, 0.5f);
+                rect.anchorMin = traceAnchor;
+                rect.anchorMax = traceAnchor;
+                rect.pivot = new Vector2(0.5f, 0.5f);
+                rect.sizeDelta = new Vector2(10f, 10f);
+                rect.localRotation = Quaternion.Euler(0f, 0f, 45f);
+                var image = dot.AddComponent<Image>();
+                image.color = new Color(0.72f, 0.94f, 1f, 0.72f);
+                image.raycastTarget = false;
+                dot.SetActive(false);
+                _traceDots[i] = rect;
+                _traceImages[i] = image;
+            }
+        }
+
+        void AddTraceDot(Vector2 localPosition)
+        {
+            int index = _traceDotCursor;
+            _traceDotCursor = (_traceDotCursor + 1) % GestureTraceDotCapacity;
+            _traceDotCount = Mathf.Min(_traceDotCount + 1, GestureTraceDotCapacity);
+            var rect = _traceDots[index];
+            var image = _traceImages[index];
+            if (rect == null || image == null) return;
+            rect.anchoredPosition = localPosition;
+            rect.localScale = Vector3.one * Mathf.Lerp(0.78f, 1.12f,
+                _traceDotCount / (float)GestureTraceDotCapacity);
+            image.color = new Color(0.72f, 0.94f, 1f, 0.72f);
+            rect.gameObject.SetActive(true);
+        }
+
+        void BeginTraceFade(bool passed)
+        {
+            _traceResultColor = passed
+                ? new Color(0.42f, 1f, 0.72f, 0.88f)
+                : new Color(1f, 0.38f, 0.42f, 0.88f);
+            _traceFadeUntil = Time.unscaledTime + GestureTraceFadeSeconds;
+            for (int i = 0; i < GestureTraceDotCapacity; i++)
+                if (_traceImages[i] != null && _traceDots[i].gameObject.activeSelf)
+                    _traceImages[i].color = _traceResultColor;
+        }
+
+        void UpdateTraceFade()
+        {
+            if (_traceDotCount == 0 || _traceFadeUntil <= 0f) return;
+            float remaining = Mathf.Clamp01(
+                (_traceFadeUntil - Time.unscaledTime) / GestureTraceFadeSeconds);
+            if (remaining <= 0f)
+            {
+                ClearTrace();
+                return;
+            }
+
+            for (int i = 0; i < GestureTraceDotCapacity; i++)
+            {
+                if (_traceImages[i] == null || !_traceDots[i].gameObject.activeSelf) continue;
+                Color color = _traceResultColor;
+                color.a *= remaining;
+                _traceImages[i].color = color;
+            }
+        }
+
+        void ClearTrace()
+        {
+            _traceDotCursor = 0;
+            _traceDotCount = 0;
+            _traceFadeUntil = 0f;
+            for (int i = 0; i < GestureTraceDotCapacity; i++)
+                if (_traceDots[i] != null)
+                    _traceDots[i].gameObject.SetActive(false);
         }
 
         public static float ScoreGesture(MoonlightGestureKind gesture,

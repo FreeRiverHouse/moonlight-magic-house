@@ -253,6 +253,16 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] gesture-recognizer {recognizerDetail} " +
                 "marker=MOONLIGHT_GESTURE_RECOGNIZER_VERIFIED");
+            if (!pad.TracePoolIsReady ||
+                pad.TraceDotPoolCount != MoonlightGesturePad.GestureTraceDotCapacity)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] gesture-trace poolReady={pad.TracePoolIsReady} " +
+                    $"pool={pad.TraceDotPoolCount}/{MoonlightGesturePad.GestureTraceDotCapacity}");
+                Application.Quit(58);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] gesture-trace pool={pad.TraceDotPoolCount} " +
+                "pooled=True raycastBlocking=False marker=MOONLIGHT_GESTURE_TRACE_READY");
 
             bool expectIPadHud = args.Contains("-moonlightIPadHudQa");
             var touchJoystick = FindAnyObjectByType<MoonlightTouchJoystick>();
