@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using UnityEngine;
 
 namespace MoonlightMagicHouse
@@ -13,6 +15,29 @@ namespace MoonlightMagicHouse
 
     public class MoonlightSpatialActionZone : MonoBehaviour
     {
+        public readonly struct RewardSnapshot
+        {
+            public readonly float Wonder;
+            public readonly float Warmth;
+            public readonly float Rest;
+            public readonly float Magic;
+            public readonly float Hunger;
+            public readonly int XP;
+            public readonly int Coins;
+
+            public RewardSnapshot(float wonder, float warmth, float rest, float magic,
+                                  float hunger, int xp, int coins)
+            {
+                Wonder = wonder;
+                Warmth = warmth;
+                Rest = rest;
+                Magic = magic;
+                Hunger = hunger;
+                XP = xp;
+                Coins = coins;
+            }
+        }
+
         [SerializeField] MoonlightSpatialActionKind kind;
         [SerializeField] float radius = 1.25f;
         [SerializeField] string displayName;
@@ -182,6 +207,7 @@ namespace MoonlightMagicHouse
                         return $"BATTER SPARKLING  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: HOLD TO BAKE";
                     if (_progressStep == 3)
                         return $"MOONCAKES BAKED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: ZIG-ZAG TO DECORATE";
+                    RewardSnapshot cookBefore = CaptureRewards(moonlight);
                     var recipe = ScriptableObject.CreateInstance<FoodItem>();
                     recipe.itemName = "Mooncake bites";
                     recipe.cost = 0;
@@ -192,10 +218,11 @@ namespace MoonlightMagicHouse
                     recipe.xpReward = 14;
                     moonlight.Feed(recipe, false);
                     Destroy(recipe);
-                    string cookMastery = CompleteActivitySession(moonlight, 0, out int cookCoins);
+                    string cookMastery = CompleteActivitySession(moonlight);
                     _progressStep = 0;
                     AudioManager.Instance?.Play("activity-complete");
-                    return $"MOONCAKES DECORATED  /  {cookMastery}  /  +20 HUNGER  +8 WARMTH  +5 WONDER  +5 MAGIC  +14 XP  +{cookCoins} COINS";
+                    return $"MOONCAKES DECORATED  /  {cookMastery}  /  " +
+                        BuildRewardReceipt(cookBefore, CaptureRewards(moonlight));
 
                 case MoonlightSpatialActionKind.Play:
                     if (!TryBeginFeedback(feedback, "Playing")) return feedback.InputBlockReason;
@@ -215,12 +242,14 @@ namespace MoonlightMagicHouse
                         return $"GREAT CHASE  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: SWIPE TO JUMP";
                     if (_progressStep == 3)
                         return $"MAGIC JUMP  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: TAP TO CATCH";
+                    RewardSnapshot playBefore = CaptureRewards(moonlight);
                     moonlight.Explore(RoomType.LivingRoom);
                     moonlight.PerformMagic(5, 2, false);
-                    string playMastery = CompleteActivitySession(moonlight, 2, out int playCoins);
+                    string playMastery = CompleteActivitySession(moonlight);
                     _progressStep = 0;
                     AudioManager.Instance?.Play("activity-complete");
-                    return $"STAR BALL COMBO  /  {playMastery}  /  +25 WONDER  +13 MAGIC  +32 XP  +{playCoins} COINS";
+                    return $"STAR BALL COMBO  /  {playMastery}  /  " +
+                        BuildRewardReceipt(playBefore, CaptureRewards(moonlight));
 
                 case MoonlightSpatialActionKind.Garden:
                     if (!TryBeginFeedback(feedback, "Gardening")) return feedback.InputBlockReason;
@@ -240,11 +269,13 @@ namespace MoonlightMagicHouse
                         return $"DEW SPARKLING  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: ZIG-ZAG TO TEND";
                     if (_progressStep == 3)
                         return $"SPROUTS TENDED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: HOLD TO BLOOM";
+                    RewardSnapshot gardenBefore = CaptureRewards(moonlight);
                     moonlight.CompleteGardening(false);
-                    string gardenMastery = CompleteActivitySession(moonlight, 3, out int gardenCoins);
+                    string gardenMastery = CompleteActivitySession(moonlight);
                     _progressStep = 0;
                     AudioManager.Instance?.Play("activity-complete");
-                    return $"MOON GARDEN BLOOMED  /  {gardenMastery}  /  +16 WONDER  +12 MAGIC  +10 XP  +{gardenCoins} COINS";
+                    return $"MOON GARDEN BLOOMED  /  {gardenMastery}  /  " +
+                        BuildRewardReceipt(gardenBefore, CaptureRewards(moonlight));
 
                 case MoonlightSpatialActionKind.Read:
                     if (!TryBeginFeedback(feedback, "Reading")) return feedback.InputBlockReason;
@@ -264,11 +295,13 @@ namespace MoonlightMagicHouse
                         return $"STAR PAGE TURNED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: CIRCLE TO TRACE";
                     if (_progressStep == 3)
                         return $"CONSTELLATION TRACED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: HOLD TO REMEMBER";
+                    RewardSnapshot readBefore = CaptureRewards(moonlight);
                     moonlight.CompleteReading(false);
-                    string readMastery = CompleteActivitySession(moonlight, 2, out int readCoins);
+                    string readMastery = CompleteActivitySession(moonlight);
                     _progressStep = 0;
                     AudioManager.Instance?.Play("activity-complete");
-                    return $"STORY REMEMBERED  /  {readMastery}  /  +14 WONDER  +10 WARMTH  +6 REST  +12 XP  +{readCoins} COINS";
+                    return $"STORY REMEMBERED  /  {readMastery}  /  " +
+                        BuildRewardReceipt(readBefore, CaptureRewards(moonlight));
 
                 case MoonlightSpatialActionKind.SleepCuddle:
                     if (moonlight.stats.rest < 82f)
@@ -276,15 +309,19 @@ namespace MoonlightMagicHouse
                         if (!TryBeginFeedback(feedback, "Resting")) return feedback.InputBlockReason;
                         LastCueKey = "sleep";
                         AudioManager.Instance?.Play(LastCueKey);
+                        RewardSnapshot sleepBefore = CaptureRewards(moonlight);
                         moonlight.PutToSleep();
-                        return "DREAMING  +45 REST  +5 WARMTH";
+                        return "DREAMING  /  " +
+                            BuildRewardReceipt(sleepBefore, CaptureRewards(moonlight));
                     }
                     if (!TryBeginFeedback(feedback, "Cuddled")) return feedback.InputBlockReason;
                     LastCueKey = "cuddle";
                     AudioManager.Instance?.Play(LastCueKey);
+                    RewardSnapshot cuddleBefore = CaptureRewards(moonlight);
                     moonlight.Cuddle();
                     AchievementSystem.Instance?.OnFirstCuddle();
-                    return "CUDDLED  +20 WARMTH  +5 WONDER  +8 XP";
+                    return "CUDDLED  /  " +
+                        BuildRewardReceipt(cuddleBefore, CaptureRewards(moonlight));
             }
 
             return "Moonlight looks around the room.";
@@ -329,8 +366,7 @@ namespace MoonlightMagicHouse
             if (LastGestureScore >= MoonlightActionFeedback.PerfectActionQualityScore) _perfectSteps++;
         }
 
-        string CompleteActivitySession(MoonlightCharacter moonlight, int baseCoins,
-                                       out int totalCoins)
+        string CompleteActivitySession(MoonlightCharacter moonlight)
         {
             float average = ActivitySessionAverageScore;
             int bonus = CalculateMasteryBonus(average, _perfectSteps, _bestCombo,
@@ -343,7 +379,6 @@ namespace MoonlightMagicHouse
             LastMasteryBonusCoins = bonus;
             moonlight.GetComponent<MoonlightActionFeedback>()?.QueueMasteryCelebration(
                 average, _bestCombo, bonus);
-            totalCoins = baseCoins + bonus;
             string summary = $"RUN {GradeFor(average)} {Mathf.RoundToInt(average * 100f)} x{_bestCombo}";
             Debug.Log($"[MoonlightActivityQA] mastery kind={kind} average={average:0.000} " +
                 $"perfect={_perfectSteps}/{RequiredSteps} combo={_bestCombo} bonusCoins={bonus} " +
@@ -382,6 +417,74 @@ namespace MoonlightMagicHouse
             int incomplete = CalculateMasteryBonus(0.95f, 3, 3, 3, 4);
             detail = $"perfect={perfect} great={great} good={good} low={low} incomplete={incomplete}";
             return perfect == 3 && great == 2 && good == 1 && low == 0 && incomplete == 0;
+        }
+
+        static RewardSnapshot CaptureRewards(MoonlightCharacter moonlight) =>
+            new RewardSnapshot(moonlight.stats.wonder, moonlight.stats.warmth,
+                moonlight.stats.rest, moonlight.stats.magic, moonlight.stats.hunger,
+                moonlight.xp, moonlight.coins);
+
+        public static string BuildRewardReceipt(RewardSnapshot before, RewardSnapshot after)
+        {
+            var receipt = new StringBuilder();
+            AppendStatDelta(receipt, after.Wonder - before.Wonder, "WONDER");
+            AppendStatDelta(receipt, after.Warmth - before.Warmth, "WARMTH");
+            AppendStatDelta(receipt, after.Rest - before.Rest, "REST");
+            AppendStatDelta(receipt, after.Magic - before.Magic, "MAGIC");
+            AppendStatDelta(receipt, after.Hunger - before.Hunger, "HUNGER");
+            AppendIntDelta(receipt, after.XP - before.XP, "XP");
+            AppendIntDelta(receipt, after.Coins - before.Coins, "COINS");
+            return receipt.Length > 0 ? receipt.ToString() : "STATS FULL";
+        }
+
+        static void AppendStatDelta(StringBuilder receipt, float delta, string label)
+        {
+            string formattedDelta = delta.ToString("0.#", CultureInfo.InvariantCulture);
+            if (formattedDelta == "0" || formattedDelta == "-0") return;
+            AppendSeparator(receipt);
+            if (delta > 0f) receipt.Append('+');
+            receipt.Append(formattedDelta);
+            receipt.Append(' ').Append(label);
+        }
+
+        static void AppendIntDelta(StringBuilder receipt, int delta, string label)
+        {
+            if (delta == 0) return;
+            AppendSeparator(receipt);
+            if (delta > 0) receipt.Append('+');
+            receipt.Append(delta.ToString(CultureInfo.InvariantCulture));
+            receipt.Append(' ').Append(label);
+        }
+
+        static void AppendSeparator(StringBuilder receipt)
+        {
+            if (receipt.Length > 0) receipt.Append("  ");
+        }
+
+        public static bool ValidateRewardReceiptContract(out string detail)
+        {
+            var sleepBefore = new RewardSnapshot(100f, 100f, 80f, 100f, 100f, 0, 10);
+            var sleepAfter = new RewardSnapshot(100f, 100f, 100f, 100f, 100f, 0, 10);
+            string sleep = BuildRewardReceipt(sleepBefore, sleepAfter);
+
+            var coinsAfter = new RewardSnapshot(100f, 100f, 100f, 100f, 100f, 8, 15);
+            string coins = BuildRewardReceipt(sleepAfter, coinsAfter);
+            int firstCoins = coins.IndexOf("COINS", System.StringComparison.Ordinal);
+            int lastCoins = coins.LastIndexOf("COINS", System.StringComparison.Ordinal);
+
+            string capped = BuildRewardReceipt(sleepAfter, sleepAfter);
+            var decimalBefore = new RewardSnapshot(97.5f, 100f, 100f, 100f, 100f, 0, 0);
+            var decimalAfter = new RewardSnapshot(100f, 100f, 100f, 100f, 100f, 0, 0);
+            string decimalStat = BuildRewardReceipt(decimalBefore, decimalAfter);
+            bool sleepDeltaPass = sleep == "+20 REST";
+            bool cappedStatOmitted = !sleep.Contains("WARMTH") && capped == "STATS FULL";
+            bool integerRewardsPass = coins == "+8 XP  +5 COINS";
+            bool coinsOnce = firstCoins >= 0 && firstCoins == lastCoins;
+            bool decimalStatPass = decimalStat == "+2.5 WONDER";
+            detail = $"sleep=\"{sleep}\" capped=\"{capped}\" decimal=\"{decimalStat}\" " +
+                $"coins=\"{coins}\"";
+            return sleepDeltaPass && cappedStatOmitted && integerRewardsPass && coinsOnce &&
+                decimalStatPass;
         }
 
         string StepGrade()

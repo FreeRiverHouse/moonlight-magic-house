@@ -517,6 +517,17 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] activity-mastery {masteryDetail} " +
                 "marker=MOONLIGHT_ACTIVITY_MASTERY_CONTRACT_VERIFIED");
+            if (!MoonlightSpatialActionZone.ValidateRewardReceiptContract(
+                    out string rewardReceiptDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-reward-receipt " +
+                    rewardReceiptDetail);
+                Application.Quit(93);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] activity-reward-receipt " +
+                $"{rewardReceiptDetail} " +
+                "marker=MOONLIGHT_ACTIVITY_REWARD_RECEIPT_CONTRACT_VERIFIED");
             if (!MoonlightActionFeedback.ValidateMasteryCelebrationContract(out string celebrationDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] mastery-celebration {celebrationDetail}");
