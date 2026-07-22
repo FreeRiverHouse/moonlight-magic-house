@@ -101,6 +101,14 @@ namespace MoonlightMagicHouse
                 Application.Quit(74);
                 yield break;
             }
+            if (!MoonlightHeroEyeQuality.ValidateActivityExpressionContract(
+                    out string eyeExpressionDetail))
+            {
+                Debug.LogError($"[MoonlightVisualQA][FAIL] activity-eye-expression-contract " +
+                    eyeExpressionDetail);
+                Application.Quit(75);
+                yield break;
+            }
             var heroEyeQuality = moonlight.GetComponentInChildren<MoonlightHeroEyeQuality>(true);
             bool heroEyePass = heroEyeQuality != null &&
                 heroEyeQuality.QAMarker == "MOONLIGHT_HERO_EYE_CATCHLIGHT_READY" &&
@@ -120,8 +128,10 @@ namespace MoonlightMagicHouse
                 $"separation={heroEyeQuality.EyePairSeparation:0.000} " +
                 $"emission={heroEyeQuality.CurrentCatchlightEmission:0.00} " +
                 $"eyeContract={heroEyeDetail} blinkContract={blinkDetail} " +
+                $"expressionContract={eyeExpressionDetail} " +
                 "marker=MOONLIGHT_HERO_EYE_CATCHLIGHT_VERIFIED " +
-                "MOONLIGHT_AUTHORED_EYE_BLINK_VERIFIED");
+                "MOONLIGHT_AUTHORED_EYE_BLINK_VERIFIED " +
+                "MOONLIGHT_ACTIVITY_EYE_EXPRESSION_CONTRACT_VERIFIED");
 
             Vector3 start = controller.transform.position;
             controller.SetTouchMove(Vector2.up);
@@ -174,6 +184,31 @@ namespace MoonlightMagicHouse
                     yield break;
                 }
                 yield return new WaitForSeconds(0.35f);
+                string expectedExpression = MoonlightHeroEyeQuality.ExpressionNameFor(zone.Kind, true);
+                Color expectedExpressionColor = MoonlightHeroEyeQuality.ExpressionColorFor(zone.Kind, true);
+                float expressionColorDistance = heroEyeQuality != null
+                    ? Vector3.Distance(
+                        new Vector3(heroEyeQuality.CurrentCatchlightColor.r,
+                            heroEyeQuality.CurrentCatchlightColor.g,
+                            heroEyeQuality.CurrentCatchlightColor.b),
+                        new Vector3(expectedExpressionColor.r,
+                            expectedExpressionColor.g,
+                            expectedExpressionColor.b))
+                    : float.PositiveInfinity;
+                bool expressionPass = heroEyeQuality != null &&
+                    heroEyeQuality.CurrentExpressionName == expectedExpression &&
+                    heroEyeQuality.CurrentCatchlightEmission >= MoonlightHouseSetup.HeroEyeActionEmission &&
+                    expressionColorDistance <= 0.01f;
+                if (!expressionPass)
+                {
+                    Debug.LogError($"[MoonlightVisualQA][FAIL] action={zone.Kind} eye-expression " +
+                        $"expected={expectedExpression} actual=" +
+                        $"{(heroEyeQuality != null ? heroEyeQuality.CurrentExpressionName : "missing")} " +
+                        $"emission={(heroEyeQuality != null ? heroEyeQuality.CurrentCatchlightEmission : 0f):0.00} " +
+                        $"colorDistance={expressionColorDistance:0.000}");
+                    Application.Quit(76);
+                    yield break;
+                }
                 if (ui != null && ui.resultLabel != null && !string.IsNullOrEmpty(ui.resultLabel.text))
                 {
                     Debug.LogError($"[MoonlightVisualQA][FAIL] action={zone.Kind} result appeared before animation completed");
@@ -196,7 +231,10 @@ namespace MoonlightMagicHouse
                 yield return new WaitForEndOfFrame();
                 ScreenCapture.CaptureScreenshot(actionOutput);
                 Debug.Log($"[MoonlightVisualQA][PASS] action={zone.Kind} prompt=\"{prompt}\" " +
-                    $"result=\"{result}\" effect={feedback.ActiveEffectName} screenshot={actionOutput}");
+                    $"result=\"{result}\" effect={feedback.ActiveEffectName} " +
+                    $"eyeExpression={heroEyeQuality.CurrentExpressionName} " +
+                    $"eyeColorDistance={expressionColorDistance:0.000} " +
+                    $"marker=MOONLIGHT_ACTIVITY_EYE_EXPRESSION_VERIFIED screenshot={actionOutput}");
                 passedActions++;
                 float settleDeadline = Time.time + 3f;
                 while ((feedback.IsPerformingAction || feedback.IsCoolingDown) && Time.time < settleDeadline)

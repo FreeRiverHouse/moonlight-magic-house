@@ -4040,6 +4040,8 @@ namespace MoonlightMagicHouse
         public int HighlightRendererCount => _highlightRenderers.Count;
         public float EyePairSeparation { get; private set; }
         public float CurrentCatchlightEmission { get; private set; }
+        public Color CurrentCatchlightColor { get; private set; } = Color.white;
+        public string CurrentExpressionName { get; private set; } = "idle-ivory";
         public int BlinkLinkedPartCount => _blinker != null ? _blinker.BoundEyeCount : 0;
         public float BlinkCurrentOpenness => _blinker != null ? _blinker.CurrentOpenness : 1f;
         public string BlinkQAMarker => _blinker != null ? _blinker.QAMarker : "missing";
@@ -4071,7 +4073,8 @@ namespace MoonlightMagicHouse
             _blinker = root.GetComponent<EyeBlinker>() ?? root.AddComponent<EyeBlinker>();
             _blinker.Bind(blinkParts);
             _actionFeedback = GetComponentInParent<MoonlightActionFeedback>();
-            ApplyCatchlight(MoonlightHouseSetup.HeroEyeIdleEmission);
+            ApplyCatchlight(ExpressionColorFor(default, false),
+                MoonlightHouseSetup.HeroEyeIdleEmission);
             Debug.Log($"[MoonlightHeroQA] eyes={EyeRendererCount} highlights={HighlightRendererCount} " +
                 $"blinkParts={BlinkLinkedPartCount} separation={EyePairSeparation:0.000} " +
                 $"emission={CurrentCatchlightEmission:0.00} blink={BlinkQAMarker} " +
@@ -4082,17 +4085,23 @@ namespace MoonlightMagicHouse
         {
             if (_highlightRenderers.Count == 0) return;
             if (_actionFeedback == null) _actionFeedback = GetComponentInParent<MoonlightActionFeedback>();
-            float baseEmission = _actionFeedback != null && _actionFeedback.IsPerformingAction
+            bool performing = _actionFeedback != null && _actionFeedback.IsPerformingAction;
+            float baseEmission = performing
                 ? MoonlightHouseSetup.HeroEyeActionEmission
                 : MoonlightHouseSetup.HeroEyeIdleEmission;
             float shimmer = (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.4f)) * 0.035f;
-            ApplyCatchlight(baseEmission + shimmer);
+            MoonlightSpatialActionKind kind = performing
+                ? _actionFeedback.ActiveActivityKind
+                : default;
+            CurrentExpressionName = ExpressionNameFor(kind, performing);
+            ApplyCatchlight(ExpressionColorFor(kind, performing), baseEmission + shimmer);
         }
 
-        void ApplyCatchlight(float emission)
+        void ApplyCatchlight(Color color, float emission)
         {
             CurrentCatchlightEmission = emission;
-            Color catchlight = new Color(1f, 0.98f, 0.91f) * emission;
+            CurrentCatchlightColor = color;
+            Color catchlight = color * emission;
             foreach (Renderer renderer in _highlightRenderers)
             {
                 if (renderer == null) continue;
@@ -4101,6 +4110,57 @@ namespace MoonlightMagicHouse
                 renderer.SetPropertyBlock(_block);
                 _block.Clear();
             }
+        }
+
+        public static Color ExpressionColorFor(MoonlightSpatialActionKind kind, bool performing)
+        {
+            if (!performing) return new Color(1f, 0.98f, 0.91f);
+            return kind switch
+            {
+                MoonlightSpatialActionKind.Cook => new Color(1f, 0.72f, 0.28f),
+                MoonlightSpatialActionKind.Play => new Color(0.38f, 0.86f, 1f),
+                MoonlightSpatialActionKind.Garden => new Color(0.42f, 1f, 0.62f),
+                MoonlightSpatialActionKind.Read => new Color(0.76f, 0.58f, 1f),
+                MoonlightSpatialActionKind.SleepCuddle => new Color(1f, 0.56f, 0.72f),
+                _ => new Color(1f, 0.98f, 0.91f)
+            };
+        }
+
+        public static string ExpressionNameFor(MoonlightSpatialActionKind kind, bool performing)
+        {
+            if (!performing) return "idle-ivory";
+            return kind switch
+            {
+                MoonlightSpatialActionKind.Cook => "cook-warm-focus",
+                MoonlightSpatialActionKind.Play => "play-sky-excitement",
+                MoonlightSpatialActionKind.Garden => "garden-mint-calm",
+                MoonlightSpatialActionKind.Read => "read-lilac-focus",
+                MoonlightSpatialActionKind.SleepCuddle => "cuddle-rose-soft",
+                _ => "magic-ivory"
+            };
+        }
+
+        public static bool ValidateActivityExpressionContract(out string detail)
+        {
+            var colors = new[]
+            {
+                ExpressionColorFor(MoonlightSpatialActionKind.Cook, true),
+                ExpressionColorFor(MoonlightSpatialActionKind.Play, true),
+                ExpressionColorFor(MoonlightSpatialActionKind.Garden, true),
+                ExpressionColorFor(MoonlightSpatialActionKind.Read, true),
+                ExpressionColorFor(MoonlightSpatialActionKind.SleepCuddle, true)
+            };
+            float minimumDistance = float.PositiveInfinity;
+            for (int i = 0; i < colors.Length; i++)
+                for (int j = i + 1; j < colors.Length; j++)
+                    minimumDistance = Mathf.Min(minimumDistance, Vector3.Distance(
+                        new Vector3(colors[i].r, colors[i].g, colors[i].b),
+                        new Vector3(colors[j].r, colors[j].g, colors[j].b)));
+            float emissionLift = MoonlightHouseSetup.HeroEyeActionEmission -
+                MoonlightHouseSetup.HeroEyeIdleEmission;
+            detail = $"expressions={colors.Length} minColorDistance={minimumDistance:0.00} " +
+                $"emissionLift={emissionLift:0.00}";
+            return colors.Length == 5 && minimumDistance >= 0.32f && emissionLift >= 0.08f;
         }
     }
 }

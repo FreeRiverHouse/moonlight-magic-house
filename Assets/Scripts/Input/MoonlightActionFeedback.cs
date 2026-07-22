@@ -55,6 +55,7 @@ namespace MoonlightMagicHouse
         public float ActionProgress01 { get; private set; }
         public int ActivityStep => _activityStep;
         public int ActivityRequiredSteps => _activityRequiredSteps;
+        public MoonlightSpatialActionKind ActiveActivityKind => _activityKind;
         public int ActiveStageRenderers => _activityStage != null ? _activityStage.ActiveRendererCount : 0;
         public int ActiveStageMaterials => _activityStage != null ? _activityStage.ActiveUniqueMaterialCount : 0;
         public int ActiveStageLights => _activityStage != null ? _activityStage.ActiveLightCount : 0;
