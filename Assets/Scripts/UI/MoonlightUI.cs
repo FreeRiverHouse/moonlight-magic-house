@@ -159,6 +159,8 @@ namespace MoonlightMagicHouse
         }
         public string GestureCommandQAMarker => _gestureCommandMarker;
         public string ActivityPhaseQAMarker => _activityPhaseMarker;
+        public string ActionButtonQAText => actionBtnLabel != null ? actionBtnLabel.text : "";
+        public bool ActionButtonQAInteractable => actionBtn != null && actionBtn.interactable;
         public Rect ActionTouchTargetScreenRect => ScreenRect(actionBtn != null
             ? actionBtn.transform as RectTransform
             : null);
@@ -513,7 +515,7 @@ namespace MoonlightMagicHouse
                     : activityStage.CurrentKind.ToString().ToUpperInvariant();
                 if (contextLabel != null)
                     contextLabel.text = $"{activityName}  /  COMPLETE";
-                actionBtnLabel.text = "CONTINUE";
+                actionBtnLabel.text = FinalActivityCountdownLabel(activityStage.LingerSecondsRemaining);
                 _gestureCommandMarker = "FINAL PRESENTATION";
                 _activityPhaseMarker = "COMPLETE";
             }
@@ -621,6 +623,53 @@ namespace MoonlightMagicHouse
                 $"firstComplete={firstComplete:F3} thirdHalf={thirdHalf:F3} " +
                 $"complete={complete:F3} track={IPadProgressTrackWidth:F0}px";
             return pass;
+        }
+
+        public static string FinalActivityCountdownLabel(float lingerSecondsRemaining)
+        {
+            int seconds = Mathf.Max(1, Mathf.CeilToInt(lingerSecondsRemaining));
+            return $"NEXT IN\n{seconds}s";
+        }
+
+        public static bool TryParseFinalActivityCountdownLabel(string label, out int seconds)
+        {
+            seconds = 0;
+            const string prefix = "NEXT IN\n";
+            if (string.IsNullOrEmpty(label) || !label.StartsWith(prefix) ||
+                !label.EndsWith("s"))
+                return false;
+            string value = label.Substring(prefix.Length,
+                label.Length - prefix.Length - 1);
+            return int.TryParse(value, out seconds) && seconds >= 1;
+        }
+
+        public static bool ValidateFinalActivityCtaSemanticsContract(out string detail)
+        {
+            string low = FinalActivityCountdownLabel(4.4f);
+            string middle = FinalActivityCountdownLabel(4.8f);
+            string high = FinalActivityCountdownLabel(5.2f);
+            string minimum = FinalActivityCountdownLabel(0f);
+            string exactFive = FinalActivityCountdownLabel(5f);
+            string belowFive = FinalActivityCountdownLabel(4.999f);
+            string exactOne = FinalActivityCountdownLabel(1f);
+            string belowOne = FinalActivityCountdownLabel(0.999f);
+            string negative = FinalActivityCountdownLabel(-0.001f);
+            bool countdownPresent = low == "NEXT IN\n5s" && middle == "NEXT IN\n5s" &&
+                high == "NEXT IN\n6s" && minimum == "NEXT IN\n1s";
+            bool boundariesPass = exactFive == "NEXT IN\n5s" &&
+                belowFive == "NEXT IN\n5s" && exactOne == "NEXT IN\n1s" &&
+                belowOne == "NEXT IN\n1s" && negative == "NEXT IN\n1s";
+            bool formatPass = TryParseFinalActivityCountdownLabel(high, out int parsedHigh) &&
+                parsedHigh == 6 && TryParseFinalActivityCountdownLabel(minimum,
+                    out int parsedMinimum) && parsedMinimum == 1;
+            bool noCommandCta = !low.Contains("CONTINUE") && !middle.Contains("CONTINUE") &&
+                !high.Contains("CONTINUE");
+            detail = $"range=4.4-5.2s labels={low.Replace('\n', '/')}/" +
+                $"{middle.Replace('\n', '/')}/{high.Replace('\n', '/')} " +
+                $"minimum={minimum.Replace('\n', '/')} countdown={countdownPresent} " +
+                $"boundaries={boundariesPass} format={formatPass} " +
+                $"noCommandCta={noCommandCta}";
+            return countdownPresent && boundariesPass && formatPass && noCommandCta;
         }
 
         public static Vector2 CameraRelativeNavigationDirection(Vector2 worldDirectionXZ,

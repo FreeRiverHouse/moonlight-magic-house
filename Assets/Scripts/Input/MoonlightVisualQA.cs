@@ -400,6 +400,16 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-progress-feedback-contract " +
                 $"{progressFeedbackDetail} marker=MOONLIGHT_IPAD_PROGRESS_FEEDBACK_CONTRACT_VERIFIED");
+            if (!MoonlightUI.ValidateFinalActivityCtaSemanticsContract(out string finalCtaDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-final-cta-semantics " +
+                    finalCtaDetail);
+                Application.Quit(88);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] activity-final-cta-semantics " +
+                $"{finalCtaDetail} " +
+                "marker=MOONLIGHT_ACTIVITY_FINAL_CTA_SEMANTICS_CONTRACT_VERIFIED");
             if (!MoonlightUI.ValidateIPadNavigationCueContract(out string navigationCueDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-navigation-cue-contract " +
@@ -1812,12 +1822,18 @@ namespace MoonlightMagicHouse
                             Application.Quit(47);
                             yield break;
                         }
+                        int finalCountdownSeconds = 0;
+                        bool finalActionTextValid = ui != null &&
+                            MoonlightUI.TryParseFinalActivityCountdownLabel(
+                                ui.ActionButtonQAText, out finalCountdownSeconds);
                         if (expectIPadHud && ui != null &&
                             (ui.ActivityProgressQAMarker != "4/4" ||
                              !Approximately(ui.ActivityProgressFill01, 1f) ||
                              ui.ActivityProgressFillQAMarker !=
                                  "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_READY" ||
                              ui.GestureCommandQAMarker != "FINAL PRESENTATION" ||
+                             !finalActionTextValid ||
+                             ui.ActionButtonQAInteractable ||
                              ui.ContextResultLineCount != 2 ||
                              ui.ContextResultIsOverflowing ||
                              ui.IsRoomNavigationVisible || !ui.IsRoomNavigationLocked))
@@ -1826,7 +1842,11 @@ namespace MoonlightMagicHouse
                                 $"progress={ui.ActivityProgressQAMarker} " +
                                 $"fill={ui.ActivityProgressFill01:0.000} " +
                                 $"fillMarker={ui.ActivityProgressFillQAMarker} " +
-                                $"command={ui.GestureCommandQAMarker} lines={ui.ContextResultLineCount} " +
+                                $"command={ui.GestureCommandQAMarker} " +
+                                $"actionText={ui.ActionButtonQAText.Replace('\n', '/')} " +
+                                $"countdownSeconds={finalCountdownSeconds} " +
+                                $"actionInteractable={ui.ActionButtonQAInteractable} " +
+                                $"lines={ui.ContextResultLineCount} " +
                                 $"overflow={ui.ContextResultIsOverflowing} roomNav={ui.RoomNavigationQAMarker}");
                             Application.Quit(49);
                             yield break;
@@ -1835,7 +1855,11 @@ namespace MoonlightMagicHouse
                             Debug.Log($"[MoonlightGameplayQA][PASS] activity-final-hud action={zone.Kind} " +
                                 $"progress={ui.ActivityProgressQAMarker} command={ui.GestureCommandQAMarker} " +
                                 $"fill={ui.ActivityProgressFill01:0.000} " +
-                                "marker=MOONLIGHT_ACTIVITY_FINAL_HUD_VERIFIED");
+                                $"actionText={ui.ActionButtonQAText.Replace('\n', '/')} " +
+                                $"countdownSeconds={finalCountdownSeconds} " +
+                                $"actionInteractable={ui.ActionButtonQAInteractable} " +
+                                "marker=MOONLIGHT_ACTIVITY_FINAL_HUD_VERIFIED " +
+                                "marker=MOONLIGHT_ACTIVITY_FINAL_CTA_SEMANTICS_LIVE_VERIFIED");
                         string presentationPrefix = zone.Kind switch
                         {
                             MoonlightSpatialActionKind.Cook => "02",
