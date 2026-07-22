@@ -4,6 +4,8 @@ namespace MoonlightMagicHouse
 {
     public class MoonlightPlayerController : MonoBehaviour
     {
+        public const float MovementInputThreshold = 0.05f;
+
         [SerializeField] float moveSpeed = 2.6f;
         [SerializeField] Rect roomBounds = new Rect(-4.2f, -3.25f, 8.4f, 6.5f);
         [SerializeField] float turnSpeed = 12f;
@@ -76,13 +78,14 @@ namespace MoonlightMagicHouse
                 _wasMoving = true;
             }
 
-            var move = _touchMove.sqrMagnitude > 0.0025f ? _touchMove : ReadKeyboardMove();
+            float movementThresholdSquared = MovementInputThreshold * MovementInputThreshold;
+            var move = _touchMove.sqrMagnitude > movementThresholdSquared ? _touchMove : ReadKeyboardMove();
             move = Vector2.ClampMagnitude(move, 1f);
 
             var delta = new Vector3(move.x, 0f, move.y) * (moveSpeed * Time.deltaTime);
             bool clamped = !TryMove(delta);
 
-            bool moving = move.sqrMagnitude > 0.0025f;
+            bool moving = move.sqrMagnitude > movementThresholdSquared;
             UpdateMovementState(moving, move, clamped);
             UpdateVisualMotion(move, moving);
             GetComponentInChildren<MoonlightAnimator>()?.SetWalking(moving);

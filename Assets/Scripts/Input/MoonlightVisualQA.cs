@@ -292,6 +292,14 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] mastery-celebration {celebrationDetail} " +
                 "marker=MOONLIGHT_MASTERY_CELEBRATION_CONTRACT_VERIFIED");
+            if (!MoonlightTouchJoystick.ValidateResponseContract(out string joystickResponseDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-joystick-response {joystickResponseDetail}");
+                Application.Quit(65);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-joystick-response {joystickResponseDetail} " +
+                "marker=MOONLIGHT_IPAD_JOYSTICK_RESPONSE_CONTRACT_VERIFIED");
             if (!pad.TracePoolIsReady ||
                 pad.TraceDotPoolCount != MoonlightGesturePad.GestureTraceDotCapacity)
             {
@@ -319,6 +327,7 @@ namespace MoonlightMagicHouse
                     ui.ActivityHUDPanelsDoNotOverlap &&
                     ui.ActivityPromptCenterOffsetPixels <= Screen.width * 0.10f &&
                     touchJoystick != null && touchJoystick.gameObject.activeInHierarchy &&
+                    touchJoystick.ResponseQAMarker == "MOONLIGHT_IPAD_JOYSTICK_RESPONSE_READY" &&
                     ui.IsRoomNavigationVisible && !ui.IsRoomNavigationLocked;
                 if (!layoutPass)
                 {
@@ -329,6 +338,7 @@ namespace MoonlightMagicHouse
                         $"promptSafe={ui.ActivityPromptIsInsideSafeArea} resultSafe={ui.ActivityResultIsInsideSafeArea} " +
                         $"progressSafe={ui.ActivityProgressIsInsideSafeArea} separated={ui.ActivityHUDPanelsDoNotOverlap} " +
                         $"touchJoystick={(touchJoystick != null && touchJoystick.gameObject.activeInHierarchy)} " +
+                        $"joystickMarker={(touchJoystick != null ? touchJoystick.ResponseQAMarker : "missing")} " +
                         $"promptOffset={ui.ActivityPromptCenterOffsetPixels:0.0} " +
                         $"roomNav={ui.RoomNavigationQAMarker}");
                     Application.Quit(42);
@@ -338,6 +348,7 @@ namespace MoonlightMagicHouse
                     $"marker={ui.HUDLayoutQAMarker} touch={ui.ActionTouchTargetLayoutSize} " +
                     $"safe={ui.HUDSafeAreaScreenRect} panelsSeparated={ui.ActivityHUDPanelsDoNotOverlap} " +
                     $"touchJoystick={touchJoystick.gameObject.activeInHierarchy} " +
+                    $"joystick={touchJoystick.ResponseQAMarker} size={touchJoystick.TouchTargetSize} " +
                     $"promptOffset={ui.ActivityPromptCenterOffsetPixels:0.0} " +
                     $"roomNav={ui.RoomNavigationQAMarker} " +
                     "marker=MOONLIGHT_IPAD_HUD_VERIFIED");

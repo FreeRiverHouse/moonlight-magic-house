@@ -3588,7 +3588,7 @@ namespace MoonlightMagicHouse
             rt.anchorMin = new Vector2(0f, 0f);
             rt.anchorMax = new Vector2(0f, 0f);
             rt.pivot = new Vector2(0.5f, 0.5f);
-            rt.anchoredPosition = new Vector2(140f, 90f);
+            rt.anchoredPosition = new Vector2(148f, 136f);
             rt.sizeDelta = new Vector2(168f, 168f);
 
             var knob = new GameObject("Knob");
