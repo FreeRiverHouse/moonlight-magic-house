@@ -686,6 +686,17 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] gesture-play-contract " +
                 $"sample=({gestureSampleDetail}) trajectory=({responsivePlayDetail}) " +
                 "marker=MOONLIGHT_GESTURE_PLAY_STATIC_CONTRACT_VERIFIED");
+            if (!MoonlightActivityStage.ValidateGestureResponsiveGardenContract(
+                    out string responsiveGardenDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] gesture-garden-contract " +
+                    responsiveGardenDetail);
+                Application.Quit(148);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] gesture-garden-contract " +
+                $"sample=({gestureSampleDetail}) garden=({responsiveGardenDetail}) " +
+                "marker=MOONLIGHT_GESTURE_GARDEN_STATIC_CONTRACT_VERIFIED");
             if (!MoonlightGesturePad.ValidateLiveHoldReadinessStaticContract(
                     out string liveHoldReadinessDetail))
             {
@@ -3062,6 +3073,102 @@ namespace MoonlightMagicHouse
                         }
                         else if (zone.Kind == MoonlightSpatialActionKind.Garden)
                         {
+                            bool gardenSampleEqualityPass = pad != null &&
+                                pad.LastSample.HasSevenFiniteNormalizedPoints &&
+                                zone.LastGestureSample.HasSevenFiniteNormalizedPoints &&
+                                feedback.ActiveGestureSample.HasSevenFiniteNormalizedPoints &&
+                                stage.ActiveGestureSample.HasSevenFiniteNormalizedPoints &&
+                                pad.LastSample.ContentEquals(zone.LastGestureSample) &&
+                                zone.LastGestureSample.ContentEquals(
+                                    feedback.ActiveGestureSample) &&
+                                feedback.ActiveGestureSample.ContentEquals(
+                                    stage.ActiveGestureSample);
+                            bool gardenGestureKindPass = step switch
+                            {
+                                0 => expected == MoonlightGestureKind.Tap,
+                                1 => expected == MoonlightGestureKind.Circle,
+                                2 => expected == MoonlightGestureKind.ZigZag,
+                                _ => expected == MoonlightGestureKind.Hold
+                            };
+                            bool gardenPropPass = step == 3 ||
+                                stage.GardenGesturePropTransformAgreement;
+                            float gardenPropError = step == 3
+                                ? 0f
+                                : Vector3.Distance(stage.GardenGesturePropLocalPosition,
+                                    stage.GardenExpectedGesturePropLocalPosition);
+                            bool plantPass = step != 0 ||
+                                (stage.GardenSelectedPlantSlot == 2 &&
+                                 stage.GardenSelectedPlantSlotInsidePlanter &&
+                                 Vector3.Distance(stage.GardenSelectedPlantSlotLocalPosition,
+                                     new Vector3(-0.10f, 0.43f, -0.07f)) <= 0.001f);
+                            bool waterPass = step != 1 ||
+                                stage.GardenWaterDirectionAgreement;
+                            bool tendPass = step != 2 ||
+                                (stage.GardenTendTargetCount == 5 &&
+                                 stage.GardenTendDirectionInversionCount >= 3 &&
+                                 stage.GardenTendSequenceTransformAgreement &&
+                                 stage.GardenTendAnchorPathAgreement &&
+                                 stage.GardenTendCurrentTargetGrowthAgreement);
+                            bool bloomPass = step != 3 ||
+                                (stage.GardenBloomTransformAgreement &&
+                                 stage.GardenBloomOpeningScale > 0f &&
+                                 stage.GardenBloomIntensityMultiplier >= 1f);
+                            bool unchangedGardenBudgets =
+                                MoonlightActivityStage.GardenRendererBudget == 48 &&
+                                MoonlightActivityStage.GardenMaterialBudget == 28 &&
+                                MoonlightActivityStage.GardenLightBudget == 1 &&
+                                stage.GardenMagicFlowerRendererBudget == 10 &&
+                                stage.GardenBudgetReady;
+                            bool gestureGardenRuntimePass = gardenSampleEqualityPass &&
+                                gardenGestureKindPass && gardenPropPass && plantPass &&
+                                waterPass && tendPass && bloomPass && unchangedGardenBudgets;
+                            if (!gestureGardenRuntimePass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] gesture-garden-runtime " +
+                                    $"step={step + 1}/4 sampleEquality={gardenSampleEqualityPass} " +
+                                    $"padPoints={(pad != null ? pad.LastSample.PointCount : 0)} " +
+                                    $"zonePoints={zone.LastGestureSample.PointCount} " +
+                                    $"feedbackPoints={feedback.ActiveGestureSample.PointCount} " +
+                                    $"stagePoints={stage.ActiveGestureSample.PointCount} " +
+                                    $"kind={expected}/{gardenGestureKindPass} " +
+                                    $"prop={stage.GardenGesturePropLocalPosition:F3}/" +
+                                    $"{stage.GardenExpectedGesturePropLocalPosition:F3} " +
+                                    $"error={gardenPropError:0.0000}m " +
+                                    $"slot={stage.GardenSelectedPlantSlot}/5 " +
+                                    $"inside={stage.GardenSelectedPlantSlotInsidePlanter} " +
+                                    $"circleAreaRaw={stage.GardenWaterSourceSignedArea:0.0000} " +
+                                    $"world={stage.GardenWaterSignedArea:0.0000} " +
+                                    $"direction={stage.GardenWaterDirectionAgreement} " +
+                                    $"tend={stage.GardenTendTargetCount}/5 " +
+                                    $"inversions={stage.GardenTendDirectionInversionCount}/3 " +
+                                    $"sequence={stage.GardenTendSequenceTransformAgreement} " +
+                                    $"anchors={stage.GardenTendAnchorPathAgreement} " +
+                                    $"growth={stage.GardenTendCurrentTargetGrowthAgreement} " +
+                                    $"bloom={stage.GardenBloomOpeningScale:0.000}/" +
+                                    $"{stage.GardenExpectedBloomOpeningScale:0.000} " +
+                                    $"intensity={stage.GardenBloomLightIntensity:0.000}/" +
+                                    $"{stage.GardenExpectedBloomLightIntensity:0.000} " +
+                                    $"budget=({stage.GardenBudgetEvidence})");
+                                Application.Quit(150);
+                                yield break;
+                            }
+                            Debug.Log("[MoonlightGameplayQA][PASS] gesture-garden-runtime " +
+                                $"step={step + 1}/4 points={stage.ActiveGestureSample.PointCount} " +
+                                $"sampleEquality={gardenSampleEqualityPass} gesture={expected} " +
+                                $"propError={gardenPropError:0.0000}m " +
+                                $"slot={stage.GardenSelectedPlantSlot} " +
+                                $"circleAreaRaw={stage.GardenWaterSourceSignedArea:0.0000} " +
+                                $"world={stage.GardenWaterSignedArea:0.0000} " +
+                                $"direction={stage.GardenWaterDirectionAgreement} " +
+                                $"tend={stage.GardenTendTargetCount}/5 " +
+                                $"inversions={stage.GardenTendDirectionInversionCount} " +
+                                $"anchors={stage.GardenTendAnchorPathAgreement} " +
+                                $"growth={stage.GardenTendCurrentTargetGrowthAgreement} " +
+                                $"bloom={stage.GardenBloomOpeningScale:0.000} " +
+                                $"intensity={stage.GardenBloomIntensityMultiplier:0.000} " +
+                                $"budget=({stage.GardenBudgetEvidence}) " +
+                                "marker=MOONLIGHT_GESTURE_GARDEN_RUNTIME_VERIFIED");
+
                             bool authoredGardenPass = stage.HasAuthoredGardenAtelier &&
                                 stage.AuthoredGardenAtelierRendererCount >= 18 &&
                                 stage.AuthoredGardenAtelierRendererCount <= 26 &&
@@ -3319,7 +3426,7 @@ namespace MoonlightMagicHouse
                         {
                             MoonlightSpatialActionKind.Cook => "02_after_cooking_gesture.png",
                             MoonlightSpatialActionKind.Play => "03_after_play_gesture.png",
-                            MoonlightSpatialActionKind.Garden => "04_after_gardening_gesture.png",
+                            MoonlightSpatialActionKind.Garden => "04_gardening_followthrough.png",
                             MoonlightSpatialActionKind.Read => "05_after_reading_gesture.png",
                             MoonlightSpatialActionKind.Care => "06_after_care_gesture.png",
                             _ => "activity.png"
@@ -3452,6 +3559,51 @@ namespace MoonlightMagicHouse
                                 $"resultMarker={stage.CookGestureResultQAMarker} " +
                                 $"budget=({stage.CookBudgetEvidence}) " +
                                 "marker=MOONLIGHT_COOK_GESTURE_LINGER_VERIFIED");
+                        }
+                        if (zone.Kind == MoonlightSpatialActionKind.Garden)
+                        {
+                            bool lingeringGardenBloomPass =
+                                stage.ActiveGestureSample.ContentEquals(
+                                    zone.LastGestureSample) &&
+                                stage.GardenBloomPersistsDuringLinger &&
+                                stage.GardenBloomTransformAgreement &&
+                                stage.GardenBloomOpeningScale > 0f &&
+                                stage.GardenBloomIntensityMultiplier >= 1f &&
+                                MoonlightActivityStage.GardenRendererBudget == 48 &&
+                                MoonlightActivityStage.GardenMaterialBudget == 28 &&
+                                MoonlightActivityStage.GardenLightBudget == 1 &&
+                                stage.GardenBudgetReady;
+                            if (!lingeringGardenBloomPass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                    "gesture-garden-linger " +
+                                    $"sample={stage.ActiveGestureSample.ContentEquals(zone.LastGestureSample)} " +
+                                    $"persist={stage.GardenBloomPersistsDuringLinger} " +
+                                    $"transform={stage.GardenBloomTransformAgreement} " +
+                                    $"opening={stage.GardenBloomOpeningScale:0.000}/" +
+                                    $"{stage.GardenExpectedBloomOpeningScale:0.000} " +
+                                    $"light={stage.GardenBloomLightIntensity:0.000}/" +
+                                    $"{stage.GardenExpectedBloomLightIntensity:0.000} " +
+                                    $"multiplier={stage.GardenBloomIntensityMultiplier:0.000} " +
+                                    $"remaining={stage.LingerSecondsRemaining:0.00}s " +
+                                    $"budget=({stage.GardenBudgetEvidence})");
+                                Application.Quit(151);
+                                yield break;
+                            }
+                            Debug.Log("[MoonlightGameplayQA][PASS] gesture-garden-linger " +
+                                $"opening={stage.GardenBloomOpeningScale:0.000} " +
+                                $"light={stage.GardenBloomLightIntensity:0.000} " +
+                                $"multiplier={stage.GardenBloomIntensityMultiplier:0.000} " +
+                                $"remaining={stage.LingerSecondsRemaining:0.00}s " +
+                                $"budget=({stage.GardenBudgetEvidence}) " +
+                                "marker=MOONLIGHT_GESTURE_GARDEN_LINGER_VERIFIED");
+                            string gardenAfterShot = Path.Combine(output,
+                                "04_after_gardening_gesture.png");
+                            yield return Capture(gardenAfterShot);
+                            Debug.Log("[MoonlightGameplayQA][PASS] gesture-garden-after " +
+                                $"t=1 linger={stage.IsLingering} " +
+                                $"screenshot={gardenAfterShot} " +
+                                "marker=MOONLIGHT_GESTURE_GARDEN_AFTER_CAPTURE_VERIFIED");
                         }
                         int finalCountdownSeconds = 0;
                         bool finalActionTextValid = ui != null &&

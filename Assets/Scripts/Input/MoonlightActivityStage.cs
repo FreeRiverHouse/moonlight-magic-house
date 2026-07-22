@@ -8,6 +8,12 @@ namespace MoonlightMagicHouse
         const string MagicFlowerResourcePath = "Models/Props/Garden/MagicFlowerBloom";
         const int GardenMagicFlowerRequiredInstances = 5;
         const int GardenMagicFlowerMaxRenderers = 10;
+        const float GardenBloomBaseScale = 0.48f;
+        const float GardenWaterMaximumXOffset = 0.30f;
+        const float GardenWaterMaximumZOffset = 0.22f;
+        const float GardenTendMinimumX = -0.44f;
+        const float GardenTendMaximumX = 0.24f;
+        const float GardenTendMaximumZ = 0.13f;
         const float ActivityLightRange = 3.2f;
         const float ActivityLightSpotAngle = 72f;
         const float ActivityLightBaseIntensity = 0.32f;
@@ -33,6 +39,13 @@ namespace MoonlightMagicHouse
         const float CookDecorMinimumZ = -0.18f;
         const float CookDecorMaximumZ = 0.42f;
         static readonly Vector3 CookDecorParkedPosition = new(-0.43f, 0.72f, 0.30f);
+        static readonly Vector3[] GardenWateringCanBasePositions =
+        {
+            new(0.58f, 0.31f, -0.18f),
+            new(0.35f, 0.37f, -0.15f),
+            new(0.20f, 0.43f, -0.13f),
+            new(0.72f, 0.36f, -0.18f)
+        };
         public const float PlayMinimumThrowExtent = 1.05f;
         public const float PlayMaximumThrowExtent = 2.30f;
         public const float PlayMinimumJumpExtent = 0.80f;
@@ -47,6 +60,9 @@ namespace MoonlightMagicHouse
         public const int CookRendererBudget = 36;
         public const int CookMaterialBudget = 24;
         public const int CookLightBudget = 1;
+        public const int GardenRendererBudget = 48;
+        public const int GardenMaterialBudget = 28;
+        public const int GardenLightBudget = 1;
         public const string CookAddChoreographyReadyMarker =
             "MOONLIGHT_COOK_ADD_CHOREOGRAPHY_READY";
         public const string CookStirChoreographyReadyMarker =
@@ -138,6 +154,7 @@ namespace MoonlightMagicHouse
         Vector3 _center;
         int _requiredSteps = 1;
         float _playProgress;
+        float _gardenProgress;
         MoonlightGestureSample _gestureSample;
 
         public bool IsVisible => _root != null;
@@ -412,6 +429,85 @@ namespace MoonlightMagicHouse
         public string GardenMagicFlowerQAMarker => HasGardenMagicFlowerPrefab
             ? "MOONLIGHT_MAGIC_FLOWER_STAGE_READY"
             : "MOONLIGHT_MAGIC_FLOWER_STAGE_MISSING";
+        public int GardenSelectedPlantSlot => GardenPlantSlotIndex(_gestureSample);
+        public Vector3 GardenSelectedPlantSlotLocalPosition =>
+            GardenPlantSlotPosition(GardenSelectedPlantSlot);
+        public bool GardenSelectedPlantSlotInsidePlanter =>
+            GardenPlantPointIsInsidePlanter(GardenSelectedPlantSlotLocalPosition);
+        public Vector3 GardenGesturePropLocalPosition => CurrentStep switch
+        {
+            0 when _seeds != null && _seeds.Length > 2 && _seeds[2] != null =>
+                _seeds[2].localPosition,
+            1 when _gardenProps != null && _gardenProps.Length > 2 &&
+                _gardenProps[2] != null => _gardenProps[2].localPosition,
+            2 when _gardenProps != null && _gardenProps.Length > 2 &&
+                _gardenProps[2] != null => _gardenProps[2].localPosition,
+            _ => new Vector3(float.NaN, float.NaN, float.NaN)
+        };
+        public Vector3 GardenExpectedGesturePropLocalPosition => CurrentStep switch
+        {
+            0 => EvaluateGardenPlantSeedPosition(_gardenProgress, _gestureSample),
+            1 => EvaluateGardenWaterPath(_gardenProgress, _gestureSample),
+            2 => EvaluateGardenTendPath(_gardenProgress, _gestureSample),
+            _ => new Vector3(float.NaN, float.NaN, float.NaN)
+        };
+        public int GardenCurrentTendTargetIndex =>
+            GardenTendTargetIndexAtProgress(_gardenProgress);
+        public int GardenTendTargetCount => GardenMagicFlowerRequiredInstances;
+        public int GardenTendDirectionInversionCount =>
+            GardenTendInversionCount(_gestureSample);
+        public float GardenWaterSourceSignedArea =>
+            GardenSampleSignedArea(_gestureSample);
+        public float GardenWaterSignedArea => GardenWaterPathSignedArea(_gestureSample);
+        public bool GardenWaterDirectionAgreement =>
+            Mathf.Abs(GardenWaterSourceSignedArea) >= 0.08f &&
+            Mathf.Abs(GardenWaterSignedArea) >= 0.01f &&
+            Mathf.Sign(GardenWaterSourceSignedArea) == Mathf.Sign(GardenWaterSignedArea);
+        public float GardenBloomOpeningScale =>
+            _flowers != null && _flowers.Length > 2 && _flowers[2] != null
+                ? _flowers[2].localScale.x
+                : float.NaN;
+        public float GardenExpectedBloomOpeningScale =>
+            EvaluateGardenBloomScale(_gardenProgress, 2, _gestureSample);
+        public float GardenBloomIntensityMultiplier =>
+            EvaluateGardenBloomIntensity(_gestureSample);
+        public float GardenBloomLightIntensity =>
+            _activityLight != null ? _activityLight.intensity : float.NaN;
+        public float GardenExpectedBloomLightIntensity =>
+            (ActivityLightBaseIntensity +
+             Mathf.Sin(_gardenProgress * Mathf.PI) * ActivityLightPulseIntensity) *
+            GardenBloomIntensityMultiplier;
+        public bool GardenGesturePropTransformAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Garden && CurrentStep < 3 &&
+            IsFinite(GardenGesturePropLocalPosition) &&
+            Vector3.Distance(GardenGesturePropLocalPosition,
+                GardenExpectedGesturePropLocalPosition) <= 0.001f;
+        public bool GardenTendSequenceTransformAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Garden && CurrentStep == 2 &&
+            GardenFlowerTargetsMatchGesture();
+        public bool GardenTendAnchorPathAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Garden && CurrentStep == 2 &&
+            GardenTendToolMatchesTargetsAtAnchors(_gestureSample);
+        public bool GardenTendCurrentTargetGrowthAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Garden && CurrentStep == 2 &&
+            GardenCurrentTendTargetMatchesProgress();
+        public bool GardenBloomTransformAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Garden && CurrentStep == 3 &&
+            IsFinite(GardenBloomOpeningScale) && IsFinite(GardenBloomLightIntensity) &&
+            Mathf.Abs(GardenBloomOpeningScale - GardenExpectedBloomOpeningScale) <= 0.001f &&
+            Mathf.Abs(GardenBloomLightIntensity - GardenExpectedBloomLightIntensity) <= 0.001f;
+        public bool GardenBudgetReady => CurrentKind == MoonlightSpatialActionKind.Garden &&
+            ActiveRendererCount > 0 && ActiveRendererCount <= GardenRendererBudget &&
+            ActiveUniqueMaterialCount > 0 &&
+            ActiveUniqueMaterialCount <= GardenMaterialBudget &&
+            ActiveLightCount == GardenLightBudget;
+        public bool GardenBloomPersistsDuringLinger => IsLingering &&
+            CurrentKind == MoonlightSpatialActionKind.Garden && CurrentStep == 3 &&
+            Mathf.Abs(_gardenProgress - 1f) <= 0.0001f && GardenBloomTransformAgreement;
+        public string GardenBudgetEvidence =>
+            $"renderers={ActiveRendererCount}/{GardenRendererBudget} " +
+            $"materials={ActiveUniqueMaterialCount}/{GardenMaterialBudget} " +
+            $"lights={ActiveLightCount}/{GardenLightBudget}";
         public bool HasAuthoredReadingNook => _authoredReadingNook != null;
         public int AuthoredReadingNookRendererCount { get; private set; }
         public int AuthoredReadingNookMaterialCount { get; private set; }
@@ -553,8 +649,13 @@ namespace MoonlightMagicHouse
             else if (CurrentKind == MoonlightSpatialActionKind.Care) UpdateCare(t);
 
             if (_activityLight != null)
-                _activityLight.intensity = ActivityLightBaseIntensity +
+            {
+                float intensity = ActivityLightBaseIntensity +
                     Mathf.Sin(t * Mathf.PI) * ActivityLightPulseIntensity;
+                if (CurrentKind == MoonlightSpatialActionKind.Garden && CurrentStep == 3)
+                    intensity *= EvaluateGardenBloomIntensity(_gestureSample);
+                _activityLight.intensity = intensity;
+            }
 
             UpdateActivityCounts();
         }
@@ -756,6 +857,7 @@ namespace MoonlightMagicHouse
             _ball = null;
             _gestureSample = default;
             _playProgress = 0f;
+            _gardenProgress = 0f;
             _blocks = null;
             _playProps = null;
             _starDetails = null;
@@ -2029,6 +2131,505 @@ namespace MoonlightMagicHouse
                 point.y >= CookGestureMinimumY && point.y <= CookGestureMaximumY;
         }
 
+        public static int GardenPlantSlotIndex(MoonlightGestureSample sample)
+        {
+            float tapX = sample.HasSevenFiniteNormalizedPoints ? sample.Start.x : 0f;
+            return Mathf.Clamp(Mathf.RoundToInt(Mathf.InverseLerp(-0.80f, 0.80f, tapX) *
+                (GardenMagicFlowerRequiredInstances - 1)), 0,
+                GardenMagicFlowerRequiredInstances - 1);
+        }
+
+        public static Vector3 GardenPlantSlotPosition(int slotIndex)
+        {
+            int slot = Mathf.Clamp(slotIndex, 0, GardenMagicFlowerRequiredInstances - 1);
+            return new Vector3(-0.42f + slot * 0.16f, 0.43f,
+                slot % 2 == 0 ? -0.07f : 0.08f);
+        }
+
+        static int GardenPlantSlotForSeed(int seedIndex, int selectedSlot)
+        {
+            if (seedIndex == 2) return selectedSlot;
+            int remainingIndex = seedIndex < 2 ? seedIndex : seedIndex - 1;
+            for (int slot = 0; slot < GardenMagicFlowerRequiredInstances; slot++)
+            {
+                if (slot == selectedSlot) continue;
+                if (remainingIndex-- == 0) return slot;
+            }
+            return selectedSlot;
+        }
+
+        public static Vector3 EvaluateGardenPlantSeedPosition(float progress,
+            MoonlightGestureSample sample)
+        {
+            Vector3 target = GardenPlantSlotPosition(GardenPlantSlotIndex(sample));
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float drop = Mathf.Clamp01(t * 3.2f - 0.44f);
+            return Vector3.Lerp(target + new Vector3(-0.20f, 0.49f, -0.12f), target, drop);
+        }
+
+        public static Vector3 EvaluateGardenWaterPath(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            Vector2 center = GardenSampleBoundsCenter(sample);
+            Vector2 point = InterpolateSamplePoint(sample, t) - center;
+            Vector3 rose = GardenWateringCanBasePositions[2];
+            return new Vector3(
+                rose.x + Mathf.Clamp(point.x * 0.55f,
+                    -GardenWaterMaximumXOffset, GardenWaterMaximumXOffset),
+                rose.y,
+                rose.z + Mathf.Clamp(point.y * 0.40f,
+                    -GardenWaterMaximumZOffset, GardenWaterMaximumZOffset));
+        }
+
+        public static Vector3 EvaluateGardenTendPath(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float scaled = t * (GardenMagicFlowerRequiredInstances - 1);
+            int from = Mathf.Min(Mathf.FloorToInt(scaled),
+                GardenMagicFlowerRequiredInstances - 1);
+            int to = Mathf.Min(from + 1, GardenMagicFlowerRequiredInstances - 1);
+            Vector2 point = Vector2.Lerp(sample[from], sample[to], scaled - from);
+            return GardenTendPoint(point - GardenTendSampleCenter(sample));
+        }
+
+        public static Vector3 EvaluateGardenTendTarget(int targetIndex,
+            MoonlightGestureSample sample)
+        {
+            int index = Mathf.Clamp(targetIndex, 0, GardenMagicFlowerRequiredInstances - 1);
+            return GardenTendPoint(sample[index] - GardenTendSampleCenter(sample));
+        }
+
+        public static float EvaluateGardenTendScale(float progress, int targetIndex)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            int index = Mathf.Clamp(targetIndex, 0, GardenMagicFlowerRequiredInstances - 1);
+            float anchor = index / (float)(GardenMagicFlowerRequiredInstances - 1);
+            float previousAnchor = index == 0
+                ? 0f
+                : (index - 1f) / (GardenMagicFlowerRequiredInstances - 1);
+            float tended = index == 0
+                ? 1f
+                : Mathf.InverseLerp(previousAnchor, anchor, t);
+            return GardenBloomBaseScale *
+                (tended + Mathf.Sin(tended * Mathf.PI) * 0.18f);
+        }
+
+        public static float EvaluateGardenBloomScale(float progress, int flowerIndex,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            int index = Mathf.Clamp(flowerIndex, 0, GardenMagicFlowerRequiredInstances - 1);
+            float opening = Mathf.Clamp01(t * 3.2f - index * 0.08f);
+            float overshoot = Mathf.Sin(opening * Mathf.PI) * 0.18f;
+            float qualityScale = Mathf.Lerp(0.84f, 1.12f, GardenBloomQuality(sample));
+            return GardenBloomBaseScale * (opening + overshoot) * qualityScale;
+        }
+
+        public static float EvaluateGardenBloomIntensity(MoonlightGestureSample sample) =>
+            Mathf.Lerp(0.90f, 1.18f, GardenBloomQuality(sample));
+
+        public static bool ValidateGestureResponsiveGardenContract(out string detail)
+        {
+            MoonlightGestureSample leftTap = GardenTapSample(-0.80f);
+            MoonlightGestureSample rightTap = GardenTapSample(0.80f);
+            MoonlightGestureSample clockwise = GardenCircleSample(0.34f, true);
+            MoonlightGestureSample counterClockwise = GardenCircleSample(0.34f, false);
+            MoonlightGestureSample zigZag = GardenZigZagSample(false);
+            MoonlightGestureSample reverseZigZag = GardenZigZagSample(true);
+            MoonlightGestureSample minimumBloom = GardenHoldSample(0.50f, 0.45f);
+            MoonlightGestureSample perfectBloom = GardenHoldSample(0.95f, 1.00f);
+            MoonlightGestureSample shortBloom = GardenHoldSample(0.75f, 0.45f);
+            MoonlightGestureSample longBloom = GardenHoldSample(0.75f, 1.00f);
+
+            float[] tapXOracle = { -0.80f, -0.40f, 0f, 0.40f, 0.80f };
+            Vector3[] plantSlotOracle =
+            {
+                new(-0.42f, 0.43f, -0.07f),
+                new(-0.26f, 0.43f, 0.08f),
+                new(-0.10f, 0.43f, -0.07f),
+                new(0.06f, 0.43f, 0.08f),
+                new(0.22f, 0.43f, -0.07f)
+            };
+            float minimumTapSeparation = float.PositiveInfinity;
+            bool plantOraclePass = true;
+            int distinctTapSelections = 0;
+            for (int slot = 0; slot < GardenMagicFlowerRequiredInstances; slot++)
+            {
+                Vector3 expectedPoint = plantSlotOracle[slot];
+                MoonlightGestureSample slotTap = GardenTapSample(tapXOracle[slot]);
+                if (GardenPlantSlotIndex(slotTap) == slot) distinctTapSelections++;
+                plantOraclePass &= Vector3.Distance(
+                        GardenPlantSlotPosition(slot), expectedPoint) <= 0.001f &&
+                    expectedPoint.x >= -0.51f && expectedPoint.x <= 0.31f &&
+                    expectedPoint.y >= 0.40f && expectedPoint.y <= 0.46f &&
+                    expectedPoint.z >= -0.16f && expectedPoint.z <= 0.16f;
+                for (int other = slot + 1; other < GardenMagicFlowerRequiredInstances; other++)
+                    minimumTapSeparation = Mathf.Min(minimumTapSeparation,
+                        Vector3.Distance(expectedPoint, plantSlotOracle[other]));
+            }
+            bool tapSelectionPass = GardenPlantSlotIndex(leftTap) == 0 &&
+                GardenPlantSlotIndex(rightTap) == GardenMagicFlowerRequiredInstances - 1 &&
+                distinctTapSelections == GardenMagicFlowerRequiredInstances &&
+                plantOraclePass &&
+                minimumTapSeparation >= 0.16f;
+
+            bool finiteAndBounded = true;
+            for (int sampleIndex = 0; sampleIndex <= 40; sampleIndex++)
+            {
+                float t = sampleIndex / 40f;
+                finiteAndBounded &= GardenPlantPathIsFiniteAndBounded(
+                        EvaluateGardenPlantSeedPosition(t, leftTap)) &&
+                    GardenWaterPointIsFiniteAndBounded(EvaluateGardenWaterPath(
+                        t, clockwise)) &&
+                    GardenWaterPointIsFiniteAndBounded(EvaluateGardenWaterPath(
+                        t, counterClockwise)) &&
+                    GardenTendPointIsFiniteAndBounded(EvaluateGardenTendPath(t, zigZag)) &&
+                    GardenTendPointIsFiniteAndBounded(EvaluateGardenTendPath(
+                        t, reverseZigZag));
+                for (int flower = 0; flower < GardenMagicFlowerRequiredInstances; flower++)
+                {
+                    finiteAndBounded &= GardenTendPointIsFiniteAndBounded(
+                            EvaluateGardenTendTarget(flower, zigZag)) &&
+                        GardenTendPointIsFiniteAndBounded(
+                            EvaluateGardenTendTarget(flower, reverseZigZag));
+                    float tendScale = EvaluateGardenTendScale(t, flower);
+                    float minimumScale = EvaluateGardenBloomScale(t, flower, minimumBloom);
+                    float perfectScale = EvaluateGardenBloomScale(t, flower, perfectBloom);
+                    finiteAndBounded &= IsFinite(tendScale) && IsFinite(minimumScale) &&
+                        IsFinite(perfectScale) && tendScale >= 0f && tendScale <= 0.66f &&
+                        minimumScale >= 0f && perfectScale >= 0f &&
+                        minimumScale <= 0.66f && perfectScale <= 0.66f;
+                }
+            }
+
+            float clockwiseSourceArea = GardenSampleSignedArea(clockwise);
+            float counterClockwiseSourceArea = GardenSampleSignedArea(counterClockwise);
+            float clockwiseArea = GardenWaterPathSignedArea(clockwise);
+            float counterClockwiseArea = GardenWaterPathSignedArea(counterClockwise);
+            bool waterDirectionPass = clockwiseSourceArea < -0.08f &&
+                counterClockwiseSourceArea > 0.08f &&
+                clockwiseArea < -0.01f && counterClockwiseArea > 0.01f &&
+                Mathf.Sign(clockwiseSourceArea) == Mathf.Sign(clockwiseArea) &&
+                Mathf.Sign(counterClockwiseSourceArea) ==
+                    Mathf.Sign(counterClockwiseArea);
+            bool waterOraclePass = Vector3.Distance(
+                    EvaluateGardenWaterPath(0f, counterClockwise),
+                    new Vector3(0.387f, 0.43f, -0.13f)) <= 0.001f &&
+                Vector3.Distance(EvaluateGardenWaterPath(0.25f, counterClockwise),
+                    new Vector3(0.20f, 0.43f, -0.0122f)) <= 0.001f &&
+                Vector3.Distance(EvaluateGardenWaterPath(0.25f, clockwise),
+                    new Vector3(0.20f, 0.43f, -0.2478f)) <= 0.001f;
+            int zigZagTargets = GardenDistinctTendTargetCount(zigZag);
+            int reverseTargets = GardenDistinctTendTargetCount(reverseZigZag);
+            int zigZagInversions = GardenTendInversionCount(zigZag);
+            int reverseInversions = GardenTendInversionCount(reverseZigZag);
+            Vector3[] zigZagTargetOracle =
+            {
+                new(-0.37f, 0.60f, -0.0784f),
+                new(0.17f, 0.60f, -0.0392f),
+                new(-0.37f, 0.60f, 0f),
+                new(0.17f, 0.60f, 0.0392f),
+                new(-0.37f, 0.60f, 0.0784f)
+            };
+            bool zigZagOraclePass = true;
+            bool tendGrowthAnchorPass = true;
+            for (int target = 0; target < GardenMagicFlowerRequiredInstances; target++)
+            {
+                float anchor = target /
+                    (float)(GardenMagicFlowerRequiredInstances - 1);
+                zigZagOraclePass &= Vector3.Distance(
+                        EvaluateGardenTendTarget(target, zigZag),
+                        zigZagTargetOracle[target]) <= 0.001f &&
+                    Vector3.Distance(EvaluateGardenTendPath(anchor, zigZag),
+                        zigZagTargetOracle[target]) <= 0.001f;
+                tendGrowthAnchorPass &= GardenTendTargetIndexAtProgress(anchor) == target;
+                for (int flower = 0; flower < GardenMagicFlowerRequiredInstances; flower++)
+                {
+                    float expectedScale = flower <= target ? GardenBloomBaseScale : 0f;
+                    tendGrowthAnchorPass &= Mathf.Abs(
+                        EvaluateGardenTendScale(anchor, flower) - expectedScale) <= 0.001f;
+                }
+            }
+            bool tendAnchorPass = GardenTendToolMatchesTargetsAtAnchors(zigZag) &&
+                GardenTendToolMatchesTargetsAtAnchors(reverseZigZag);
+            bool zigZagPass = zigZagTargets == GardenMagicFlowerRequiredInstances &&
+                reverseTargets == GardenMagicFlowerRequiredInstances &&
+                zigZagInversions >= 3 && reverseInversions >= 3 &&
+                zigZagOraclePass && tendAnchorPass && tendGrowthAnchorPass;
+
+            float minimumOpening = EvaluateGardenBloomScale(1f, 2, minimumBloom);
+            float perfectOpening = EvaluateGardenBloomScale(1f, 2, perfectBloom);
+            float minimumIntensity = EvaluateGardenBloomIntensity(minimumBloom);
+            float perfectIntensity = EvaluateGardenBloomIntensity(perfectBloom);
+            float openingDelta = (perfectOpening - minimumOpening) /
+                Mathf.Max(0.0001f, minimumOpening);
+            float intensityDelta = (perfectIntensity - minimumIntensity) /
+                Mathf.Max(0.0001f, minimumIntensity);
+            float shortDurationOpening = EvaluateGardenBloomScale(1f, 2, shortBloom);
+            float longDurationOpening = EvaluateGardenBloomScale(1f, 2, longBloom);
+            float shortDurationIntensity = EvaluateGardenBloomIntensity(shortBloom);
+            float longDurationIntensity = EvaluateGardenBloomIntensity(longBloom);
+            float durationOpeningDelta = (longDurationOpening - shortDurationOpening) /
+                Mathf.Max(0.0001f, shortDurationOpening);
+            float durationIntensityDelta = (longDurationIntensity - shortDurationIntensity) /
+                Mathf.Max(0.0001f, shortDurationIntensity);
+            bool durationResponsive = durationOpeningDelta >= 0.12f &&
+                durationIntensityDelta >= 0.12f;
+            bool bloomPass = openingDelta >= 0.12f && intensityDelta >= 0.12f &&
+                durationResponsive;
+            bool unchangedBudget = GardenRendererBudget == 48 &&
+                GardenMaterialBudget == 28 && GardenLightBudget == 1 &&
+                GardenMagicFlowerMaxRenderers == 10;
+
+            detail = $"samples=41 slots={distinctTapSelections}/5 oracle={plantOraclePass} " +
+                $"tapSelection={GardenPlantSlotIndex(leftTap)}/{GardenPlantSlotIndex(rightTap)} " +
+                $"tapSeparation={minimumTapSeparation:0.000}m " +
+                $"circleSourceArea={clockwiseSourceArea:0.0000}/" +
+                $"{counterClockwiseSourceArea:0.0000} worldArea=" +
+                $"{clockwiseArea:0.0000}/{counterClockwiseArea:0.0000} " +
+                $"waterDirection={waterDirectionPass} oracle={waterOraclePass} " +
+                $"zigzag={zigZagTargets}/{reverseTargets} targets " +
+                $"inversions={zigZagInversions}/{reverseInversions} " +
+                $"anchors={tendAnchorPass} growth={tendGrowthAnchorPass} " +
+                $"oracle={zigZagOraclePass} " +
+                $"bloomDelta={openingDelta:P0}/{intensityDelta:P0} " +
+                $"durationDelta={durationOpeningDelta:P0}/{durationIntensityDelta:P0} " +
+                $"finiteBounds={finiteAndBounded} " +
+                $"budgets={GardenRendererBudget}r/{GardenMaterialBudget}m/" +
+                $"{GardenLightBudget}l flowers={GardenMagicFlowerMaxRenderers}r";
+            return leftTap.HasSevenFiniteNormalizedPoints &&
+                rightTap.HasSevenFiniteNormalizedPoints && tapSelectionPass &&
+                waterDirectionPass && waterOraclePass && zigZagPass && bloomPass &&
+                finiteAndBounded && unchangedBudget;
+        }
+
+        static Vector2 GardenSampleBoundsCenter(MoonlightGestureSample sample)
+        {
+            Vector2 minimum = sample[0];
+            Vector2 maximum = minimum;
+            for (int i = 1; i < MoonlightGestureSample.ResampledPointCount; i++)
+            {
+                minimum = Vector2.Min(minimum, sample[i]);
+                maximum = Vector2.Max(maximum, sample[i]);
+            }
+            return (minimum + maximum) * 0.5f;
+        }
+
+        static Vector2 GardenTendSampleCenter(MoonlightGestureSample sample)
+        {
+            Vector2 minimum = sample[0];
+            Vector2 maximum = minimum;
+            for (int i = 1; i < GardenMagicFlowerRequiredInstances; i++)
+            {
+                minimum = Vector2.Min(minimum, sample[i]);
+                maximum = Vector2.Max(maximum, sample[i]);
+            }
+            return (minimum + maximum) * 0.5f;
+        }
+
+        static Vector3 GardenTendPoint(Vector2 centeredPoint) => new(
+            Mathf.Clamp(-0.10f + centeredPoint.x * 0.75f,
+                GardenTendMinimumX, GardenTendMaximumX),
+            0.60f,
+            Mathf.Clamp(centeredPoint.y * 0.28f,
+                -GardenTendMaximumZ, GardenTendMaximumZ));
+
+        static float GardenBloomQuality(MoonlightGestureSample sample)
+        {
+            float score = Mathf.InverseLerp(0.50f, 0.95f,
+                IsFinite(sample.Score) ? sample.Score : 0f);
+            float duration = Mathf.InverseLerp(0.45f, 1.00f,
+                IsFinite(sample.Duration) ? sample.Duration : 0f);
+            return Mathf.Clamp01(score * 0.55f + duration * 0.45f);
+        }
+
+        static float GardenSampleSignedArea(MoonlightGestureSample sample)
+        {
+            float area = 0f;
+            for (int i = 0; i < MoonlightGestureSample.ResampledPointCount - 1; i++)
+            {
+                Vector2 from = sample[i];
+                Vector2 to = sample[i + 1];
+                area += from.x * to.y - to.x * from.y;
+            }
+            return area * 0.5f;
+        }
+
+        static float GardenWaterPathSignedArea(MoonlightGestureSample sample)
+        {
+            float area = 0f;
+            for (int i = 0; i < MoonlightGestureSample.ResampledPointCount - 1; i++)
+            {
+                Vector3 from = EvaluateGardenWaterPath(
+                    i / (float)(MoonlightGestureSample.ResampledPointCount - 1), sample);
+                Vector3 to = EvaluateGardenWaterPath(
+                    (i + 1f) / (MoonlightGestureSample.ResampledPointCount - 1), sample);
+                area += from.x * to.z - to.x * from.z;
+            }
+            return area * 0.5f;
+        }
+
+        static int GardenTendInversionCount(MoonlightGestureSample sample)
+        {
+            int inversions = 0;
+            float previousDirection = 0f;
+            Vector3 previous = EvaluateGardenTendTarget(0, sample);
+            for (int i = 1; i < GardenMagicFlowerRequiredInstances; i++)
+            {
+                Vector3 current = EvaluateGardenTendTarget(i, sample);
+                float direction = Mathf.Sign(current.x - previous.x);
+                if (direction != 0f)
+                {
+                    if (previousDirection != 0f && direction != previousDirection) inversions++;
+                    previousDirection = direction;
+                }
+                previous = current;
+            }
+            return inversions;
+        }
+
+        static int GardenTendTargetIndexAtProgress(float progress)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            return Mathf.Clamp(Mathf.CeilToInt(
+                    t * (GardenMagicFlowerRequiredInstances - 1)),
+                0, GardenMagicFlowerRequiredInstances - 1);
+        }
+
+        static bool GardenTendToolMatchesTargetsAtAnchors(MoonlightGestureSample sample)
+        {
+            for (int i = 0; i < GardenMagicFlowerRequiredInstances; i++)
+            {
+                float anchor = i / (float)(GardenMagicFlowerRequiredInstances - 1);
+                if (Vector3.Distance(EvaluateGardenTendPath(anchor, sample),
+                        EvaluateGardenTendTarget(i, sample)) > 0.001f)
+                    return false;
+            }
+            return true;
+        }
+
+        static int GardenDistinctTendTargetCount(MoonlightGestureSample sample)
+        {
+            int distinct = 0;
+            for (int i = 0; i < GardenMagicFlowerRequiredInstances; i++)
+            {
+                Vector3 candidate = EvaluateGardenTendTarget(i, sample);
+                bool unique = true;
+                for (int previous = 0; previous < i; previous++)
+                {
+                    if (Vector3.Distance(candidate,
+                            EvaluateGardenTendTarget(previous, sample)) <= 0.001f)
+                    {
+                        unique = false;
+                        break;
+                    }
+                }
+                if (unique) distinct++;
+            }
+            return distinct;
+        }
+
+        static bool GardenPlantPointIsInsidePlanter(Vector3 point) => IsFinite(point) &&
+            point.x >= -0.51f && point.x <= 0.31f &&
+            point.y >= 0.40f && point.y <= 0.46f &&
+            point.z >= -0.16f && point.z <= 0.16f;
+
+        static bool GardenPlantPathIsFiniteAndBounded(Vector3 point) => IsFinite(point) &&
+            point.x >= -0.71f && point.x <= 0.31f &&
+            point.y >= 0.40f && point.y <= 0.92f &&
+            point.z >= -0.19f && point.z <= 0.16f;
+
+        static bool GardenWaterPointIsFiniteAndBounded(Vector3 point)
+        {
+            Vector3 rose = GardenWateringCanBasePositions[2];
+            return IsFinite(point) &&
+                Mathf.Abs(point.x - rose.x) <= GardenWaterMaximumXOffset + 0.0001f &&
+                Mathf.Abs(point.z - rose.z) <= GardenWaterMaximumZOffset + 0.0001f &&
+                Mathf.Abs(point.y - rose.y) <= 0.0001f;
+        }
+
+        static bool GardenTendPointIsFiniteAndBounded(Vector3 point) => IsFinite(point) &&
+            point.x >= GardenTendMinimumX && point.x <= GardenTendMaximumX &&
+            Mathf.Abs(point.y - 0.60f) <= 0.0001f &&
+            Mathf.Abs(point.z) <= GardenTendMaximumZ + 0.0001f;
+
+        static MoonlightGestureSample GardenTapSample(float x)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++) points[i] = new Vector2(x, 0f);
+            return MoonlightGestureSample.Create(0.95f, 0.12f, points);
+        }
+
+        static MoonlightGestureSample GardenCircleSample(float radius, bool clockwise)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++)
+            {
+                float angle = i / (float)(points.Length - 1) * Mathf.PI * 2f;
+                if (clockwise) angle = -angle;
+                points[i] = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+            }
+            return MoonlightGestureSample.Create(0.95f, 0.8f, points);
+        }
+
+        static MoonlightGestureSample GardenZigZagSample(bool reverse)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++)
+            {
+                int sourceIndex = reverse ? points.Length - 1 - i : i;
+                points[i] = new Vector2(sourceIndex % 2 == 0 ? -0.36f : 0.36f,
+                    Mathf.Lerp(-0.42f, 0.42f,
+                        sourceIndex / (float)(points.Length - 1)));
+            }
+            return MoonlightGestureSample.Create(0.95f, 0.8f, points);
+        }
+
+        static MoonlightGestureSample GardenHoldSample(float score, float duration)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            return MoonlightGestureSample.Create(score, duration, points);
+        }
+
+        bool GardenFlowerTargetsMatchGesture()
+        {
+            if (_flowers == null || _flowers.Length != GardenMagicFlowerRequiredInstances)
+                return false;
+            for (int i = 0; i < _flowers.Length; i++)
+            {
+                if (_flowers[i] == null || Vector3.Distance(_flowers[i].localPosition,
+                        EvaluateGardenTendTarget(i, _gestureSample) + Vector3.down * 0.18f) >
+                        0.001f ||
+                    Mathf.Abs(_flowers[i].localScale.x -
+                        EvaluateGardenTendScale(_gardenProgress, i)) > 0.001f)
+                    return false;
+            }
+            return true;
+        }
+
+        bool GardenCurrentTendTargetMatchesProgress()
+        {
+            if (_flowers == null || _flowers.Length != GardenMagicFlowerRequiredInstances)
+                return false;
+            int current = GardenTendTargetIndexAtProgress(_gardenProgress);
+            for (int i = 0; i < _flowers.Length; i++)
+            {
+                if (_flowers[i] == null) return false;
+                float scale = _flowers[i].localScale.x;
+                if (i < current && Mathf.Abs(scale - GardenBloomBaseScale) > 0.001f)
+                    return false;
+                if (i > current && scale > 0.001f)
+                    return false;
+            }
+            return Vector3.Distance(_flowers[current].localPosition,
+                       EvaluateGardenTendTarget(current, _gestureSample) +
+                       Vector3.down * 0.18f) <= 0.001f &&
+                Mathf.Abs(_flowers[current].localScale.x -
+                    EvaluateGardenTendScale(_gardenProgress, current)) <= 0.001f;
+        }
+
         public static Vector3 EvaluatePlayTrajectory(int stepIndex, float progress,
             MoonlightGestureSample sample)
         {
@@ -2730,11 +3331,16 @@ namespace MoonlightMagicHouse
             if (_seeds == null || _sprouts == null || _flowers == null || _gardenSparkles == null) return;
 
             int step = Mathf.Clamp(CurrentStep, 0, 3);
+            _gardenProgress = t;
+            int selectedPlantSlot = GardenPlantSlotIndex(_gestureSample);
 
             for (int i = 0; i < _seeds.Length; i++)
             {
-                float x = -0.42f + i * 0.16f;
-                float z = (i % 2 == 0) ? -0.07f : 0.08f;
+                int seedSlot = GardenPlantSlotForSeed(i, selectedPlantSlot);
+                Vector3 seedTarget = GardenPlantSlotPosition(seedSlot);
+                Vector3 flowerTarget = step == 2
+                    ? EvaluateGardenTendTarget(i, _gestureSample) + Vector3.down * 0.18f
+                    : GardenPlantSlotPosition(i);
                 bool showSeed = step <= 1;
                 bool showSprout = step >= 1 && step < 2;
                 bool showFlower = step >= 2;
@@ -2745,8 +3351,9 @@ namespace MoonlightMagicHouse
                 if (showSeed)
                 {
                     float seedDrop = step == 0 ? Mathf.Clamp01(t * 3.2f - i * 0.22f) : 1f;
-                    _seeds[i].localPosition = Vector3.Lerp(new Vector3(x - 0.20f, 0.92f, z - 0.12f),
-                        new Vector3(x, 0.43f, z), seedDrop);
+                    _seeds[i].localPosition = Vector3.Lerp(
+                        seedTarget + new Vector3(-0.20f, 0.49f, -0.12f),
+                        seedTarget, seedDrop);
                     float plantedScale = step == 0
                         ? Mathf.Lerp(1f, 0.45f, Mathf.Clamp01((t - 0.42f) * 4f))
                         : 0.35f;
@@ -2766,19 +3373,36 @@ namespace MoonlightMagicHouse
 
                 if (showFlower && _flowers[i] != null)
                 {
-                    float bloom = step == 2
-                        ? Mathf.Clamp01(t * 3.2f - i * 0.08f)
-                        : 1f + Mathf.Sin(t * Mathf.PI * 2f + i * 0.65f) * 0.035f;
-                    float overshoot = step == 2 ? Mathf.Sin(bloom * Mathf.PI) * 0.18f : 0f;
-                    _flowers[i].localScale = Vector3.one * 0.48f * (bloom + overshoot);
+                    _flowers[i].localPosition = flowerTarget;
+                    float scale;
+                    if (step == 2)
+                    {
+                        scale = EvaluateGardenTendScale(t, i);
+                    }
+                    else
+                    {
+                        scale = EvaluateGardenBloomScale(t, i, _gestureSample);
+                    }
+                    _flowers[i].localScale = Vector3.one * scale;
                     _flowers[i].localRotation = Quaternion.Euler(-90f,
                         i * 28f + Mathf.Sin(t * Mathf.PI * 2f + i) * 5f,
-                        step == 2 ? -8f * Mathf.Sin(bloom * Mathf.PI) : 0f);
+                        step == 2 ? -8f * Mathf.Sin(
+                            Mathf.Clamp01(t * GardenMagicFlowerRequiredInstances - i) *
+                            Mathf.PI) : 0f);
                 }
             }
 
             if (_gardenProps != null)
             {
+                Vector3 rosePosition = step switch
+                {
+                    1 => EvaluateGardenWaterPath(t, _gestureSample),
+                    2 => EvaluateGardenTendPath(t, _gestureSample),
+                    _ => GardenWateringCanBasePositions[2]
+                };
+                Vector3 canOffset = rosePosition - GardenWateringCanBasePositions[2];
+                for (int i = 0; i < _gardenProps.Length; i++)
+                    _gardenProps[i].localPosition = GardenWateringCanBasePositions[i] + canOffset;
                 float pour = step == 1
                     ? Mathf.Clamp01(Mathf.Sin(Mathf.Clamp01((t - 0.08f) * 1.35f) * Mathf.PI))
                     : 0f;
@@ -2794,7 +3418,8 @@ namespace MoonlightMagicHouse
                 _gardenSparkles[i].gameObject.SetActive(step == 3 && t > 0.18f && phase < 0.82f);
                 _gardenSparkles[i].localPosition = new Vector3(-0.45f + i * 0.14f,
                     0.62f + phase * 0.28f, Mathf.Sin(i * 1.7f) * 0.18f);
-                float size = Mathf.Sin(phase * Mathf.PI) * 0.04f;
+                float size = Mathf.Sin(phase * Mathf.PI) * 0.04f *
+                    (step == 3 ? EvaluateGardenBloomIntensity(_gestureSample) : 1f);
                 _gardenSparkles[i].localScale = Vector3.one * Mathf.Max(0.01f, size);
             }
         }
