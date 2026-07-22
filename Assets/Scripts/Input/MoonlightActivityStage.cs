@@ -211,6 +211,36 @@ namespace MoonlightMagicHouse
 
             int step = Mathf.Clamp(stepIndex, 0, 3);
             progress = Mathf.Clamp01(progress);
+            if (kind == MoonlightSpatialActionKind.Cook)
+            {
+                if (step == 0 && _bowlRim != null)
+                {
+                    point = _bowlRim.position;
+                    return true;
+                }
+                if (step == 1 && _whisk != null)
+                {
+                    point = _whisk.position;
+                    return true;
+                }
+                if (step == 2)
+                    return TryGetWorldPoint(_servingProps, 0, out point);
+                if (step == 3)
+                {
+                    if (progress < 0.68f && TryGetWorldPoint(_decorateProps, 0, out point))
+                        return true;
+                    int cookieIndex = Mathf.Clamp(
+                        Mathf.RoundToInt(Mathf.InverseLerp(0.68f, 1f, progress) * 2f), 0, 2);
+                    return TryGetWorldPoint(_cookies, cookieIndex, out point);
+                }
+            }
+
+            if (kind == MoonlightSpatialActionKind.Play && _ball != null)
+            {
+                point = _ball.position;
+                return true;
+            }
+
             if (kind == MoonlightSpatialActionKind.Garden)
             {
                 if (step == 0)
