@@ -12,6 +12,8 @@ namespace MoonlightMagicHouse
     public class MoonlightHouseSetup : MonoBehaviour
     {
         public const int HeroMaterialBudget = 8;
+        public const float HeroEyeIdleEmission = 0.18f;
+        public const float HeroEyeActionEmission = 0.28f;
 
         // The authored Blender house is the playable default. The image-plate
         // presentation remains available for dedicated visual comparisons.
@@ -3860,6 +3862,26 @@ namespace MoonlightMagicHouse
                 root.AddComponent<MoonlightHeroVisualQuality>();
             quality.Configure(rendererCount, shadowRendererCount, materialCache.Count,
                 surfaceProfiles.Count, emissiveMaterialCount, texturedMaterialCount);
+            if (HasHeroEyeGeometry(root))
+            {
+                var eyeQuality = root.GetComponent<MoonlightHeroEyeQuality>() ??
+                    root.AddComponent<MoonlightHeroEyeQuality>();
+                eyeQuality.Configure(root);
+            }
+        }
+
+        static bool HasHeroEyeGeometry(GameObject root)
+        {
+            if (root == null) return false;
+            int eyeCount = 0;
+            int highlightCount = 0;
+            foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                string lower = renderer.gameObject.name.ToLowerInvariant();
+                if (lower.Contains("eyehighlight")) highlightCount++;
+                else if (lower.Contains("eyeleft") || lower.Contains("eyeright")) eyeCount++;
+            }
+            return eyeCount == 2 && highlightCount == 2;
         }
 
         static Color HeroPaletteColor(string materialName)
@@ -3952,6 +3974,25 @@ namespace MoonlightMagicHouse
                 eye >= 0.82f && highlight >= 0.90f && moon >= 0.50f &&
                 moonEmission >= 0.10f && highlightEmission >= 0.14f;
         }
+
+        public static bool ValidateHeroEyeContract(out string detail)
+        {
+            Color eye = HeroPaletteColor("Cat_Eye");
+            Color highlight = HeroPaletteColor("Cat_Highlight");
+            float eyeLuminance = eye.r * 0.2126f + eye.g * 0.7152f + eye.b * 0.0722f;
+            float highlightLuminance = highlight.r * 0.2126f +
+                                       highlight.g * 0.7152f + highlight.b * 0.0722f;
+            float contrast = highlightLuminance - eyeLuminance;
+            float eyeSmoothness = HeroSmoothness("Cat_Eye");
+            float highlightSmoothness = HeroSmoothness("Cat_Highlight");
+            detail = $"contrast={contrast:0.00} smooth={eyeSmoothness:0.00}/" +
+                     $"{highlightSmoothness:0.00} emission={HeroEyeIdleEmission:0.00}->" +
+                     $"{HeroEyeActionEmission:0.00}";
+            return contrast >= 0.70f && eyeSmoothness >= 0.82f &&
+                   highlightSmoothness >= 0.90f && HeroEyeIdleEmission >= 0.16f &&
+                   HeroEyeActionEmission - HeroEyeIdleEmission >= 0.08f &&
+                   HeroEyeActionEmission <= 0.32f;
+        }
     }
 
     public sealed class MoonlightHeroVisualQuality : MonoBehaviour
@@ -3982,6 +4023,72 @@ namespace MoonlightMagicHouse
                 $"materials={MaterialCount}/{MoonlightHouseSetup.HeroMaterialBudget} " +
                 $"profiles={SurfaceProfileCount} emissive={EmissiveMaterialCount} " +
                 $"textured={TexturedMaterialCount} marker={QAMarker}");
+        }
+    }
+
+    public sealed class MoonlightHeroEyeQuality : MonoBehaviour
+    {
+        readonly System.Collections.Generic.List<Renderer> _eyeRenderers =
+            new System.Collections.Generic.List<Renderer>();
+        readonly System.Collections.Generic.List<Renderer> _highlightRenderers =
+            new System.Collections.Generic.List<Renderer>();
+        readonly MaterialPropertyBlock _block = new MaterialPropertyBlock();
+        MoonlightActionFeedback _actionFeedback;
+
+        public int EyeRendererCount => _eyeRenderers.Count;
+        public int HighlightRendererCount => _highlightRenderers.Count;
+        public float EyePairSeparation { get; private set; }
+        public float CurrentCatchlightEmission { get; private set; }
+        public string QAMarker => EyeRendererCount == 2 && HighlightRendererCount == 2 &&
+            EyePairSeparation > 0.01f
+                ? "MOONLIGHT_HERO_EYE_CATCHLIGHT_READY"
+                : "MOONLIGHT_HERO_EYE_CATCHLIGHT_INCOMPLETE";
+
+        public void Configure(GameObject root)
+        {
+            _eyeRenderers.Clear();
+            _highlightRenderers.Clear();
+            if (root == null) return;
+            foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
+            {
+                string lower = renderer.gameObject.name.ToLowerInvariant();
+                if (lower.Contains("eyehighlight")) _highlightRenderers.Add(renderer);
+                else if (lower.Contains("eyeleft") || lower.Contains("eyeright"))
+                    _eyeRenderers.Add(renderer);
+            }
+            EyePairSeparation = _eyeRenderers.Count == 2
+                ? Vector3.Distance(_eyeRenderers[0].bounds.center, _eyeRenderers[1].bounds.center)
+                : 0f;
+            _actionFeedback = GetComponentInParent<MoonlightActionFeedback>();
+            ApplyCatchlight(MoonlightHouseSetup.HeroEyeIdleEmission);
+            Debug.Log($"[MoonlightHeroQA] eyes={EyeRendererCount} highlights={HighlightRendererCount} " +
+                $"separation={EyePairSeparation:0.000} emission={CurrentCatchlightEmission:0.00} " +
+                $"marker={QAMarker}");
+        }
+
+        void Update()
+        {
+            if (_highlightRenderers.Count == 0) return;
+            if (_actionFeedback == null) _actionFeedback = GetComponentInParent<MoonlightActionFeedback>();
+            float baseEmission = _actionFeedback != null && _actionFeedback.IsPerformingAction
+                ? MoonlightHouseSetup.HeroEyeActionEmission
+                : MoonlightHouseSetup.HeroEyeIdleEmission;
+            float shimmer = (0.5f + 0.5f * Mathf.Sin(Time.unscaledTime * 2.4f)) * 0.035f;
+            ApplyCatchlight(baseEmission + shimmer);
+        }
+
+        void ApplyCatchlight(float emission)
+        {
+            CurrentCatchlightEmission = emission;
+            Color catchlight = new Color(1f, 0.98f, 0.91f) * emission;
+            foreach (Renderer renderer in _highlightRenderers)
+            {
+                if (renderer == null) continue;
+                renderer.GetPropertyBlock(_block);
+                _block.SetColor("_EmissionColor", catchlight);
+                renderer.SetPropertyBlock(_block);
+                _block.Clear();
+            }
         }
     }
 }

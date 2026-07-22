@@ -89,6 +89,28 @@ namespace MoonlightMagicHouse
                 $"materials={heroQuality.MaterialCount}/{MoonlightHouseSetup.HeroMaterialBudget} " +
                 $"profiles={heroQuality.SurfaceProfileCount} emissive={heroQuality.EmissiveMaterialCount} " +
                 $"contract={heroSurfaceDetail} marker=MOONLIGHT_HERO_SURFACE_SHADING_VERIFIED");
+            if (!MoonlightHouseSetup.ValidateHeroEyeContract(out string heroEyeDetail))
+            {
+                Debug.LogError($"[MoonlightVisualQA][FAIL] hero-eye-contract {heroEyeDetail}");
+                Application.Quit(72);
+                yield break;
+            }
+            var heroEyeQuality = moonlight.GetComponentInChildren<MoonlightHeroEyeQuality>(true);
+            bool heroEyePass = heroEyeQuality != null &&
+                heroEyeQuality.QAMarker == "MOONLIGHT_HERO_EYE_CATCHLIGHT_READY";
+            if (!heroEyePass)
+            {
+                Debug.LogError($"[MoonlightVisualQA][FAIL] hero-eye-catchlight " +
+                    $"marker={(heroEyeQuality != null ? heroEyeQuality.QAMarker : "missing")} " +
+                    $"contract={heroEyeDetail}");
+                Application.Quit(73);
+                yield break;
+            }
+            Debug.Log($"[MoonlightVisualQA][PASS] hero-eye-catchlight " +
+                $"eyes={heroEyeQuality.EyeRendererCount} highlights={heroEyeQuality.HighlightRendererCount} " +
+                $"separation={heroEyeQuality.EyePairSeparation:0.000} " +
+                $"emission={heroEyeQuality.CurrentCatchlightEmission:0.00} contract={heroEyeDetail} " +
+                "marker=MOONLIGHT_HERO_EYE_CATCHLIGHT_VERIFIED");
 
             Vector3 start = controller.transform.position;
             controller.SetTouchMove(Vector2.up);
