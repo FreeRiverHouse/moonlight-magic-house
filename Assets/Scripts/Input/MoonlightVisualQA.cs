@@ -523,6 +523,17 @@ namespace MoonlightMagicHouse
                 $"{liveHoldReadinessDetail} " +
                 "marker=MOONLIGHT_IPAD_LIVE_HOLD_STATIC_CONTRACT_VERIFIED " +
                 "marker=MOONLIGHT_IPAD_LIVE_HOLD_4_OF_4_STATIC_VERIFIED");
+            if (!MoonlightGesturePad.ValidateContextGestureMovementLockStaticContract(
+                    out string gestureMovementLockDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-context-gesture-movement-lock " +
+                    gestureMovementLockDetail);
+                Application.Quit(143);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-context-gesture-movement-lock " +
+                $"{gestureMovementLockDetail} " +
+                "marker=MOONLIGHT_IPAD_CONTEXT_GESTURE_MOVEMENT_LOCK_STATIC_VERIFIED");
             bool freeHopControllerStatic =
                 MoonlightPlayerController.ValidateFreeHopStaticContract(
                     out string freeHopControllerDetail);
@@ -756,8 +767,8 @@ namespace MoonlightMagicHouse
             bool verifyLiveHoldRuntime = expectIPadHud &&
                 args.Contains("-moonlightLiveHoldRuntimeQa");
             int verifiedLiveHoldRuntimeActions = 0;
-            bool verifiedLiveHoldCancelCleanup = false;
-            bool verifiedLiveHoldFocusLossCleanup = false;
+            var verifiedGestureLockCleanup = new System.Collections.Generic.HashSet<string>();
+            int verifiedRejectedGestureMovementRetention = 0;
             var touchJoystick = FindAnyObjectByType<MoonlightTouchJoystick>();
             if (expectIPadHud)
             {
@@ -1845,8 +1856,9 @@ namespace MoonlightMagicHouse
                     int resetSequenceBeforeAcceptedAction = touchJoystick != null
                         ? touchJoystick.ResetSequence
                         : -1;
+                    Vector2 liveHoldHeldInput = new(0.72f, 0.38f);
                     if (expectIPadHud)
-                        touchJoystick.ArmHeldInputForQA(new Vector2(0.72f, 0.38f));
+                        touchJoystick.ArmHeldInputForQA(liveHoldHeldInput);
                     bool verifyThisLiveHold = verifyLiveHoldRuntime &&
                         zone.SupportsLiveHoldReadiness;
                     bool acceptedActionStarted;
@@ -1859,21 +1871,91 @@ namespace MoonlightMagicHouse
                             position = RectTransformUtility.WorldToScreenPoint(null,
                                 ui.actionBtn.transform.position)
                         };
+                        if (!verifiedGestureLockCleanup.Contains("zone-changed"))
+                        {
+                            pad.OnPointerDown(liveHoldPointer);
+                            bool zoneChangeLockObserved = pad.IsTrackingGesture &&
+                                pad.IsContextGestureMovementLockHeld &&
+                                controller.IsContextGestureMovementLocked;
+                            Rect bounds = controller.RoomBounds;
+                            Vector3 zoneChangePosition = new(
+                                zone.transform.position.x <= bounds.center.x
+                                    ? bounds.xMax - 0.35f
+                                    : bounds.xMin + 0.35f,
+                                0f,
+                                zone.transform.position.z <= bounds.center.y
+                                    ? bounds.yMax - 0.35f
+                                    : bounds.yMin + 0.35f);
+                            controller.TeleportTo(zoneChangePosition, bounds);
+                            spatialInteractor.RescanNowForQA();
+                            bool zoneChanged = spatialInteractor.CurrentZone != acceptedActionZone;
+                            controller.SetProcessedTouchSprintForQA(Vector2.zero);
+                            yield return null;
+                            bool zoneChangeCleanupPass = zoneChangeLockObserved && zoneChanged &&
+                                !pad.IsTrackingGesture &&
+                                !pad.IsContextGestureMovementLockHeld &&
+                                !controller.IsContextGestureMovementLocked &&
+                                pad.LastLiveHoldCancellationCleanupObserved &&
+                                pad.LastLiveHoldCancellationReason == "zone-changed" &&
+                                zone.ProgressStep == progressBeforeLiveHold;
+                            controller.TeleportTo(acceptedActionPosition, bounds);
+                            spatialInteractor.RescanNowForQA();
+                            controller.SetProcessedTouchSprintForQA(liveHoldHeldInput);
+                            bool zoneChangeRestorePass =
+                                spatialInteractor.CurrentZone == acceptedActionZone &&
+                                Vector3.Distance(controller.transform.position,
+                                    acceptedActionPosition) <= 0.001f &&
+                                Vector2.Distance(controller.TouchMove,
+                                    liveHoldHeldInput) <= 0.0001f;
+                            if (!zoneChangeCleanupPass || !zoneChangeRestorePass)
+                            {
+                                Debug.LogError($"[MoonlightGameplayQA][FAIL] " +
+                                    $"ipad-live-hold-zone-change-cleanup action={zone.Kind} " +
+                                    $"changed={zoneChanged} lock={zoneChangeLockObserved}/" +
+                                    $"{controller.IsContextGestureMovementLocked} " +
+                                    $"tracking={pad.IsTrackingGesture} " +
+                                    $"reason={pad.LastLiveHoldCancellationReason} " +
+                                    $"restored={zoneChangeRestorePass} " +
+                                    $"zone={spatialInteractor.CurrentZone?.DisplayName}/" +
+                                    $"{acceptedActionZone?.DisplayName}");
+                                Application.Quit(145);
+                                yield break;
+                            }
+                            verifiedGestureLockCleanup.Add("zone-changed");
+                        }
+
                         pad.OnPointerDown(liveHoldPointer);
                         bool cancellationOverlayObserved = pad.IsTrackingGesture &&
                             pad.IsLiveHoldReadinessActive &&
-                            pad.LiveHoldReadinessOverlayVisible;
-                        bool useFocusLossCleanup = verifiedLiveHoldRuntimeActions % 2 == 1;
-                        if (useFocusLossCleanup)
+                            pad.LiveHoldReadinessOverlayVisible &&
+                            pad.IsContextGestureMovementLockHeld &&
+                            controller.IsContextGestureMovementLocked;
+                        string expectedCleanupReason = verifiedLiveHoldRuntimeActions switch
+                        {
+                            0 => "event-cancel",
+                            1 => "focus-lost",
+                            2 => "paused",
+                            _ => "disabled"
+                        };
+                        bool cleanupDispatchObserved = true;
+                        if (expectedCleanupReason == "event-cancel") pad.OnCancel(null);
+                        else if (expectedCleanupReason == "focus-lost")
                             pad.SimulateApplicationFocusLossForQA();
+                        else if (expectedCleanupReason == "paused")
+                            pad.SimulateApplicationPauseForQA();
                         else
-                            pad.OnCancel(null);
-                        string expectedCleanupReason = useFocusLossCleanup
-                            ? "focus-lost"
-                            : "event-cancel";
+                        {
+                            pad.enabled = false;
+                            cleanupDispatchObserved = !pad.enabled;
+                            pad.enabled = true;
+                            cleanupDispatchObserved &= pad.enabled;
+                        }
                         bool cancellationCleanupPass = cancellationOverlayObserved &&
+                            cleanupDispatchObserved &&
                             !pad.IsTrackingGesture && pad.LiveHoldReadinessStateIsClean &&
                             !pad.LiveHoldReadinessOverlayVisible &&
+                            !pad.IsContextGestureMovementLockHeld &&
+                            !controller.IsContextGestureMovementLocked &&
                             pad.LastLiveHoldCancellationCleanupObserved &&
                             pad.LastLiveHoldCancellationReason == expectedCleanupReason &&
                             zone.ProgressStep == progressBeforeLiveHold;
@@ -1883,16 +1965,77 @@ namespace MoonlightMagicHouse
                                 $"action={zone.Kind} reason={pad.LastLiveHoldCancellationReason}/" +
                                 $"{expectedCleanupReason} overlay={cancellationOverlayObserved} " +
                                 $"tracking={pad.IsTrackingGesture} " +
+                                $"movementLock={controller.IsContextGestureMovementLocked} " +
                                 $"stateClean={pad.LiveHoldReadinessStateIsClean} " +
                                 $"cleanup={pad.LastLiveHoldCancellationCleanupObserved} " +
                                 $"step={zone.ProgressStep}/{progressBeforeLiveHold}");
                             Application.Quit(140);
                             yield break;
                         }
-                        verifiedLiveHoldCancelCleanup |= !useFocusLossCleanup;
-                        verifiedLiveHoldFocusLossCleanup |= useFocusLossCleanup;
+                        verifiedGestureLockCleanup.Add(expectedCleanupReason);
+
+                        int resetSequenceBeforeRejectedHold = touchJoystick.ResetSequence;
+                        pad.OnPointerDown(liveHoldPointer);
+                        bool rejectedHoldLockObserved = pad.IsContextGestureMovementLockHeld &&
+                            controller.IsContextGestureMovementLocked;
+                        pad.OnPointerUp(liveHoldPointer);
+                        Vector3 rejectedMovementStartPosition = controller.transform.position;
+                        int rejectedMovementCollisionCount = controller.CollisionCount;
+                        int rejectedMovementRecoveryCount = controller.RecoveryCount;
+                        yield return null;
+                        float rejectedMovementDelta = Vector3.Distance(
+                            controller.transform.position, rejectedMovementStartPosition);
+                        float rejectedMovementLimit =
+                            controller.CurrentMoveSpeed * Time.deltaTime + 0.001f;
+                        bool rejectedMovementResumed = rejectedMovementDelta > 0.0001f &&
+                            rejectedMovementDelta <= rejectedMovementLimit &&
+                            controller.CollisionCount == rejectedMovementCollisionCount &&
+                            controller.RecoveryCount == rejectedMovementRecoveryCount &&
+                            controller.RoomBounds.Contains(new Vector2(
+                                controller.transform.position.x,
+                                controller.transform.position.z)) &&
+                            spatialInteractor.CurrentZone == acceptedActionZone;
+                        bool rejectedHoldMovementRetained = rejectedHoldLockObserved &&
+                            !zone.LastGesturePassed && zone.ProgressStep == progressBeforeLiveHold &&
+                            !pad.IsContextGestureMovementLockHeld &&
+                            !controller.IsContextGestureMovementLocked &&
+                            touchJoystick.ResetSequence == resetSequenceBeforeRejectedHold &&
+                            touchJoystick.IsTrackingPointer &&
+                            Vector2.Distance(touchJoystick.Value, liveHoldHeldInput) <= 0.0001f &&
+                            Vector2.Distance(controller.TouchMove,
+                                touchJoystick.Value) <= 0.0001f &&
+                            rejectedMovementResumed;
+                        controller.TeleportTo(rejectedMovementStartPosition,
+                            controller.RoomBounds);
+                        spatialInteractor.RescanNowForQA();
+                        controller.SetProcessedTouchSprintForQA(liveHoldHeldInput);
+                        bool rejectedMovementRestorePass =
+                            Vector3.Distance(controller.transform.position,
+                                rejectedMovementStartPosition) <= 0.001f &&
+                            spatialInteractor.CurrentZone == acceptedActionZone &&
+                            Vector2.Distance(controller.TouchMove,
+                                liveHoldHeldInput) <= 0.0001f;
+                        if (!rejectedHoldMovementRetained || !rejectedMovementRestorePass)
+                        {
+                            Debug.LogError($"[MoonlightGameplayQA][FAIL] " +
+                                $"ipad-context-gesture-rejected-retention action={zone.Kind} " +
+                                $"lock={rejectedHoldLockObserved}/" +
+                                $"{controller.IsContextGestureMovementLocked} " +
+                                $"step={zone.ProgressStep}/{progressBeforeLiveHold} " +
+                                $"reset={touchJoystick.ResetSequence}/" +
+                                $"{resetSequenceBeforeRejectedHold} " +
+                                $"tracking={touchJoystick.IsTrackingPointer} " +
+                                $"value={touchJoystick.Value:F3} controller={controller.TouchMove:F3} " +
+                                $"delta={rejectedMovementDelta:0.0000}/" +
+                                $"{rejectedMovementLimit:0.0000} resumed={rejectedMovementResumed} " +
+                                $"restored={rejectedMovementRestorePass}");
+                            Application.Quit(144);
+                            yield break;
+                        }
+                        verifiedRejectedGestureMovementRetention++;
 
                         pad.OnPointerDown(liveHoldPointer);
+                        Vector3 movementLockStartPosition = controller.transform.position;
                         float liveHoldDeadline = Time.unscaledTime + 1.5f;
                         while (pad.LiveHoldScore <
                                MoonlightActionFeedback.PerfectActionQualityScore &&
@@ -1902,19 +2045,38 @@ namespace MoonlightMagicHouse
                             pad.IsLiveHoldReadinessActive && pad.LiveHoldIsReady &&
                             pad.LiveHoldReadinessOverlayVisible &&
                             pad.LiveHoldReadinessHapticPlayed &&
-                            pad.LiveHoldReadinessHapticCount == 1;
+                            pad.LiveHoldReadinessHapticCount == 1 &&
+                            pad.IsContextGestureMovementLockHeld &&
+                            controller.IsContextGestureMovementLocked &&
+                            touchJoystick.IsTrackingPointer &&
+                            Vector2.Distance(touchJoystick.Value, liveHoldHeldInput) <= 0.0001f &&
+                            Vector2.Distance(controller.TouchMove,
+                                touchJoystick.Value) <= 0.0001f &&
+                            Vector3.Distance(controller.transform.position,
+                                movementLockStartPosition) <= 0.001f &&
+                            spatialInteractor.CurrentZone == acceptedActionZone;
                         yield return null;
-                        liveReadinessPass &= pad.LiveHoldReadinessHapticCount == 1;
+                        liveReadinessPass &= pad.LiveHoldReadinessHapticCount == 1 &&
+                            controller.IsContextGestureMovementLocked &&
+                            Vector3.Distance(controller.transform.position,
+                                movementLockStartPosition) <= 0.001f &&
+                            spatialInteractor.CurrentZone == acceptedActionZone;
                         pad.OnPointerUp(liveHoldPointer);
+                        bool releaseCleanupPass = !pad.IsContextGestureMovementLockHeld &&
+                            !controller.IsContextGestureMovementLocked;
+                        if (releaseCleanupPass) verifiedGestureLockCleanup.Add("pointer-up");
                         acceptedActionStarted = zone.LastGesturePassed;
                         bool runtimeContractPass =
                             pad.ValidateLastLiveHoldReadinessRuntimeContract(
                                 zone.Kind, out string liveHoldRuntimeDetail);
-                        if (!liveReadinessPass || !runtimeContractPass)
+                        if (!liveReadinessPass || !releaseCleanupPass || !runtimeContractPass)
                         {
                             Debug.LogError($"[MoonlightGameplayQA][FAIL] " +
                                 $"ipad-live-hold-runtime action={zone.Kind} " +
                                 $"readiness={liveReadinessPass} " +
+                                $"release={releaseCleanupPass} drift=" +
+                                $"{Vector3.Distance(controller.transform.position, movementLockStartPosition):0.0000} " +
+                                $"zoneRetained={spatialInteractor.CurrentZone == acceptedActionZone} " +
                                 $"score={pad.LastScore:0.000} " +
                                 $"contract=({liveHoldRuntimeDetail})");
                             Application.Quit(141);
@@ -3345,23 +3507,30 @@ namespace MoonlightMagicHouse
                 completedActivities++;
             }
 
+            bool gestureLockCleanupMatrixPass = verifiedGestureLockCleanup.SetEquals(new[]
+            {
+                "pointer-up", "event-cancel", "focus-lost", "paused", "disabled",
+                "zone-changed"
+            });
             if (verifyLiveHoldRuntime &&
                 (verifiedLiveHoldRuntimeActions != 4 ||
-                 !verifiedLiveHoldCancelCleanup || !verifiedLiveHoldFocusLossCleanup))
+                 !gestureLockCleanupMatrixPass ||
+                 verifiedRejectedGestureMovementRetention != 4))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-live-hold-runtime-matrix " +
                     $"actions={verifiedLiveHoldRuntimeActions}/4 " +
-                    $"cancelCleanup={verifiedLiveHoldCancelCleanup} " +
-                    $"focusLossCleanup={verifiedLiveHoldFocusLossCleanup}");
+                    $"cleanup={verifiedGestureLockCleanup.Count}/6 " +
+                    $"rejectedRetention={verifiedRejectedGestureMovementRetention}/4");
                 Application.Quit(142);
                 yield break;
             }
             if (verifyLiveHoldRuntime)
                 Debug.Log($"[MoonlightGameplayQA][PASS] ipad-live-hold-runtime-matrix " +
                     $"actions={verifiedLiveHoldRuntimeActions}/4 " +
-                    $"cancelCleanup={verifiedLiveHoldCancelCleanup} " +
-                    $"focusLossCleanup={verifiedLiveHoldFocusLossCleanup} " +
-                    $"marker=MOONLIGHT_IPAD_LIVE_HOLD_RUNTIME_4_OF_4_VERIFIED");
+                    $"cleanup={verifiedGestureLockCleanup.Count}/6 " +
+                    $"rejectedRetention={verifiedRejectedGestureMovementRetention}/4 " +
+                    $"marker=MOONLIGHT_IPAD_LIVE_HOLD_RUNTIME_4_OF_4_VERIFIED " +
+                    $"marker=MOONLIGHT_IPAD_CONTEXT_GESTURE_MOVEMENT_LOCK_6_OF_6_VERIFIED");
 
             if (completedActivities != 5 || verifiedPersistentStations != 5 ||
                 verifiedVisualSignatures.Count != 20)

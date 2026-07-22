@@ -262,12 +262,16 @@ namespace MoonlightMagicHouse
         bool _lastLiveHoldCancellationCleanupObserved;
         string _lastLiveHoldCancellationReason = "";
         bool _trackingFreeHop;
+        MoonlightPlayerController _contextMovementController;
 
         public MoonlightGestureKind ActiveGesture => _gesture;
         public float LastScore { get; private set; }
         public MoonlightGestureSample LastSample { get; private set; }
         public string LastRejectionReason { get; private set; } = "";
         public bool IsTrackingGesture => _pointerId != int.MinValue;
+        public bool IsContextGestureMovementLockHeld =>
+            _contextMovementController != null &&
+            _contextMovementController.IsContextGestureMovementLocked;
         public int ActivePointerIdForQA => _pointerId;
         public int MultitouchRejectionCount { get; private set; }
         public int TraceDotPoolCount => _traceDots.Length;
@@ -429,6 +433,7 @@ namespace MoonlightMagicHouse
             _pointerId = eventData.pointerId;
             _startedZone = zone;
             _trackingFreeHop = zone == null;
+            AcquireContextGestureMovementLock(zone);
             _gesture = _trackingFreeHop ? MoonlightGestureKind.Tap : zone.RequiredGesture;
             _startedAt = Time.unscaledTime;
             _points.Clear();
@@ -474,6 +479,7 @@ namespace MoonlightMagicHouse
             _pointerId = int.MinValue;
             _startedZone = null;
             _trackingFreeHop = false;
+            ReleaseContextGestureMovementLock();
             ResetLiveHoldReadiness(true);
             bool liveHoldCleanupObserved = LiveHoldReadinessStateIsClean &&
                 ResultOverlayIsClear;
@@ -566,6 +572,8 @@ namespace MoonlightMagicHouse
 
         public void SimulateApplicationFocusLossForQA() => OnApplicationFocus(false);
 
+        public void SimulateApplicationPauseForQA() => OnApplicationPause(true);
+
         void OnApplicationPause(bool paused)
         {
             if (paused) CancelTracking("paused");
@@ -578,6 +586,7 @@ namespace MoonlightMagicHouse
             _pointerId = int.MinValue;
             _startedZone = null;
             _trackingFreeHop = false;
+            ReleaseContextGestureMovementLock();
             _points.Clear();
             ResetLiveHoldReadiness(true);
             ClearTrace();
@@ -618,6 +627,45 @@ namespace MoonlightMagicHouse
             return moonlight != null
                 ? moonlight.GetComponent<MoonlightSpatialInteractor>()?.CurrentZone
                 : null;
+        }
+
+        void AcquireContextGestureMovementLock(MoonlightSpatialActionZone zone)
+        {
+            if (!ShouldLockContextGestureMovement(
+                    _ui != null && _ui.IsIPadHUDLayoutActive, zone != null, true))
+                return;
+
+            var moonlight = MoonlightGameManager.Instance?.moonlight;
+            _contextMovementController = moonlight != null
+                ? moonlight.GetComponent<MoonlightPlayerController>()
+                : null;
+            _contextMovementController?.SetContextGestureMovementLocked(true);
+        }
+
+        void ReleaseContextGestureMovementLock()
+        {
+            _contextMovementController?.SetContextGestureMovementLocked(false);
+            _contextMovementController = null;
+        }
+
+        public static bool ShouldLockContextGestureMovement(bool isIPadLayout,
+            bool hasContextZone, bool isTrackingGesture) =>
+            isIPadLayout && hasContextZone && isTrackingGesture;
+
+        public static bool ValidateContextGestureMovementLockStaticContract(out string detail)
+        {
+            bool contextualIPad = ShouldLockContextGestureMovement(true, true, true);
+            bool freeHopUnchanged = !ShouldLockContextGestureMovement(true, false, true);
+            bool desktopUnchanged = !ShouldLockContextGestureMovement(false, true, true);
+            bool completionReleased = !ShouldLockContextGestureMovement(true, true, false);
+            bool controllerGate =
+                MoonlightPlayerController.ValidateContextGestureMovementLockContract(
+                    out string controllerDetail);
+            detail = $"contextualIPad={contextualIPad} freeHop={freeHopUnchanged} " +
+                $"desktop={desktopUnchanged} released={completionReleased} " +
+                $"controller=({controllerDetail})";
+            return contextualIPad && freeHopUnchanged && desktopUnchanged &&
+                completionReleased && controllerGate;
         }
 
         bool CanAcceptGesture(MoonlightSpatialActionZone zone, out string reason)

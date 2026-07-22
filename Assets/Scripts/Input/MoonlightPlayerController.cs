@@ -47,6 +47,7 @@ namespace MoonlightMagicHouse
         Vector3 _visualBaseScale = Vector3.one;
         Vector2 _smoothedMove;
         Vector2 _touchMove;
+        bool _contextGestureMovementLocked;
         float _walkPhase;
         float _currentLean;
         float _lastYaw;
@@ -67,6 +68,7 @@ namespace MoonlightMagicHouse
 
         public Rect RoomBounds => roomBounds;
         public Vector2 TouchMove => _touchMove;
+        public bool IsContextGestureMovementLocked => _contextGestureMovementLocked;
         public float BaseMoveSpeed => moveSpeed;
         public bool IsIPadSprinting { get; private set; }
         public bool IsModalInputLocked => _modalInputLocked;
@@ -218,7 +220,8 @@ namespace MoonlightMagicHouse
             {
                 move = ReadKeyboardMove();
             }
-            move = Vector2.ClampMagnitude(move, 1f);
+            move = ApplyContextGestureMovementLock(
+                Vector2.ClampMagnitude(move, 1f), _contextGestureMovementLocked);
             SetIPadSprinting(ShouldSprint(_touchMove.magnitude, usingTouchInput));
 
             var delta = new Vector3(move.x, 0f, move.y) * (CurrentMoveSpeed * Time.deltaTime);
@@ -258,6 +261,26 @@ namespace MoonlightMagicHouse
             _smoothedMove = Vector2.zero;
             SetIPadSprinting(false);
             RouteLocomotion(0f, false);
+        }
+
+        public void SetContextGestureMovementLocked(bool locked)
+        {
+            _contextGestureMovementLocked = locked;
+        }
+
+        public static Vector2 ApplyContextGestureMovementLock(Vector2 move, bool locked) =>
+            locked ? Vector2.zero : move;
+
+        public static bool ValidateContextGestureMovementLockContract(out string detail)
+        {
+            var heldMove = new Vector2(0.72f, 0.38f);
+            Vector2 lockedMove = ApplyContextGestureMovementLock(heldMove, true);
+            Vector2 releasedMove = ApplyContextGestureMovementLock(heldMove, false);
+            bool suppressed = lockedMove.sqrMagnitude <= 0.000001f;
+            bool retained = Vector2.Distance(heldMove, releasedMove) <= 0.0001f;
+            detail = $"suppressed={suppressed} retained={retained} " +
+                $"locked={lockedMove:F3} released={releasedMove:F3}";
+            return suppressed && retained;
         }
 
         public void SetModalInputLocked(bool locked)
