@@ -11,12 +11,14 @@ namespace MoonlightMagicHouse
         Garden,
         Read,
         SleepCuddle,
-        Care
+        Care,
+        Feed
     }
 
     public class MoonlightSpatialActionZone : MonoBehaviour
     {
         public const float DefaultPassingScore = 0.58f;
+        public const float FeedHungerIncrease = 18f;
 
         public readonly struct RewardSnapshot
         {
@@ -57,13 +59,7 @@ namespace MoonlightMagicHouse
         public string DisplayName => string.IsNullOrEmpty(displayName) ? kind.ToString() : displayName;
         public float PassingScore => passingScore;
         public int ProgressStep => _progressStep;
-        public int RequiredSteps => kind switch
-        {
-            MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
-                MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
-                MoonlightSpatialActionKind.Care => 4,
-            _ => 1
-        };
+        public int RequiredSteps => IsScoredActivityKind(kind) ? 4 : 1;
         public MoonlightGestureKind RequiredGesture => kind switch
         {
             MoonlightSpatialActionKind.Cook => _progressStep switch
@@ -95,6 +91,7 @@ namespace MoonlightMagicHouse
                 _ => MoonlightGestureKind.Hold
             },
             MoonlightSpatialActionKind.Care => CareGestureForStep(_progressStep),
+            MoonlightSpatialActionKind.Feed => MoonlightGestureKind.Tap,
             _ => MoonlightGestureKind.Tap
         };
         public bool SupportsLiveHoldReadiness =>
@@ -162,6 +159,7 @@ namespace MoonlightMagicHouse
                 },
                 MoonlightSpatialActionKind.SleepCuddle => moonlight != null && moonlight.stats.rest < 82f ? "SLEEP" : "CUDDLE",
                 MoonlightSpatialActionKind.Care => CareLabelForStep(_progressStep),
+                MoonlightSpatialActionKind.Feed => "FEED",
                 _ => "ACTION"
             };
         }
@@ -185,12 +183,11 @@ namespace MoonlightMagicHouse
         {
             if (moonlight == null) return "Moonlight is not ready yet.";
             var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
-            if (feedback == null) feedback = moonlight.gameObject.AddComponent<MoonlightActionFeedback>();
 
             LastGestureSample = sample;
             LastGestureScore = Mathf.Clamp01(sample.Score);
             LastGesturePassed = false;
-            if (!feedback.CanBeginAction)
+            if (feedback != null && !feedback.CanBeginAction)
             {
                 LastCueKey = "activity-busy";
                 Debug.Log($"[MoonlightActivityQA] gesture-blocked kind={kind} " +
@@ -198,7 +195,9 @@ namespace MoonlightMagicHouse
                 return feedback.InputBlockReason;
             }
 
-            bool gesturePassed = gesture == RequiredGesture && LastGestureScore >= passingScore;
+            bool gesturePassed = kind == MoonlightSpatialActionKind.Feed
+                ? IsFeedInputAccepted(gesture, LastGestureScore, passingScore, true)
+                : gesture == RequiredGesture && LastGestureScore >= passingScore;
             if (!gesturePassed)
             {
                 _currentCombo = 0;
@@ -210,8 +209,21 @@ namespace MoonlightMagicHouse
                 return $"TRY AGAIN  /  {GestureInstruction(RequiredGesture)}  /  SCORE {Mathf.RoundToInt(LastGestureScore * 100f)}";
             }
 
+            if (feedback == null)
+                feedback = moonlight.gameObject.AddComponent<MoonlightActionFeedback>();
+
             switch (kind)
             {
+                case MoonlightSpatialActionKind.Feed:
+                    if (!TryBeginFeedback(feedback, "Feeding", acceptedHapticAlreadyPlayed))
+                        return feedback.InputBlockReason;
+                    RewardSnapshot feedBefore = CaptureRewards(moonlight);
+                    moonlight.stats.hunger = FeedHungerAfter(moonlight.stats.hunger);
+                    moonlight.GetComponentInChildren<MoonlightAnimator>()?.TriggerEat();
+                    LastCueKey = "eat";
+                    AudioManager.Instance?.Play(LastCueKey);
+                    return "FED  /  " + BuildRewardReceipt(feedBefore, CaptureRewards(moonlight));
+
                 case MoonlightSpatialActionKind.Cook:
                     if (!TryBeginFeedback(feedback, "Cooking", acceptedHapticAlreadyPlayed))
                         return feedback.InputBlockReason;
@@ -383,7 +395,8 @@ namespace MoonlightMagicHouse
             bool acceptedHapticAlreadyPlayed = false)
         {
             bool isScoredActivity = RequiredSteps > 1;
-            bool began = isScoredActivity
+            bool keepsGestureSample = isScoredActivity || kind == MoonlightSpatialActionKind.Feed;
+            bool began = keepsGestureSample
                 ? feedback.TryBegin(kind, DisplayName, state, _progressStep, RequiredSteps,
                     LastGestureSample)
                 : feedback.TryBegin(kind, DisplayName, state, _progressStep, RequiredSteps);
@@ -396,9 +409,60 @@ namespace MoonlightMagicHouse
             LastGesturePassed = true;
             // Live Hold readiness can own this pulse before release. Completion
             // methods also suppress their legacy pulse to avoid duplicate feedback.
-            if (isScoredActivity && !acceptedHapticAlreadyPlayed)
+            if (keepsGestureSample && !acceptedHapticAlreadyPlayed)
                 feedback.PlayActionQualityHaptic();
             return true;
+        }
+
+        public static bool IsScoredActivityKind(MoonlightSpatialActionKind actionKind) =>
+            actionKind is MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
+                MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
+                MoonlightSpatialActionKind.Care;
+
+        public static bool IsFeedInputAccepted(MoonlightGestureKind gesture, float score,
+            float threshold, bool canBegin) =>
+            canBegin && gesture == MoonlightGestureKind.Tap && Mathf.Clamp01(score) >= threshold;
+
+        public static float FeedHungerAfter(float hunger) =>
+            Mathf.Min(100f, Mathf.Clamp(hunger, 0f, 100f) + FeedHungerIncrease);
+
+        static RewardSnapshot FeedSnapshotAfterInput(RewardSnapshot before,
+            MoonlightGestureKind gesture, float score, bool canBegin)
+        {
+            if (!IsFeedInputAccepted(gesture, score, DefaultPassingScore, canBegin)) return before;
+            return new RewardSnapshot(before.Wonder, before.Warmth, before.Rest, before.Magic,
+                FeedHungerAfter(before.Hunger), before.XP, before.Coins);
+        }
+
+        public static bool ValidateFeedStatDeltaAndRejectionContract(out string detail)
+        {
+            var before = new RewardSnapshot(31f, 42f, 53f, 64f, 40f, 75, 9);
+            RewardSnapshot accepted = FeedSnapshotAfterInput(before,
+                MoonlightGestureKind.Tap, 0.95f, true);
+            RewardSnapshot wrongGesture = FeedSnapshotAfterInput(before,
+                MoonlightGestureKind.Swipe, 0.95f, true);
+            RewardSnapshot lowScore = FeedSnapshotAfterInput(before,
+                MoonlightGestureKind.Tap, 0.20f, true);
+            RewardSnapshot busy = FeedSnapshotAfterInput(before,
+                MoonlightGestureKind.Tap, 0.95f, false);
+            string receipt = BuildRewardReceipt(before, accepted);
+            bool acceptedDeltaPass = accepted.Hunger == 58f && accepted.Wonder == before.Wonder &&
+                accepted.Warmth == before.Warmth && accepted.Rest == before.Rest &&
+                accepted.Magic == before.Magic && accepted.XP == before.XP &&
+                accepted.Coins == before.Coins && receipt == "+18 HUNGER";
+            bool rejectionPass = RewardsEqual(before, wrongGesture) &&
+                RewardsEqual(before, lowScore) && RewardsEqual(before, busy);
+            int scoredKinds = 0;
+            foreach (MoonlightSpatialActionKind actionKind in
+                     System.Enum.GetValues(typeof(MoonlightSpatialActionKind)))
+                if (IsScoredActivityKind(actionKind)) scoredKinds++;
+            bool kindPass = scoredKinds == 5 &&
+                (int)MoonlightSpatialActionKind.Feed == (int)MoonlightSpatialActionKind.Care + 1;
+            detail = $"gesture=Tap steps=1 hunger=40->{accepted.Hunger:0} delta={FeedHungerIncrease:0} " +
+                $"receipt=\"{receipt}\" wrongUnchanged={RewardsEqual(before, wrongGesture)} " +
+                $"lowUnchanged={RewardsEqual(before, lowScore)} busyUnchanged={RewardsEqual(before, busy)} " +
+                $"scoredKinds={scoredKinds}/5";
+            return acceptedDeltaPass && rejectionPass && kindPass;
         }
 
         public static bool IsLiveHoldReadinessStep(MoonlightSpatialActionKind actionKind,

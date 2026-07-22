@@ -590,6 +590,23 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] activity-reward-receipt " +
                 $"{rewardReceiptDetail} " +
                 "marker=MOONLIGHT_ACTIVITY_REWARD_RECEIPT_CONTRACT_VERIFIED");
+            if (!MoonlightSpatialActionZone.ValidateFeedStatDeltaAndRejectionContract(
+                    out string feedStatDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] feed-stat-rejection-contract " +
+                    feedStatDetail);
+                Application.Quit(123);
+                yield break;
+            }
+            if (!MoonlightActionFeedback.ValidateFeedVisualContract(out string feedVisualDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] feed-visual-contract " +
+                    feedVisualDetail);
+                Application.Quit(124);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] feed-static-contracts {feedStatDetail} " +
+                $"visual=({feedVisualDetail}) marker=MOONLIGHT_FEED_STATIC_CONTRACT_VERIFIED");
             if (!LibraryRoom.TryLoadAuthoredStories(out AuthoredStoryPage[] storyPages,
                     out string storyDataDetail) || storyPages.Length != 10)
             {
@@ -905,6 +922,8 @@ namespace MoonlightMagicHouse
                     ui.ActivityPromptIsInsideSafeArea &&
                     ui.ActivityResultIsInsideSafeArea &&
                     ui.ActivityProgressIsInsideSafeArea &&
+                    ui.VisibleActionTextIsInsideSafeArea &&
+                    ui.VisibleActionTextDoesNotOverflow &&
                     ui.ActivityHUDPanelsDoNotOverlap &&
                     ui.ActivityPromptCenterOffsetPixels <= Screen.width * 0.10f &&
                     pad.CoordinateQAMarker == "MOONLIGHT_GESTURE_COORDINATES_ISOTROPIC" &&
@@ -924,6 +943,8 @@ namespace MoonlightMagicHouse
                         $"touch={ui.ActionTouchTargetLayoutSize} minimum={ui.IPadMinimumTouchTargetLayoutSize} " +
                         $"insideSafe={ui.ActionTouchTargetIsInsideSafeArea} " +
                         $"promptSafe={ui.ActivityPromptIsInsideSafeArea} resultSafe={ui.ActivityResultIsInsideSafeArea} " +
+                        $"actionTextSafe={ui.VisibleActionTextIsInsideSafeArea} " +
+                        $"actionTextNonOverflow={ui.VisibleActionTextDoesNotOverflow} " +
                         $"progressSafe={ui.ActivityProgressIsInsideSafeArea} separated={ui.ActivityHUDPanelsDoNotOverlap} " +
                         $"gestureCoordinates={pad.CoordinateQAMarker} gestureSurface={pad.TouchSurfaceSize} " +
                         $"touchJoystick={(touchJoystick != null && touchJoystick.gameObject.activeInHierarchy)} " +
@@ -1050,6 +1071,203 @@ namespace MoonlightMagicHouse
             yield return Capture(collisionShot);
             Debug.Log($"[MoonlightGameplayQA][PASS] collision blocker={controller.LastCollisionName} " +
                 $"position={controller.transform.position:F2} screenshot={collisionShot}");
+
+            rooms.GoToRoom(RoomType.Kitchen);
+            yield return new WaitForSeconds(0.28f);
+            var activeKitchenZones = FindObjectsByType<MoonlightSpatialActionZone>(
+                    FindObjectsSortMode.None)
+                .Where(candidate => candidate.gameObject.activeInHierarchy)
+                .ToArray();
+            var feedZones = activeKitchenZones
+                .Where(candidate => candidate.Kind == MoonlightSpatialActionKind.Feed).ToArray();
+            var cookZones = activeKitchenZones
+                .Where(candidate => candidate.Kind == MoonlightSpatialActionKind.Cook).ToArray();
+            MoonlightSpatialActionZone feedZone = feedZones.FirstOrDefault();
+            bool zoneCountPass = feedZones.Length == 1 && cookZones.Length == 1 &&
+                feedZone != null && feedZone.RequiredSteps == 1 &&
+                feedZone.RequiredGesture == MoonlightGestureKind.Tap &&
+                !MoonlightSpatialActionZone.IsScoredActivityKind(feedZone.Kind) &&
+                ui != null && ui.FeedButtonIsHidden;
+            if (!zoneCountPass)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] kitchen-feed-zone-count " +
+                    $"feed={feedZones.Length}/1 cook={cookZones.Length}/1 " +
+                    $"steps={feedZone?.RequiredSteps ?? 0}/1 gesture={feedZone?.RequiredGesture} " +
+                    $"feedButtonHidden={(ui != null && ui.FeedButtonIsHidden)}");
+                Application.Quit(125);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] kitchen-feed-zone-count " +
+                $"feed={feedZones.Length}/1 cook={cookZones.Length}/1 nonScored=True " +
+                "marker=MOONLIGHT_FEED_COOK_ZONE_COUNTS_VERIFIED");
+
+            controller.TeleportTo(feedZone.transform.position, controller.RoomBounds);
+            yield return new WaitForSeconds(0.65f);
+            if (spatialInteractor.CurrentZone != feedZone)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] kitchen-feed-context " +
+                    $"current={spatialInteractor.CurrentZone?.DisplayName} expected={feedZone.DisplayName}");
+                Application.Quit(126);
+                yield break;
+            }
+
+            moonlight.stats.wonder = 31f;
+            moonlight.stats.warmth = 42f;
+            moonlight.stats.rest = 53f;
+            moonlight.stats.magic = 64f;
+            moonlight.stats.hunger = 40f;
+            int feedXpBefore = moonlight.xp;
+            int feedCoinsBefore = moonlight.coins;
+            ui.Refresh(moonlight);
+            yield return null;
+
+            MoonlightGestureSample wrongFeedSample = MoonlightGestureSample.Synthetic(
+                MoonlightGestureKind.Swipe, 0.95f);
+            ui.ExecuteContextGesture(MoonlightGestureKind.Swipe, wrongFeedSample);
+            yield return null;
+            bool wrongFeedUnchanged = !feedZone.LastGesturePassed &&
+                Approximately(moonlight.stats.wonder, 31f) &&
+                Approximately(moonlight.stats.warmth, 42f) &&
+                Approximately(moonlight.stats.rest, 53f) &&
+                Approximately(moonlight.stats.magic, 64f) &&
+                Approximately(moonlight.stats.hunger, 40f) && moonlight.xp == feedXpBefore &&
+                moonlight.coins == feedCoinsBefore;
+            if (!wrongFeedUnchanged)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] feed-wrong-gesture-mutated " +
+                    $"passed={feedZone.LastGesturePassed} hunger={moonlight.stats.hunger:0.0}/40");
+                Application.Quit(127);
+                yield break;
+            }
+
+            MoonlightGestureSample lowFeedSample = MoonlightGestureSample.Synthetic(
+                MoonlightGestureKind.Tap, 0.20f);
+            ui.ExecuteContextGesture(MoonlightGestureKind.Tap, lowFeedSample);
+            yield return null;
+            bool lowFeedUnchanged = !feedZone.LastGesturePassed &&
+                Approximately(moonlight.stats.wonder, 31f) &&
+                Approximately(moonlight.stats.warmth, 42f) &&
+                Approximately(moonlight.stats.rest, 53f) &&
+                Approximately(moonlight.stats.magic, 64f) &&
+                Approximately(moonlight.stats.hunger, 40f) && moonlight.xp == feedXpBefore &&
+                moonlight.coins == feedCoinsBefore;
+            if (!lowFeedUnchanged)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] feed-low-score-mutated " +
+                    $"passed={feedZone.LastGesturePassed} hunger={moonlight.stats.hunger:0.0}/40");
+                Application.Quit(130);
+                yield break;
+            }
+
+            MoonlightGestureSample acceptedFeedSample = MoonlightGestureSample.Synthetic(
+                MoonlightGestureKind.Tap, 0.95f);
+            ui.ExecuteContextGesture(MoonlightGestureKind.Tap, acceptedFeedSample);
+            MoonlightActionFeedback feedFeedback = moonlight.GetComponent<MoonlightActionFeedback>();
+            bool acceptedFeedPass = feedZone.LastGesturePassed &&
+                feedZone.RequiredSteps == 1 && feedZone.ProgressStep == 0 &&
+                Approximately(moonlight.stats.hunger, 58f) &&
+                Approximately(moonlight.stats.wonder, 31f) &&
+                Approximately(moonlight.stats.warmth, 42f) &&
+                Approximately(moonlight.stats.rest, 53f) &&
+                Approximately(moonlight.stats.magic, 64f) && moonlight.xp == feedXpBefore &&
+                moonlight.coins == feedCoinsBefore && feedFeedback != null &&
+                feedFeedback.IsPerformingAction &&
+                feedFeedback.ActiveActivityKind == MoonlightSpatialActionKind.Feed &&
+                feedFeedback.ActiveGestureSample.ContentEquals(acceptedFeedSample) &&
+                feedFeedback.ActionMotionProfile == "feed-bowl-to-mouth" &&
+                feedFeedback.ActionVisualSignature == "feed-bowl-to-mouth" &&
+                feedFeedback.ActionAccentVisualObjectCount ==
+                    MoonlightActionFeedback.FeedVisualObjectBudget &&
+                feedFeedback.ActionAccentRendererCount == MoonlightActionFeedback.FeedRendererBudget &&
+                feedFeedback.ActionAccentMaterialCount <= MoonlightActionFeedback.FeedMaterialBudget &&
+                feedFeedback.ActionAccentColliderCount == 0 &&
+                feedFeedback.ActiveStageRenderers == 0 && feedFeedback.ActiveStageMaterials == 0 &&
+                feedFeedback.ActiveStageLights == MoonlightActionFeedback.FeedLightBudget &&
+                !feedFeedback.ActionParticlesActive && !feedFeedback.ActionFlashActive &&
+                !feedFeedback.HasOpaqueActionOrb;
+            float feedHungerAfterAccepted = moonlight.stats.hunger;
+            feedZone.ExecuteGesture(moonlight, MoonlightGestureKind.Tap, acceptedFeedSample);
+            bool busyFeedUnchanged = !feedZone.LastGesturePassed &&
+                Approximately(moonlight.stats.hunger, feedHungerAfterAccepted) &&
+                Approximately(moonlight.stats.wonder, 31f) &&
+                Approximately(moonlight.stats.warmth, 42f) &&
+                Approximately(moonlight.stats.rest, 53f) &&
+                Approximately(moonlight.stats.magic, 64f) && moonlight.xp == feedXpBefore &&
+                moonlight.coins == feedCoinsBefore &&
+                feedFeedback.ActiveGestureSample.ContentEquals(acceptedFeedSample);
+            Canvas.ForceUpdateCanvases();
+            bool feedActionTextPass = !expectIPadHud ||
+                (ui.VisibleActionTextIsInsideSafeArea && ui.VisibleActionTextDoesNotOverflow &&
+                 ui.ActionTouchTargetIsInsideSafeArea && ui.ActivityPromptIsInsideSafeArea &&
+                 ui.ActivityResultIsInsideSafeArea);
+            if (!acceptedFeedPass || !busyFeedUnchanged || !feedActionTextPass)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] feed-acceptance-feedback " +
+                    $"accepted={acceptedFeedPass} busyUnchanged={busyFeedUnchanged} " +
+                    $"hunger={moonlight.stats.hunger:0.0}/58 sample=" +
+                    $"{(feedFeedback != null && feedFeedback.ActiveGestureSample.ContentEquals(acceptedFeedSample))} " +
+                    $"renderers={feedFeedback?.ActionAccentRendererCount ?? 0}/" +
+                    $"{MoonlightActionFeedback.FeedRendererBudget} materials=" +
+                    $"{feedFeedback?.ActionAccentMaterialCount ?? 0}/<=" +
+                    $"{MoonlightActionFeedback.FeedMaterialBudget} " +
+                    $"stage={feedFeedback?.ActiveStageRenderers ?? -1}/" +
+                    $"{feedFeedback?.ActiveStageMaterials ?? -1}/" +
+                    $"{feedFeedback?.ActiveStageLights ?? -1} " +
+                    $"actionTextSafe={ui.VisibleActionTextIsInsideSafeArea} " +
+                    $"actionTextNonOverflow={ui.VisibleActionTextDoesNotOverflow}");
+                Application.Quit(128);
+                yield break;
+            }
+
+            bool feedContactObserved = false;
+            float feedContactDeadline = Time.time + 1.20f;
+            while (feedFeedback.IsPerformingAction && Time.time < feedContactDeadline)
+            {
+                feedContactObserved |= feedFeedback.IsActionContactActive &&
+                    feedFeedback.ActionContactPhase == "contact" &&
+                    feedFeedback.ActionContactTarget == "mouth" &&
+                    feedFeedback.ActionContactSource == "fallback" &&
+                    feedFeedback.ActionContactWeight >= 0.20f &&
+                    feedFeedback.ActionContactTravelDistance >= 0.30f &&
+                    feedFeedback.ActionAccentContactDistance <= 0.01f;
+                if (feedContactObserved) break;
+                yield return null;
+            }
+            if (!feedContactObserved)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] feed-contact-evidence " +
+                    $"phase={feedFeedback.ActionContactPhase} target={feedFeedback.ActionContactTarget}/mouth " +
+                    $"source={feedFeedback.ActionContactSource}/fallback " +
+                    $"weight={feedFeedback.ActionContactWeight:0.00} " +
+                    $"travel={feedFeedback.ActionContactTravelDistance:0.00}/>=0.30 " +
+                    $"accentDistance={feedFeedback.ActionAccentContactDistance:0.000}");
+                Application.Quit(129);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] feed-runtime sample=True feedback=True " +
+                $"contact={feedFeedback.ActionContactTarget} travel=" +
+                $"{feedFeedback.ActionContactTravelDistance:0.00} hunger=40->58 " +
+                $"actionTextSafe={feedActionTextPass} " +
+                "marker=MOONLIGHT_FEED_SAMPLE_FEEDBACK_CONTACT_VERIFIED");
+            while (feedFeedback.IsPerformingAction || feedFeedback.IsCoolingDown) yield return null;
+            yield return null;
+            Canvas.ForceUpdateCanvases();
+            bool feedResultTextPass = ui.HasContextResult &&
+                ui.ContextResultQAText.Contains("FED", System.StringComparison.Ordinal) &&
+                ui.ContextResultQAText.Contains("+18 HUNGER", System.StringComparison.Ordinal) &&
+                ui.VisibleActionTextIsInsideSafeArea && ui.VisibleActionTextDoesNotOverflow &&
+                ui.ActivityResultIsInsideSafeArea && !ui.ContextResultIsOverflowing;
+            if (!feedResultTextPass)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] feed-result-text " +
+                    $"text=\"{ui.ContextResultQAText}\" safe={ui.VisibleActionTextIsInsideSafeArea} " +
+                    $"nonOverflow={ui.VisibleActionTextDoesNotOverflow}/" +
+                    $"{!ui.ContextResultIsOverflowing}");
+                Application.Quit(131);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] feed-result-text " +
+                $"text=\"{ui.ContextResultQAText}\" marker=MOONLIGHT_FEED_RESULT_TEXT_VERIFIED");
 
             var activityKinds = new[]
             {

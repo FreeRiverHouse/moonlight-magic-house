@@ -252,7 +252,9 @@ namespace MoonlightMagicHouse
         public string GestureCommandQAMarker => _gestureCommandMarker;
         public string ActivityPhaseQAMarker => _activityPhaseMarker;
         public string ActionButtonQAText => actionBtnLabel != null ? actionBtnLabel.text : "";
+        public string ContextResultQAText => resultLabel != null ? resultLabel.text : "";
         public bool ActionButtonQAInteractable => actionBtn != null && actionBtn.interactable;
+        public bool FeedButtonIsHidden => feedBtn == null || !feedBtn.gameObject.activeSelf;
         public Rect ActionTouchTargetScreenRect => ScreenRect(actionBtn != null
             ? actionBtn.transform as RectTransform
             : null);
@@ -287,6 +289,12 @@ namespace MoonlightMagicHouse
         public bool ActivityPromptIsInsideSafeArea => ContainsRect(Screen.safeArea, ActivityPromptScreenRect);
         public bool ActivityResultIsInsideSafeArea => ContainsRect(Screen.safeArea, ActivityResultScreenRect);
         public bool ActivityProgressIsInsideSafeArea => ContainsRect(Screen.safeArea, ActivityProgressScreenRect);
+        public bool VisibleActionTextIsInsideSafeArea =>
+            VisibleTextIsInsideSafeArea(actionBtnLabel) &&
+            VisibleTextIsInsideSafeArea(contextLabel) && VisibleTextIsInsideSafeArea(resultLabel);
+        public bool VisibleActionTextDoesNotOverflow =>
+            VisibleTextDoesNotOverflow(actionBtnLabel) &&
+            VisibleTextDoesNotOverflow(contextLabel) && VisibleTextDoesNotOverflow(resultLabel);
         public bool ActivityHUDPanelsDoNotOverlap =>
             !OverlapsWithPadding(ActivityPromptScreenRect, ActivityProgressScreenRect, 4f) &&
             !OverlapsWithPadding(ActivityResultScreenRect, ActivityProgressScreenRect, 4f) &&
@@ -315,6 +323,7 @@ namespace MoonlightMagicHouse
 
         void Start()
         {
+            if (feedBtn) feedBtn.gameObject.SetActive(false);
             if (cuddleBtn) cuddleBtn.onClick.AddListener(() =>
             {
                 MoonlightGameManager.Instance?.moonlight.Cuddle();
@@ -328,7 +337,6 @@ namespace MoonlightMagicHouse
                 if (MoonlightGameManager.Instance?.moonlight != null)
                     Refresh(MoonlightGameManager.Instance.moonlight);
             });
-            if (feedBtn && feedOpensMenu) feedBtn.onClick.AddListener(OpenFeedMenu);
             if (actionBtn && actionBtn.GetComponent<MoonlightGesturePad>() == null)
                 actionBtn.onClick.AddListener(ExecuteContextAction);
             StartCoroutine(ReportVisibleHUDTypographyAfterCanvasUpdate());
@@ -351,6 +359,7 @@ namespace MoonlightMagicHouse
             legacyStageLabel = null; legacyCoinsLabel = null; legacyXPLabel = null;
             legacyMoodLabel = null; legacyDaysLabel = null;
             feedBtn = feed; cuddleBtn = cuddle; sleepBtn = sleep;
+            if (feedBtn) feedBtn.gameObject.SetActive(false);
             stagePanel = stgPanel; stagePanelLabel = stgLabel;
             legacyStagePanelLabel = null;
             roomUnlockPanel = roomPanel; roomUnlockLabel = roomLabel;
@@ -375,6 +384,7 @@ namespace MoonlightMagicHouse
             legacyStageLabel = stage; legacyCoinsLabel = coins; legacyXPLabel = xp;
             legacyMoodLabel  = mood;  legacyDaysLabel  = days;
             feedBtn = feed; cuddleBtn = cuddle; sleepBtn = sleep;
+            if (feedBtn) feedBtn.gameObject.SetActive(false);
             stagePanelLabel = null;
             stagePanel = stgPanel; legacyStagePanelLabel = stgLabel;
             roomUnlockLabel = null;
@@ -832,6 +842,7 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Read => "STORY",
             MoonlightSpatialActionKind.SleepCuddle => "BED",
             MoonlightSpatialActionKind.Care => "CARE",
+            MoonlightSpatialActionKind.Feed => "FEED",
             _ => "ACTIVITY"
         };
 
@@ -861,7 +872,8 @@ namespace MoonlightMagicHouse
                 CompactNavigationLabel(MoonlightSpatialActionKind.Garden) == "GARDEN" &&
                 CompactNavigationLabel(MoonlightSpatialActionKind.Read) == "STORY" &&
                 CompactNavigationLabel(MoonlightSpatialActionKind.SleepCuddle) == "BED" &&
-                CompactNavigationLabel(MoonlightSpatialActionKind.Care) == "CARE";
+                CompactNavigationLabel(MoonlightSpatialActionKind.Care) == "CARE" &&
+                CompactNavigationLabel(MoonlightSpatialActionKind.Feed) == "FEED";
             string fallbackLabel = CompactNavigationLabel((MoonlightSpatialActionKind)int.MaxValue);
             bool compactFallbackValid = fallbackLabel == "ACTIVITY" &&
                 IsValidCompactNavigationLabel(fallbackLabel);
@@ -1204,6 +1216,17 @@ namespace MoonlightMagicHouse
                 inner.yMin >= outer.yMin - tolerance && inner.yMax <= outer.yMax + tolerance;
         }
 
+        static bool VisibleTextIsInsideSafeArea(TMP_Text label)
+        {
+            if (label == null || !label.gameObject.activeInHierarchy || string.IsNullOrEmpty(label.text))
+                return true;
+            return ContainsRect(Screen.safeArea, ScreenRect(label.transform as RectTransform));
+        }
+
+        static bool VisibleTextDoesNotOverflow(TMP_Text label) =>
+            label == null || !label.gameObject.activeInHierarchy || string.IsNullOrEmpty(label.text) ||
+            !label.isTextOverflowing;
+
         static bool OverlapsWithPadding(Rect first, Rect second, float padding)
         {
             if (first.width <= 0f || first.height <= 0f || second.width <= 0f || second.height <= 0f)
@@ -1233,6 +1256,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Read => new Color(0.76f, 0.54f, 0.26f, 0.96f),
                 MoonlightSpatialActionKind.SleepCuddle => new Color(0.71f, 0.48f, 0.72f, 0.96f),
                 MoonlightSpatialActionKind.Care => new Color(0.16f, 0.74f, 0.66f, 0.96f),
+                MoonlightSpatialActionKind.Feed => new Color(0.94f, 0.48f, 0.26f, 0.96f),
                 _ => new Color(0.46f, 0.58f, 0.72f, 0.96f)
             };
         }

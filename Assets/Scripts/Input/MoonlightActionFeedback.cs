@@ -19,11 +19,16 @@ namespace MoonlightMagicHouse
         public const float MaximumActionAccentExtent = 0.80f;
         public const float GreatActionQualityScore = 0.72f;
         public const float PerfectActionQualityScore = 0.88f;
+        public const int FeedVisualObjectBudget = 4;
+        public const int FeedRendererBudget = 3;
+        public const int FeedMaterialBudget = 3;
+        public const int FeedLightBudget = 0;
 
         [SerializeField] float cooldownSeconds = 1.15f;
 
         Transform _visual;
         ParticleSystem _particles;
+        ParticleSystemRenderer _particleRenderer;
         Light _flash;
         Coroutine _running;
         Coroutine _cameraHoldRoutine;
@@ -49,6 +54,7 @@ namespace MoonlightMagicHouse
         MoonlightTouchJoystick _touchJoystick;
         Vector3 _cameraFocusAnchor;
         Vector3 _actionContactPoint;
+        Vector3 _actionContactStartPoint;
         Vector3 _actionPresentationDirection;
         Vector3 _actionStageScale = Vector3.one;
         bool _cameraFocusUsesStationAnchor;
@@ -82,11 +88,14 @@ namespace MoonlightMagicHouse
         public MoonlightSpatialActionKind ActiveActivityKind => _activityKind;
         public MoonlightGestureSample ActiveGestureSample => _gestureSample;
         public bool HasOpaqueActionOrb => _actionOrb != null;
+        public bool ActionParticlesActive => _particles != null && _particles.isPlaying &&
+            _particleRenderer != null && _particleRenderer.enabled;
+        public bool ActionFlashActive => _flash != null && _flash.enabled && _flash.intensity > 0f;
         public bool PlayUsesStageBallOnly => _activityKind != MoonlightSpatialActionKind.Play ||
             (_actionOrb == null && _activityStage != null &&
              _activityStage.AuthoritativePlayBallCount == 1);
         public static bool ShouldCreateOpaqueActionOrb(MoonlightSpatialActionKind kind) =>
-            kind != MoonlightSpatialActionKind.Play;
+            kind is not (MoonlightSpatialActionKind.Play or MoonlightSpatialActionKind.Feed);
         public int ActiveStageRenderers => _activityStage != null ? _activityStage.ActiveRendererCount : 0;
         public int ActiveStageMaterials => _activityStage != null ? _activityStage.ActiveUniqueMaterialCount : 0;
         public int ActiveStageLights => _activityStage != null ? _activityStage.ActiveLightCount : 0;
@@ -103,6 +112,8 @@ namespace MoonlightMagicHouse
         public float ActionContactWeight { get; private set; }
         public bool IsActionContactActive => _contactPhaseIndex == 2;
         public Vector3 ActionContactPoint => _actionContactPoint;
+        public float ActionContactTravelDistance =>
+            Vector3.Distance(_actionContactStartPoint, _actionContactPoint);
         public bool UsesCameraReadableFacing { get; private set; }
         public float ActionCameraFacingAngle { get; private set; } = 180f;
         public Vector3 ActionPresentationDirection => _actionPresentationDirection;
@@ -127,6 +138,7 @@ namespace MoonlightMagicHouse
                     "Gardening" => "GARDENING",
                     "Reading" => "READING",
                     "Caring" => "CARING",
+                    "Feeding" => "FEEDING",
                     "Resting" => "DREAMING",
                     "Cuddled" => "CUDDLING",
                     _ => "MAGIC IN PROGRESS"
@@ -140,6 +152,9 @@ namespace MoonlightMagicHouse
         public string ActionVisualSignature { get; private set; } = "";
         public string ActionVisualSignatureMarker { get; private set; } = "";
         public int ActionAccentRendererCount { get; private set; }
+        public int ActionAccentVisualObjectCount => _actionAccent == null
+            ? 0
+            : _actionAccentParts.Count + 1;
         public int ActionAccentColliderCount { get; private set; }
         public int ActionAccentMaterialCount { get; private set; }
         public Vector3 ActionAccentBoundsSize { get; private set; }
@@ -289,6 +304,7 @@ namespace MoonlightMagicHouse
                     2 => "BRUSH",
                     _ => "GLOW"
                 },
+                MoonlightSpatialActionKind.Feed => "FEED",
                 _ => "MAGIC"
             };
         }
@@ -296,13 +312,16 @@ namespace MoonlightMagicHouse
         IEnumerator Play(MoonlightSpatialActionKind kind, string label, string state)
         {
             EnsureFxRig();
-            if (_activityStage == null)
+            bool usesActivityStage = kind != MoonlightSpatialActionKind.Feed;
+            bool usesAmbientFx = kind != MoonlightSpatialActionKind.Feed;
+            if (usesActivityStage && _activityStage == null)
                 _activityStage = GetComponent<MoonlightActivityStage>() ?? gameObject.AddComponent<MoonlightActivityStage>();
             var color = ColorFor(kind, state);
             float duration = DurationFor(kind, state);
             float flashIntensity = ActionQualityFlashIntensityFor(ActionQualityTier);
             BeginCameraFocus(kind);
-            _activityStage.Begin(kind, _activityStep, _activityRequiredSteps, _gestureSample);
+            if (usesActivityStage)
+                _activityStage.Begin(kind, _activityStep, _activityRequiredSteps, _gestureSample);
             ActionMotionProfile = MotionProfileFor(kind, _activityStep);
             if (kind == MoonlightSpatialActionKind.SleepCuddle)
                 ResetContactQA();
@@ -320,24 +339,33 @@ namespace MoonlightMagicHouse
 
             if (_flash != null)
             {
+                _flash.enabled = usesAmbientFx;
                 _flash.color = color;
-                _flash.intensity = flashIntensity;
+                _flash.intensity = usesAmbientFx ? flashIntensity : 0f;
             }
 
             if (_particles != null)
             {
-                var main = _particles.main;
-                main.startLifetime = new ParticleSystem.MinMaxCurve(0.35f, 0.75f);
-                main.startSpeed = new ParticleSystem.MinMaxCurve(0.65f, 1.2f);
-                main.startSize = new ParticleSystem.MinMaxCurve(0.035f, 0.09f);
-                main.maxParticles = 64;
-                main.startColor = new ParticleSystem.MinMaxGradient(color, Color.white);
-                var shape = _particles.shape;
-                shape.shapeType = ParticleSystemShapeType.Sphere;
-                shape.radius = 0.45f;
-                var emission = _particles.emission;
-                emission.SetBurst(0, new ParticleSystem.Burst(0f, (short)ActionQualityBurstCount));
-                _particles.Play(true);
+                if (_particleRenderer != null) _particleRenderer.enabled = usesAmbientFx;
+                if (usesAmbientFx)
+                {
+                    var main = _particles.main;
+                    main.startLifetime = new ParticleSystem.MinMaxCurve(0.35f, 0.75f);
+                    main.startSpeed = new ParticleSystem.MinMaxCurve(0.65f, 1.2f);
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.035f, 0.09f);
+                    main.maxParticles = 64;
+                    main.startColor = new ParticleSystem.MinMaxGradient(color, Color.white);
+                    var shape = _particles.shape;
+                    shape.shapeType = ParticleSystemShapeType.Sphere;
+                    shape.radius = 0.45f;
+                    var emission = _particles.emission;
+                    emission.SetBurst(0, new ParticleSystem.Burst(0f, (short)ActionQualityBurstCount));
+                    _particles.Play(true);
+                }
+                else
+                {
+                    _particles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+                }
             }
 
             float elapsed = 0f;
@@ -350,8 +378,9 @@ namespace MoonlightMagicHouse
                     UpdateContactQA(kind, t);
                 ApplyPose(kind, state, t);
                 UpdateActionOrb(kind, state, t);
-                _activityStage.UpdateStage(kind, t);
-                if (_flash != null)
+                if (usesActivityStage)
+                    _activityStage.UpdateStage(kind, t);
+                if (usesAmbientFx && _flash != null)
                     _flash.intensity = Mathf.Lerp(flashIntensity, 0f, t);
                 yield return null;
             }
@@ -364,7 +393,7 @@ namespace MoonlightMagicHouse
                 _activityStage.LingerFinalState(FinalPresentationSecondsFor(kind));
             if (!heldFinalPresentation)
             {
-                _activityStage.End();
+                _activityStage?.End();
                 EndCameraFocus();
             }
             else
@@ -505,6 +534,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Garden => 1f + Mathf.Sin(t * Mathf.PI * 6f) * 0.052f,
                 MoonlightSpatialActionKind.Read => 1f + Mathf.Sin(t * Mathf.PI * 4f) * 0.025f,
                 MoonlightSpatialActionKind.Care => 1f + Mathf.Sin(t * Mathf.PI * 5f) * 0.035f,
+                MoonlightSpatialActionKind.Feed => 1f + Mathf.Sin(t * Mathf.PI * 3f) * 0.025f,
                 MoonlightSpatialActionKind.SleepCuddle when resting => Mathf.Lerp(1f, 0.92f, Mathf.SmoothStep(0f, 1f, t)),
                 MoonlightSpatialActionKind.SleepCuddle when cuddled => 1f + Mathf.Sin(t * Mathf.PI * 4f) * 0.055f,
                 _ => 1f
@@ -517,6 +547,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Garden => new Vector3(1.02f, pulse, 1.02f),
                 MoonlightSpatialActionKind.Read => new Vector3(1.01f, pulse, 1.01f),
                 MoonlightSpatialActionKind.Care => new Vector3(1.02f, pulse, 1.02f),
+                MoonlightSpatialActionKind.Feed => new Vector3(1.02f, pulse, 1.02f),
                 MoonlightSpatialActionKind.SleepCuddle when resting => new Vector3(1.08f, pulse, 1.08f),
                 MoonlightSpatialActionKind.SleepCuddle when cuddled => new Vector3(1.03f, pulse, 1.03f),
                 _ => Vector3.one
@@ -558,6 +589,7 @@ namespace MoonlightMagicHouse
             {
                 MoonlightSpatialActionKind.Garden => new Vector3(0f, envelope * 0.10f, -envelope * 0.18f),
                 MoonlightSpatialActionKind.Read => new Vector3(0f, envelope * 0.04f, -envelope * 0.12f),
+                MoonlightSpatialActionKind.Feed => new Vector3(0f, envelope * 0.04f, -envelope * 0.08f),
                 MoonlightSpatialActionKind.SleepCuddle when resting => new Vector3(0f, -Mathf.SmoothStep(0f, 0.16f, t), 0f),
                 MoonlightSpatialActionKind.SleepCuddle when cuddled => new Vector3(0f, envelope * 0.24f, -envelope * 0.14f),
                 _ => Vector3.zero
@@ -566,6 +598,7 @@ namespace MoonlightMagicHouse
             {
                 MoonlightSpatialActionKind.Garden => new Vector3(envelope * 16f, Mathf.Sin(t * Mathf.PI * 4f) * 8f, 0f),
                 MoonlightSpatialActionKind.Read => new Vector3(envelope * 9f, Mathf.Sin(t * Mathf.PI * 2f) * 5f, 0f),
+                MoonlightSpatialActionKind.Feed => new Vector3(envelope * 7f, 0f, Mathf.Sin(t * Mathf.PI) * 4f),
                 MoonlightSpatialActionKind.SleepCuddle when resting => new Vector3(0f, 0f, -Mathf.SmoothStep(0f, 14f, t)),
                 MoonlightSpatialActionKind.SleepCuddle when cuddled => new Vector3(0f, 0f, Mathf.Sin(t * Mathf.PI * 4f) * 11f),
                 _ => Vector3.zero
@@ -919,6 +952,7 @@ namespace MoonlightMagicHouse
                     2 => "care-moon-comb-sweep",
                     _ => "care-mirror-glow-hold"
                 },
+                MoonlightSpatialActionKind.Feed => "feed-bowl-to-mouth",
                 _ => ""
             };
         }
@@ -928,6 +962,7 @@ namespace MoonlightMagicHouse
             ActionContactTarget = ContactTargetFor(kind, _activityStep);
             ActionContactWeight = 0f;
             _actionContactPoint = ContactPointFor(kind, _activityStep, 0f);
+            _actionContactStartPoint = _actionContactPoint;
             _contactPhaseIndex = -1;
             SetContactPhase(kind, 0);
         }
@@ -974,6 +1009,7 @@ namespace MoonlightMagicHouse
             UsesLiveStageContact = false;
             ActionContactWeight = 0f;
             _actionContactPoint = Vector3.zero;
+            _actionContactStartPoint = Vector3.zero;
             _actionPresentationDirection = Vector3.zero;
             UsesCameraReadableFacing = false;
             ActionCameraFacingAngle = 180f;
@@ -1020,6 +1056,7 @@ namespace MoonlightMagicHouse
                     2 => "moon-comb",
                     _ => "vanity-mirror"
                 },
+                MoonlightSpatialActionKind.Feed => "mouth",
                 _ => ""
             };
         }
@@ -1047,6 +1084,13 @@ namespace MoonlightMagicHouse
                 contactStart = step switch { 0 => 0.26f, 1 => 0.16f, 2 => 0.22f, _ => 0.16f };
                 contactEnd = step switch { 0 => 0.66f, 1 => 0.82f, 2 => 0.60f, _ => 0.80f };
                 recoveryStart = step == 1 || step == 3 ? 0.92f : 0.86f;
+            }
+            else if (kind == MoonlightSpatialActionKind.Feed)
+            {
+                approachStart = 0.05f;
+                contactStart = 0.32f;
+                contactEnd = 0.72f;
+                recoveryStart = 0.90f;
             }
             else if (kind == MoonlightSpatialActionKind.Play)
             {
@@ -1099,6 +1143,9 @@ namespace MoonlightMagicHouse
                 };
             }
 
+            if (kind == MoonlightSpatialActionKind.Feed)
+                return ContactPulse(t, 0.08f, 0.46f, 0.82f);
+
             if (kind == MoonlightSpatialActionKind.Play)
             {
                 return step switch
@@ -1141,6 +1188,18 @@ namespace MoonlightMagicHouse
 
             ActionContactSource = "fallback";
             UsesLiveStageContact = false;
+
+            if (kind == MoonlightSpatialActionKind.Feed)
+            {
+                Vector3 characterPosition = _visual != null ? _visual.position : transform.position;
+                Vector3 bowl = characterPosition + transform.right * 0.38f +
+                    transform.forward * 0.08f + Vector3.up * 0.28f;
+                Vector3 mouth = characterPosition + transform.forward * 0.04f + Vector3.up * 0.92f;
+                float travel = Ease(t, 0.06f, 0.38f);
+                Vector3 point = Vector3.Lerp(bowl, mouth, travel);
+                point.y += Mathf.Sin(travel * Mathf.PI) * 0.12f;
+                return point;
+            }
 
             if (kind == MoonlightSpatialActionKind.Cook)
             {
@@ -1275,6 +1334,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Garden => "moon-garden",
                 MoonlightSpatialActionKind.Read => "story-pages",
                 MoonlightSpatialActionKind.Care => "moon-spa-vanity",
+                MoonlightSpatialActionKind.Feed => "snack-bowl",
                 MoonlightSpatialActionKind.SleepCuddle when state == "Resting" => "dream-orbit",
                 MoonlightSpatialActionKind.SleepCuddle => "cuddle-orbit",
                 _ => "magic-orbit"
@@ -1337,7 +1397,7 @@ namespace MoonlightMagicHouse
 
         void UpdateActionOrb(MoonlightSpatialActionKind kind, string state, float t)
         {
-            if (kind == MoonlightSpatialActionKind.Play)
+            if (kind is MoonlightSpatialActionKind.Play or MoonlightSpatialActionKind.Feed)
             {
                 UpdateActionAccent(kind, t);
                 return;
@@ -1399,7 +1459,7 @@ namespace MoonlightMagicHouse
         void UpdateActionAccent(MoonlightSpatialActionKind kind, float t)
         {
             if (_actionAccent == null) return;
-            bool contactProp = IsStepSpecificActivity(kind);
+            bool contactProp = UsesContactProp(kind);
             if (!contactProp && _actionOrb == null) return;
             Vector3 anchor = contactProp
                 ? _actionContactPoint
@@ -1435,7 +1495,8 @@ namespace MoonlightMagicHouse
             ActionAccentContactDistance = contactProp
                 ? Vector3.Distance(_actionAccent.transform.position, _actionContactPoint)
                 : 0f;
-            RefreshActionAccentMetrics();
+            if (kind != MoonlightSpatialActionKind.Feed || ActionAccentRendererCount == 0)
+                RefreshActionAccentMetrics();
         }
 
         void DestroyActionOrb()
@@ -1496,6 +1557,7 @@ namespace MoonlightMagicHouse
             (MoonlightSpatialActionKind.Care, 1) => "care-bubble-brush",
             (MoonlightSpatialActionKind.Care, 2) => "care-moon-comb",
             (MoonlightSpatialActionKind.Care, _) => "care-mirror-glow",
+            (MoonlightSpatialActionKind.Feed, _) => "feed-bowl-to-mouth",
             (MoonlightSpatialActionKind.SleepCuddle, _) when state == "Resting" => "dream-moon-pair",
             (MoonlightSpatialActionKind.SleepCuddle, _) => "cuddle-heart-pair",
             _ => "magic-accent"
@@ -1653,6 +1715,12 @@ namespace MoonlightMagicHouse
                     Part(PrimitiveType.Sphere, new Vector3(0.22f, 0.12f, -0.02f), Vector3.one * 0.050f, 0f, 2),
                     Part(PrimitiveType.Sphere, new Vector3(0f, 0.25f, -0.02f), Vector3.one * 0.045f, 0f, 0)
                 },
+                (MoonlightSpatialActionKind.Feed, _) => new[]
+                {
+                    Part(PrimitiveType.Cylinder, new Vector3(0f, -0.035f, 0f), new Vector3(0.23f, 0.055f, 0.18f), 0f, 1),
+                    Part(PrimitiveType.Sphere, new Vector3(0f, 0.035f, -0.01f), new Vector3(0.17f, 0.045f, 0.12f), 0f, 2),
+                    Part(PrimitiveType.Capsule, new Vector3(0.16f, 0.07f, 0f), new Vector3(0.025f, 0.12f, 0.025f), -48f, 0)
+                },
                 _ => new[]
                 {
                     Part(PrimitiveType.Sphere, new Vector3(-0.08f, 0f, 0f), Vector3.one * 0.16f, 0f, 0),
@@ -1796,6 +1864,9 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
                 MoonlightSpatialActionKind.Care;
 
+        static bool UsesContactProp(MoonlightSpatialActionKind kind) =>
+            IsStepSpecificActivity(kind) || kind == MoonlightSpatialActionKind.Feed;
+
         static Quaternion CameraFacingRotation(Vector3 position)
         {
             Camera camera = Camera.main;
@@ -1837,6 +1908,7 @@ namespace MoonlightMagicHouse
                 (MoonlightSpatialActionKind.Care, 1) => Quaternion.Euler(0f, 0f, t * 240f),
                 (MoonlightSpatialActionKind.Care, 2) => Quaternion.Euler(0f, wave * 8f, -12f + wave * 16f),
                 (MoonlightSpatialActionKind.Care, _) => Quaternion.Euler(0f, wave * 5f, wave * 6f),
+                (MoonlightSpatialActionKind.Feed, _) => Quaternion.Euler(0f, wave * 6f, -8f + t * 24f),
                 (MoonlightSpatialActionKind.SleepCuddle, _) => Quaternion.Euler(0f, 0f, wave * 18f),
                 _ => Quaternion.identity
             };
@@ -1903,6 +1975,29 @@ namespace MoonlightMagicHouse
                 $"{MinimumActionAccentExtent:0.00}-{MaximumActionAccentExtent:0.00}";
             return correctSignatures && activities.Length == 5 && signatures.Count == 20 && markers.Count == 20 &&
                 validLayouts && primitives.Count >= 3;
+        }
+
+        public static bool ValidateFeedVisualContract(out string detail)
+        {
+            ActionAccentPartSpec[] layout = ActionAccentLayoutFor(MoonlightSpatialActionKind.Feed, 0);
+            var materialSlots = new HashSet<int>();
+            foreach (ActionAccentPartSpec part in layout) materialSlots.Add(part.MaterialSlot);
+            float extent = ApproximateLayoutExtent(layout);
+            string signature = ActionVisualSignatureFor(MoonlightSpatialActionKind.Feed, 0);
+            string marker = ActionVisualSignatureMarkerFor(MoonlightSpatialActionKind.Feed, 0);
+            bool pass = signature == "feed-bowl-to-mouth" &&
+                marker == "MOONLIGHT_ACTION_PROP_FEED_BOWL_TO_MOUTH" &&
+                MotionProfileFor(MoonlightSpatialActionKind.Feed, 0) == "feed-bowl-to-mouth" &&
+                !ShouldCreateOpaqueActionOrb(MoonlightSpatialActionKind.Feed) &&
+                layout.Length == FeedRendererBudget && materialSlots.Count <= FeedMaterialBudget &&
+                FeedVisualObjectBudget == layout.Length + 1 && FeedLightBudget == 0 &&
+                extent >= MinimumActionAccentExtent && extent <= MaximumActionAccentExtent;
+            detail = $"signature={signature} marker={marker} motion=feed-bowl-to-mouth " +
+                $"objects={layout.Length + 1}/{FeedVisualObjectBudget} " +
+                $"renderers={layout.Length}/{FeedRendererBudget} materials={materialSlots.Count}/<={FeedMaterialBudget} " +
+                $"lights=0/{FeedLightBudget} opaqueOrb={ShouldCreateOpaqueActionOrb(MoonlightSpatialActionKind.Feed)} " +
+                $"extent={extent:0.000}/{MinimumActionAccentExtent:0.00}-{MaximumActionAccentExtent:0.00}";
+            return pass;
         }
 
         static float ApproximateLayoutExtent(ActionAccentPartSpec[] layout)
@@ -2046,10 +2141,10 @@ namespace MoonlightMagicHouse
                 shape.radius = 0.45f;
             }
 
-            var particleRenderer = _particles.GetComponent<ParticleSystemRenderer>();
+            _particleRenderer = _particles.GetComponent<ParticleSystemRenderer>();
             if (_particleMaterial == null)
                 _particleMaterial = CreateTransparentMaterial(Color.white);
-            particleRenderer.sharedMaterial = _particleMaterial;
+            _particleRenderer.sharedMaterial = _particleMaterial;
 
             if (_flash == null)
             {
@@ -2111,6 +2206,7 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Garden => new Color(0.48f, 0.92f, 0.54f),
             MoonlightSpatialActionKind.Read => new Color(1f, 0.78f, 0.42f),
             MoonlightSpatialActionKind.Care => new Color(0.38f, 0.88f, 0.82f),
+            MoonlightSpatialActionKind.Feed => new Color(1f, 0.58f, 0.32f),
             MoonlightSpatialActionKind.SleepCuddle when state == "Resting" => new Color(0.50f, 0.66f, 1f),
             MoonlightSpatialActionKind.SleepCuddle when state == "Cuddled" => new Color(1f, 0.58f, 0.82f),
             _ => Color.white
@@ -2123,6 +2219,7 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Garden => 2.05f,
             MoonlightSpatialActionKind.Read => ReadActionDurationSeconds,
             MoonlightSpatialActionKind.Care => 2.15f,
+            MoonlightSpatialActionKind.Feed => 1.35f,
             MoonlightSpatialActionKind.SleepCuddle when state == "Resting" => 1.65f,
             MoonlightSpatialActionKind.SleepCuddle when state == "Cuddled" => 1.05f,
             _ => 1f

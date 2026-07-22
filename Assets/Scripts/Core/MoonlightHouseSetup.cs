@@ -1507,6 +1507,10 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Cook, "moon kitchen",
                 kt.transform.position + new Vector3(0f, 0.04f, -0.95f),
                 new Color(0.94f, 0.68f, 0.28f), 1.25f);
+            AddSpatialActionZone(kt.transform, "KitchenFeedAction",
+                MoonlightSpatialActionKind.Feed, "snack bowl",
+                kt.transform.position + new Vector3(-1f, 0.04f, 0f),
+                new Color(0.96f, 0.52f, 0.30f), 0.72f);
             Vector3 kitchenStationPosition = kt.transform.position + new Vector3(1.58f, 0.72f, -0.73f);
             AddPersistentActivityStation(kt.transform, "PersistentCookWorkbench",
                 MoonlightSpatialActionKind.Cook, "Models/Hero/MoonKitchenWorkbench",
@@ -3330,6 +3334,7 @@ namespace MoonlightMagicHouse
             var playBtn   = MakePhotorealButton("PlayBtn",   btnPanel.transform, new Vector2(-190f, 24f), "PLAY",  new Color(1.00f, 0.78f, 0.36f, 0.88f));
             var bathBtn   = MakePhotorealButton("BathBtn",   btnPanel.transform, new Vector2(   0f, 24f), "BATH",  new Color(0.50f, 0.88f, 0.94f, 0.88f));
             var danceBtn  = MakePhotorealButton("DanceBtn",  btnPanel.transform, new Vector2( 190f, 24f), "DANCE", new Color(0.78f, 0.56f, 1.00f, 0.88f));
+            feedBtn.gameObject.SetActive(false);
 
             AttachBurst(feedBtn,   new Color(1.0f, 0.72f, 0.40f), 18);
             AttachBurst(cuddleBtn, new Color(1.0f, 0.42f, 0.66f), 24);
@@ -3338,23 +3343,6 @@ namespace MoonlightMagicHouse
             AttachBurst(bathBtn,   new Color(0.58f, 0.92f, 1.0f), 18);
             AttachBurst(danceBtn,  new Color(0.86f, 0.56f, 1.0f), 28);
 
-            var moonCookie = ScriptableObject.CreateInstance<FoodItem>();
-            moonCookie.itemName = "Moon Cookie";
-            moonCookie.cost = 1;
-            moonCookie.hungerBoost = 72f;
-            moonCookie.warmthBoost = 10f;
-            moonCookie.wonderBoost = 6f;
-            moonCookie.magicBoost = 6f;
-            moonCookie.xpReward = 8;
-            moonCookie.hideFlags = HideFlags.HideAndDontSave;
-
-            feedBtn.onClick.AddListener(() =>
-            {
-                TriggerKidAction("Snack");
-                MoonlightGameManager.Instance?.moonlight?.Feed(moonCookie);
-                var ui = Object.FindAnyObjectByType<MoonlightUI>();
-                if (ui != null && MoonlightGameManager.Instance?.moonlight != null) ui.Refresh(MoonlightGameManager.Instance.moonlight);
-            });
             cuddleBtn.onClick.AddListener(() => TriggerKidAction("Hug"));
             sleepBtn.onClick.AddListener(() => TriggerKidAction("Nap"));
             playBtn.onClick.AddListener(() =>
