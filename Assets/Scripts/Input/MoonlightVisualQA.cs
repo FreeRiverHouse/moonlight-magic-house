@@ -67,6 +67,29 @@ namespace MoonlightMagicHouse
                 yield break;
             }
 
+            if (!MoonlightHouseSetup.ValidateHeroSurfaceContract(out string heroSurfaceDetail))
+            {
+                Debug.LogError($"[MoonlightVisualQA][FAIL] hero-surface-contract {heroSurfaceDetail}");
+                Application.Quit(63);
+                yield break;
+            }
+            var heroQuality = moonlight.GetComponentInChildren<MoonlightHeroVisualQuality>(true);
+            bool heroSurfacePass = heroQuality != null &&
+                heroQuality.QAMarker == "MOONLIGHT_HERO_SURFACE_SHADING_READY";
+            if (!heroSurfacePass)
+            {
+                Debug.LogError($"[MoonlightVisualQA][FAIL] hero-surface-shading " +
+                    $"marker={(heroQuality != null ? heroQuality.QAMarker : "missing")} " +
+                    $"contract={heroSurfaceDetail}");
+                Application.Quit(64);
+                yield break;
+            }
+            Debug.Log($"[MoonlightVisualQA][PASS] hero-surface-shading " +
+                $"renderers={heroQuality.RendererCount} shadows={heroQuality.ShadowRendererCount} " +
+                $"materials={heroQuality.MaterialCount}/{MoonlightHouseSetup.HeroMaterialBudget} " +
+                $"profiles={heroQuality.SurfaceProfileCount} emissive={heroQuality.EmissiveMaterialCount} " +
+                $"contract={heroSurfaceDetail} marker=MOONLIGHT_HERO_SURFACE_SHADING_VERIFIED");
+
             Vector3 start = controller.transform.position;
             controller.SetTouchMove(Vector2.up);
             yield return new WaitForSeconds(0.55f);

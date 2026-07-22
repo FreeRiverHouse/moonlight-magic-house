@@ -11,6 +11,8 @@ namespace MoonlightMagicHouse
     [DefaultExecutionOrder(-100)]
     public class MoonlightHouseSetup : MonoBehaviour
     {
+        public const int HeroMaterialBudget = 8;
+
         // The authored Blender house is the playable default. The image-plate
         // presentation remains available for dedicated visual comparisons.
         static readonly bool PhotorealMode = System.Array.Exists(
@@ -3784,14 +3786,27 @@ namespace MoonlightMagicHouse
         static void ApplyHeroMaterials(GameObject root)
         {
             var standard = Shader.Find("Standard") ?? Shader.Find("Diffuse") ?? ToonShader;
+            var materialCache = new System.Collections.Generic.Dictionary<string, Material>();
+            var surfaceProfiles = new System.Collections.Generic.HashSet<string>();
+            int rendererCount = 0;
+            int shadowRendererCount = 0;
+            int emissiveMaterialCount = 0;
+            int texturedMaterialCount = 0;
             foreach (var renderer in root.GetComponentsInChildren<Renderer>(true))
             {
+                rendererCount++;
                 var sourceMaterials = renderer.sharedMaterials;
                 var authoredMaterials = new Material[sourceMaterials.Length];
                 for (int i = 0; i < sourceMaterials.Length; i++)
                 {
                     var source = sourceMaterials[i];
                     string materialName = source != null ? source.name : renderer.gameObject.name;
+                    string lower = materialName.ToLowerInvariant();
+                    if (materialCache.TryGetValue(lower, out Material cached))
+                    {
+                        authoredMaterials[i] = cached;
+                        continue;
+                    }
                     var color = source != null && source.HasProperty("_Color")
                         ? source.color
                         : HeroPaletteColor(materialName);
@@ -3805,21 +3820,46 @@ namespace MoonlightMagicHouse
 
                     var material = new Material(standard) { name = materialName + "_Runtime" };
                     if (material.HasProperty("_Color")) material.SetColor("_Color", color);
-                    string lower = materialName.ToLowerInvariant();
+                    if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+                    float smoothness = HeroSmoothness(lower);
+                    float metallic = HeroMetallic(lower);
+                    float emission = HeroEmission(lower);
                     if (material.HasProperty("_Glossiness"))
-                        material.SetFloat("_Glossiness", HeroSmoothness(lower));
-                    if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
+                        material.SetFloat("_Glossiness", smoothness);
+                    if (material.HasProperty("_Smoothness"))
+                        material.SetFloat("_Smoothness", smoothness);
+                    if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", metallic);
                     if (material.HasProperty("_SpecularHighlights"))
                         material.SetFloat("_SpecularHighlights", 1f);
+                    if (material.HasProperty("_EmissionColor"))
+                    {
+                        material.SetColor("_EmissionColor", color * emission);
+                        if (emission > 0f)
+                        {
+                            material.EnableKeyword("_EMISSION");
+                            emissiveMaterialCount++;
+                        }
+                    }
                     if (source != null && source.mainTexture != null)
+                    {
                         material.mainTexture = source.mainTexture;
+                        texturedMaterialCount++;
+                    }
+                    materialCache.Add(lower, material);
+                    surfaceProfiles.Add(HeroSurfaceProfile(lower));
                     authoredMaterials[i] = material;
                 }
 
                 renderer.sharedMaterials = authoredMaterials;
                 renderer.shadowCastingMode = ShadowCastingMode.On;
                 renderer.receiveShadows = true;
+                shadowRendererCount++;
             }
+
+            var quality = root.GetComponent<MoonlightHeroVisualQuality>() ??
+                root.AddComponent<MoonlightHeroVisualQuality>();
+            quality.Configure(rendererCount, shadowRendererCount, materialCache.Count,
+                surfaceProfiles.Count, emissiveMaterialCount, texturedMaterialCount);
         }
 
         static Color HeroPaletteColor(string materialName)
@@ -3853,12 +3893,95 @@ namespace MoonlightMagicHouse
         static float HeroSmoothness(string materialName)
         {
             string n = materialName ?? string.Empty;
-            if (n.Contains("eye") || n.Contains("sky")) return 0.55f;
-            if (n.Contains("moon") || n.Contains("trim") || n.Contains("pencil")) return 0.34f;
+            if (n.Contains("highlight")) return 0.94f;
+            if (n.Contains("eye")) return 0.88f;
+            if (n.Contains("moon")) return 0.58f;
+            if (n.Contains("innerear") || n.Contains("nose")) return 0.34f;
+            if (n.Contains("sky")) return 0.55f;
+            if (n.Contains("trim") || n.Contains("pencil")) return 0.34f;
+            if (n.Contains("lilac_body") || n.Contains("lilac_shadow")) return 0.22f;
+            if (n.Contains("cat_belly")) return 0.16f;
             if (n.Contains("blanket") || n.Contains("pillow") || n.Contains("bed_biscuit")) return 0.16f;
             if (n.Contains("wall") || n.Contains("floor")) return 0.18f;
             if (n.Contains("wood")) return 0.24f;
             return 0.30f;
+        }
+
+        static float HeroMetallic(string materialName)
+        {
+            string n = materialName ?? string.Empty;
+            if (n.Contains("eye") || n.Contains("highlight")) return 0.04f;
+            if (n.Contains("moon") || n.Contains("pencil")) return 0.02f;
+            return 0f;
+        }
+
+        static float HeroEmission(string materialName)
+        {
+            string n = materialName ?? string.Empty;
+            if (n.Contains("highlight")) return 0.16f;
+            if (n.Contains("moon")) return 0.13f;
+            if (n.Contains("eye")) return 0.04f;
+            return 0f;
+        }
+
+        static string HeroSurfaceProfile(string materialName)
+        {
+            string n = materialName ?? string.Empty;
+            if (n.Contains("highlight")) return "highlight-gloss";
+            if (n.Contains("eye")) return "eye-glass";
+            if (n.Contains("moon")) return "moon-glow";
+            if (n.Contains("innerear") || n.Contains("nose")) return "soft-detail";
+            if (n.Contains("belly")) return "belly-matte";
+            if (n.Contains("lilac")) return "body-velvet";
+            return "environment";
+        }
+
+        public static bool ValidateHeroSurfaceContract(out string detail)
+        {
+            float body = HeroSmoothness("Lilac_Body");
+            float belly = HeroSmoothness("Cat_Belly");
+            float eye = HeroSmoothness("Cat_Eye");
+            float highlight = HeroSmoothness("Cat_Highlight");
+            float moon = HeroSmoothness("Moon_Butter");
+            float moonEmission = HeroEmission("Moon_Butter");
+            float highlightEmission = HeroEmission("Cat_Highlight");
+            detail = $"body={body:0.00} belly={belly:0.00} eye={eye:0.00} " +
+                $"highlight={highlight:0.00} moon={moon:0.00}/{moonEmission:0.00} " +
+                $"highlightEmission={highlightEmission:0.00}";
+            return body >= 0.18f && body <= 0.28f && belly <= 0.18f &&
+                eye >= 0.82f && highlight >= 0.90f && moon >= 0.50f &&
+                moonEmission >= 0.10f && highlightEmission >= 0.14f;
+        }
+    }
+
+    public sealed class MoonlightHeroVisualQuality : MonoBehaviour
+    {
+        public int RendererCount { get; private set; }
+        public int ShadowRendererCount { get; private set; }
+        public int MaterialCount { get; private set; }
+        public int SurfaceProfileCount { get; private set; }
+        public int EmissiveMaterialCount { get; private set; }
+        public int TexturedMaterialCount { get; private set; }
+        public string QAMarker => RendererCount > 0 && ShadowRendererCount == RendererCount &&
+            MaterialCount >= 8 && MaterialCount <= MoonlightHouseSetup.HeroMaterialBudget &&
+            SurfaceProfileCount >= 6 && EmissiveMaterialCount >= 2
+                ? "MOONLIGHT_HERO_SURFACE_SHADING_READY"
+                : "MOONLIGHT_HERO_SURFACE_SHADING_INCOMPLETE";
+
+        public void Configure(int rendererCount, int shadowRendererCount, int materialCount,
+                              int surfaceProfileCount, int emissiveMaterialCount,
+                              int texturedMaterialCount)
+        {
+            RendererCount = rendererCount;
+            ShadowRendererCount = shadowRendererCount;
+            MaterialCount = materialCount;
+            SurfaceProfileCount = surfaceProfileCount;
+            EmissiveMaterialCount = emissiveMaterialCount;
+            TexturedMaterialCount = texturedMaterialCount;
+            Debug.Log($"[MoonlightHeroQA] renderers={RendererCount} shadows={ShadowRendererCount} " +
+                $"materials={MaterialCount}/{MoonlightHouseSetup.HeroMaterialBudget} " +
+                $"profiles={SurfaceProfileCount} emissive={EmissiveMaterialCount} " +
+                $"textured={TexturedMaterialCount} marker={QAMarker}");
         }
     }
 }
