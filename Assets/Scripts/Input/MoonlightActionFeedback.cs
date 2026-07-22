@@ -12,6 +12,7 @@ namespace MoonlightMagicHouse
         Light _flash;
         Coroutine _running;
         Coroutine _cameraHoldRoutine;
+        Coroutine _masteryFlashRoutine;
         Vector3 _baseScale = Vector3.one;
         Vector3 _basePosition;
         Quaternion _baseRotation = Quaternion.identity;
@@ -34,6 +35,9 @@ namespace MoonlightMagicHouse
         MoonlightSpatialActionKind _activityKind;
         int _activityStep;
         int _activityRequiredSteps = 1;
+        bool _masteryCelebrationQueued;
+        int _queuedMasteryTier;
+        int _queuedMasteryCombo;
 
         public bool IsCoolingDown => Time.time < _cooldownUntil;
         public bool IsPerformingAction => _running != null;
@@ -99,6 +103,12 @@ namespace MoonlightMagicHouse
             }
         }
         public string ActiveEffectName { get; private set; } = "";
+        public bool MasteryCelebrationIsQueued => _masteryCelebrationQueued;
+        public int QueuedMasteryTier => _queuedMasteryTier;
+        public int LastMasteryCelebrationTier { get; private set; } = -1;
+        public int LastMasteryCelebrationParticles { get; private set; }
+        public int LastMasteryCelebrationCombo { get; private set; }
+        public string MasteryCelebrationQAMarker { get; private set; } = "";
 
         void Awake()
         {
@@ -142,6 +152,16 @@ namespace MoonlightMagicHouse
             CacheVisualPose();
             _running = StartCoroutine(Play(kind, label, shortState));
             return true;
+        }
+
+        public void QueueMasteryCelebration(float averageScore, int bestCombo, int bonusCoins)
+        {
+            _queuedMasteryTier = MasteryCelebrationTier(averageScore, bonusCoins);
+            _queuedMasteryCombo = Mathf.Max(0, bestCombo);
+            _masteryCelebrationQueued = true;
+            Debug.Log($"[MoonlightActivityQA] mastery-celebration-queued tier={_queuedMasteryTier} " +
+                $"average={averageScore:0.00} combo={_queuedMasteryCombo} bonus={bonusCoins} " +
+                "marker=MOONLIGHT_MASTERY_CELEBRATION_QUEUED");
         }
 
         string ActivityVerb()
@@ -208,7 +228,14 @@ namespace MoonlightMagicHouse
             if (_particles != null)
             {
                 var main = _particles.main;
+                main.startLifetime = new ParticleSystem.MinMaxCurve(0.35f, 0.75f);
+                main.startSpeed = new ParticleSystem.MinMaxCurve(0.65f, 1.2f);
+                main.startSize = new ParticleSystem.MinMaxCurve(0.035f, 0.09f);
+                main.maxParticles = 64;
                 main.startColor = new ParticleSystem.MinMaxGradient(color, Color.white);
+                var shape = _particles.shape;
+                shape.shapeType = ParticleSystemShapeType.Sphere;
+                shape.radius = 0.45f;
                 var emission = _particles.emission;
                 emission.SetBurst(0, new ParticleSystem.Burst(0f, BurstCountFor(kind)));
                 _particles.Play(true);
@@ -245,10 +272,100 @@ namespace MoonlightMagicHouse
             }
             DestroyActionOrb();
             if (_flash != null) _flash.intensity = 0f;
+            if (finalActivityStep && _masteryCelebrationQueued)
+                PlayMasteryCelebration();
             Debug.Log($"[MoonlightVisualQA] action-end kind={kind} state=\"{_stateText}\" cooldown={CooldownRemaining:0.00}s");
             ActionMotionProfile = "";
             ResetContactQA();
+            _masteryCelebrationQueued = false;
             _running = null;
+        }
+
+        void PlayMasteryCelebration()
+        {
+            EnsureFxRig();
+            int tier = Mathf.Clamp(_queuedMasteryTier, 0, 3);
+            int particleCount = MasteryCelebrationParticleCount(tier);
+            Color color = tier switch
+            {
+                3 => new Color(1.00f, 0.84f, 0.28f),
+                2 => new Color(0.50f, 0.92f, 1.00f),
+                1 => new Color(0.72f, 0.58f, 1.00f),
+                _ => new Color(1.00f, 0.66f, 0.82f)
+            };
+
+            if (_particles != null)
+            {
+                var main = _particles.main;
+                main.startColor = new ParticleSystem.MinMaxGradient(color, Color.white);
+                main.startLifetime = new ParticleSystem.MinMaxCurve(0.75f, 1.35f);
+                main.startSpeed = new ParticleSystem.MinMaxCurve(1.10f, 2.15f + tier * 0.18f);
+                main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.11f + tier * 0.012f);
+                main.maxParticles = Mathf.Max(64, particleCount);
+                var shape = _particles.shape;
+                shape.shapeType = ParticleSystemShapeType.Sphere;
+                shape.radius = 0.32f + tier * 0.05f;
+                _particles.Emit(particleCount);
+            }
+
+            if (_flash != null)
+            {
+                _flash.color = color;
+                _flash.range = 3.2f + tier * 0.35f;
+                _flash.intensity = 0.75f + tier * 0.28f;
+                if (_masteryFlashRoutine != null) StopCoroutine(_masteryFlashRoutine);
+                _masteryFlashRoutine = StartCoroutine(FadeMasteryFlash(_flash.intensity));
+            }
+
+            LastMasteryCelebrationTier = tier;
+            LastMasteryCelebrationParticles = particleCount;
+            LastMasteryCelebrationCombo = _queuedMasteryCombo;
+            MasteryCelebrationQAMarker = "MOONLIGHT_MASTERY_CELEBRATION_PLAYED";
+            _masteryCelebrationQueued = false;
+            Debug.Log($"[MoonlightActivityQA] mastery-celebration-played tier={tier} " +
+                $"particles={particleCount} combo={LastMasteryCelebrationCombo} " +
+                $"marker={MasteryCelebrationQAMarker}");
+        }
+
+        IEnumerator FadeMasteryFlash(float startIntensity)
+        {
+            const float duration = 0.72f;
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                if (_flash != null)
+                    _flash.intensity = Mathf.Lerp(startIntensity, 0f,
+                        Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / duration)));
+                yield return null;
+            }
+            if (_flash != null) _flash.intensity = 0f;
+            _masteryFlashRoutine = null;
+        }
+
+        public static int MasteryCelebrationTier(float averageScore, int bonusCoins)
+        {
+            if (bonusCoins >= 3 && averageScore >= 0.90f) return 3;
+            if (bonusCoins >= 2 && averageScore >= 0.80f) return 2;
+            if (bonusCoins >= 1 && averageScore >= 0.70f) return 1;
+            return 0;
+        }
+
+        public static int MasteryCelebrationParticleCount(int tier) =>
+            18 + Mathf.Clamp(tier, 0, 3) * 12;
+
+        public static bool ValidateMasteryCelebrationContract(out string detail)
+        {
+            int complete = MasteryCelebrationTier(0.68f, 0);
+            int good = MasteryCelebrationTier(0.74f, 1);
+            int great = MasteryCelebrationTier(0.83f, 2);
+            int perfect = MasteryCelebrationTier(0.95f, 3);
+            int completeParticles = MasteryCelebrationParticleCount(complete);
+            int perfectParticles = MasteryCelebrationParticleCount(perfect);
+            detail = $"tiers={complete}/{good}/{great}/{perfect} " +
+                $"particles={completeParticles}->{perfectParticles}";
+            return complete == 0 && good == 1 && great == 2 && perfect == 3 &&
+                completeParticles == 18 && perfectParticles == 54;
         }
 
         IEnumerator HoldCameraForFinalPresentation(MoonlightSpatialActionKind kind)
@@ -1047,12 +1164,18 @@ namespace MoonlightMagicHouse
                 StopCoroutine(_cameraHoldRoutine);
                 _cameraHoldRoutine = null;
             }
+            if (_masteryFlashRoutine != null)
+            {
+                StopCoroutine(_masteryFlashRoutine);
+                _masteryFlashRoutine = null;
+            }
             RestoreVisualPose();
             _activityStage?.End();
             EndCameraFocus();
             DestroyActionOrb();
             ActionMotionProfile = "";
             ResetContactQA();
+            _masteryCelebrationQueued = false;
             _running = null;
         }
 

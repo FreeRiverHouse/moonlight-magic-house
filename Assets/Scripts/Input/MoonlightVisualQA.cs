@@ -261,6 +261,14 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] activity-mastery {masteryDetail} " +
                 "marker=MOONLIGHT_ACTIVITY_MASTERY_CONTRACT_VERIFIED");
+            if (!MoonlightActionFeedback.ValidateMasteryCelebrationContract(out string celebrationDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] mastery-celebration {celebrationDetail}");
+                Application.Quit(61);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] mastery-celebration {celebrationDetail} " +
+                "marker=MOONLIGHT_MASTERY_CELEBRATION_CONTRACT_VERIFIED");
             if (!pad.TracePoolIsReady ||
                 pad.TraceDotPoolCount != MoonlightGesturePad.GestureTraceDotCapacity)
             {
@@ -1137,6 +1145,27 @@ namespace MoonlightMagicHouse
                     if (step == zone.RequiredSteps - 1)
                     {
                         stage = moonlight.GetComponent<MoonlightActivityStage>();
+                        var masteryFeedback = moonlight.GetComponent<MoonlightActionFeedback>();
+                        bool celebrationPass = masteryFeedback != null &&
+                            masteryFeedback.MasteryCelebrationQAMarker == "MOONLIGHT_MASTERY_CELEBRATION_PLAYED" &&
+                            masteryFeedback.LastMasteryCelebrationTier == 3 &&
+                            masteryFeedback.LastMasteryCelebrationParticles == 54 &&
+                            masteryFeedback.LastMasteryCelebrationCombo == zone.RequiredSteps;
+                        if (!celebrationPass)
+                        {
+                            Debug.LogError($"[MoonlightGameplayQA][FAIL] mastery-celebration action={zone.Kind} " +
+                                $"marker={(masteryFeedback != null ? masteryFeedback.MasteryCelebrationQAMarker : "missing")} " +
+                                $"tier={(masteryFeedback != null ? masteryFeedback.LastMasteryCelebrationTier : -1)} " +
+                                $"particles={(masteryFeedback != null ? masteryFeedback.LastMasteryCelebrationParticles : 0)} " +
+                                $"combo={(masteryFeedback != null ? masteryFeedback.LastMasteryCelebrationCombo : 0)}");
+                            Application.Quit(62);
+                            yield break;
+                        }
+                        Debug.Log($"[MoonlightGameplayQA][PASS] mastery-celebration action={zone.Kind} " +
+                            $"tier={masteryFeedback.LastMasteryCelebrationTier} " +
+                            $"particles={masteryFeedback.LastMasteryCelebrationParticles} " +
+                            $"combo={masteryFeedback.LastMasteryCelebrationCombo} " +
+                            "marker=MOONLIGHT_MASTERY_CELEBRATION_VERIFIED");
                         if (stage == null || !stage.IsVisible || !stage.IsLingering ||
                             stage.CurrentStep != step || stage.LingerSecondsRemaining < 1.5f)
                         {

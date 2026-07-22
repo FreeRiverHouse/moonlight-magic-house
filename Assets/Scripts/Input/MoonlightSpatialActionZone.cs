@@ -336,6 +336,8 @@ namespace MoonlightMagicHouse
             LastCompletedBestCombo = _bestCombo;
             LastCompletedPerfectSteps = _perfectSteps;
             LastMasteryBonusCoins = bonus;
+            moonlight.GetComponent<MoonlightActionFeedback>()?.QueueMasteryCelebration(
+                average, _bestCombo, bonus);
             totalCoins = baseCoins + bonus;
             string summary = $"RUN {GradeFor(average)} {Mathf.RoundToInt(average * 100f)} x{_bestCombo}";
             Debug.Log($"[MoonlightActivityQA] mastery kind={kind} average={average:0.000} " +
