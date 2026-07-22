@@ -48,8 +48,10 @@ namespace MoonlightMagicHouse
         float _traceFadeUntil;
         Color _traceResultColor = Color.white;
         MoonlightGestureKind _guideGesture;
+        MoonlightGestureKind _appliedGuideGesture;
         bool _guideRequested;
         bool _guideVisible;
+        bool _guidePresentationApplied;
 
         public MoonlightGestureKind ActiveGesture => _gesture;
         public float LastScore { get; private set; }
@@ -379,11 +381,17 @@ namespace MoonlightMagicHouse
         void RefreshGuideVisibility()
         {
             bool show = _guideRequested && _pointerId == int.MinValue;
-            if (_guideVisible == show) return;
+            if (_guidePresentationApplied && _guideVisible == show &&
+                _appliedGuideGesture == _guideGesture)
+                return;
+
             _guideVisible = show;
+            _appliedGuideGesture = _guideGesture;
+            _guidePresentationApplied = true;
             for (int i = 0; i < GestureGuideDotCapacity; i++)
                 if (_guideDots[i] != null)
-                    _guideDots[i].gameObject.SetActive(show);
+                    _guideDots[i].gameObject.SetActive(show &&
+                        (_guideGesture != MoonlightGestureKind.Hold || i == 0));
         }
 
         void UpdateGuideAnimation()
@@ -394,6 +402,16 @@ namespace MoonlightMagicHouse
             for (int i = 0; i < GestureGuideDotCapacity; i++)
             {
                 if (_guideDots[i] == null || _guideImages[i] == null) continue;
+                if (_guideGesture == MoonlightGestureKind.Hold)
+                {
+                    if (i != 0) continue;
+                    float pulse = Mathf.Sin(Time.unscaledTime * Mathf.PI * 2.4f) * 0.5f + 0.5f;
+                    Color holdColor = baseColor;
+                    holdColor.a = Mathf.Lerp(0.26f, 0.72f, pulse);
+                    _guideImages[i].color = holdColor;
+                    _guideDots[i].localScale = Vector3.one * Mathf.Lerp(0.88f, 1.64f, pulse);
+                    continue;
+                }
                 float dotT = i / (float)(GestureGuideDotCapacity - 1);
                 float distance = Mathf.Abs(Mathf.DeltaAngle(dotT * 360f, traveling * 360f)) / 180f;
                 float glow = 1f - Mathf.SmoothStep(0f, 0.34f, distance);
@@ -421,9 +439,7 @@ namespace MoonlightMagicHouse
                 MoonlightGestureKind.Circle => new Vector2(
                     Mathf.Cos(t * Mathf.PI * 2f) * 42f,
                     Mathf.Sin(t * Mathf.PI * 2f) * 26f),
-                MoonlightGestureKind.Hold => new Vector2(
-                    Mathf.Cos(t * Mathf.PI * 2f) * 14f,
-                    Mathf.Sin(t * Mathf.PI * 2f) * 14f),
+                MoonlightGestureKind.Hold => Vector2.zero,
                 MoonlightGestureKind.Swipe => new Vector2(Mathf.Lerp(-46f, 46f, t), 0f),
                 MoonlightGestureKind.ZigZag => new Vector2(
                     EvaluateZigZagGuideX(t),
@@ -461,15 +477,15 @@ namespace MoonlightMagicHouse
             Vector2 zigStart = EvaluateGestureGuidePoint(MoonlightGestureKind.ZigZag, 0f);
             Vector2 zigEnd = EvaluateGestureGuidePoint(MoonlightGestureKind.ZigZag, 1f);
             Vector2 tapEnd = EvaluateGestureGuidePoint(MoonlightGestureKind.Tap, 1f);
-            Vector2 holdStart = EvaluateGestureGuidePoint(MoonlightGestureKind.Hold, 0f);
             bool circleClosed = Vector2.Distance(circleStart, circleEnd) <= 0.01f &&
                                 Mathf.Abs(circleQuarter.y) >= 25f;
             bool swipeClear = swipeEnd.x - swipeStart.x >= 90f;
             bool tapConverges = tapEnd.magnitude <= 0.01f;
-            bool holdCompact = holdStart.magnitude >= 13f && holdStart.magnitude <= 15f;
 
             Vector2 surface = new Vector2(280f, 100f);
             var normalizedZigZag = new Vector2[GestureGuideDotCapacity];
+            var normalizedHold = new Vector2[GestureGuideDotCapacity];
+            var normalizedLegacyHold = new Vector2[GestureGuideDotCapacity];
             int zigZagTurns = 0;
             float previousXDirection = 0f;
             float minimumX = float.PositiveInfinity;
@@ -485,6 +501,11 @@ namespace MoonlightMagicHouse
                 minimumY = Mathf.Min(minimumY, guidePoint.y);
                 maximumY = Mathf.Max(maximumY, guidePoint.y);
                 normalizedZigZag[i] = NormalizeGesturePoint(guidePoint, surface);
+                normalizedHold[i] = NormalizeGesturePoint(
+                    EvaluateGestureGuidePoint(MoonlightGestureKind.Hold, t), surface);
+                normalizedLegacyHold[i] = NormalizeGesturePoint(new Vector2(
+                    Mathf.Cos(t * Mathf.PI * 2f) * 14f,
+                    Mathf.Sin(t * Mathf.PI * 2f) * 14f), surface);
                 if (i == 0) continue;
 
                 float dx = normalizedZigZag[i].x - normalizedZigZag[i - 1].x;
@@ -496,6 +517,12 @@ namespace MoonlightMagicHouse
             }
             float zigZagScore = ScoreGesture(MoonlightGestureKind.ZigZag,
                 normalizedZigZag, 0.8f);
+            float legacyHoldScore = ScoreGesture(MoonlightGestureKind.Hold,
+                normalizedLegacyHold, 1f);
+            float holdEarlyScore = ScoreGesture(MoonlightGestureKind.Hold,
+                normalizedHold, 0.45f);
+            float holdGuideScore = ScoreGesture(MoonlightGestureKind.Hold,
+                normalizedHold, 1f);
             float zigZagWidth = maximumX - minimumX;
             float zigZagHeight = maximumY - minimumY;
             float zigZagCenterX = (minimumX + maximumX) * 0.5f;
@@ -508,10 +535,13 @@ namespace MoonlightMagicHouse
                      $"zigScore={zigZagScore:0.00} zigTurns={zigZagTurns} " +
                      $"zigBounds={zigZagWidth:0.0}x{zigZagHeight:0.0} " +
                      $"zigCenterX={zigZagCenterX:0.00} " +
-                     $"tapEnd={tapEnd.magnitude:0.0} holdRadius={holdStart.magnitude:0.0}";
+                     $"tapEnd={tapEnd.magnitude:0.0} " +
+                     $"holdLegacy={legacyHoldScore:0.00} holdEarly={holdEarlyScore:0.00} " +
+                     $"holdGuide={holdGuideScore:0.00}";
             return GestureGuideDotCapacity >= 10 && circleClosed && swipeClear &&
                    zigZagClear && zigZagScore >= 0.70f && zigZagTurns == 3 &&
-                   tapConverges && holdCompact;
+                   tapConverges && legacyHoldScore <= 0.001f &&
+                   holdEarlyScore <= 0.001f && holdGuideScore >= 0.70f;
         }
 
         public static bool ValidateResultFeedbackContract(out string detail)
