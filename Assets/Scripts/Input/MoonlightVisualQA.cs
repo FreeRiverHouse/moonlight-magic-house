@@ -967,6 +967,17 @@ namespace MoonlightMagicHouse
                 $"{liveHoldReadinessDetail} " +
                 "marker=MOONLIGHT_IPAD_LIVE_HOLD_STATIC_CONTRACT_VERIFIED " +
                 "marker=MOONLIGHT_IPAD_LIVE_HOLD_4_OF_4_STATIC_VERIFIED");
+            if (!MoonlightSpatialActionZone.ValidateGestureResponsiveBedtimeContract(
+                    out string bedtimeDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] gesture-bedtime-contract " +
+                    bedtimeDetail);
+                Application.Quit(159);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] gesture-bedtime-contract " +
+                $"{bedtimeDetail} " +
+                "marker=MOONLIGHT_GESTURE_BEDTIME_TRANSACTION_VERIFIED");
             if (!MoonlightGesturePad.ValidateContextGestureMovementLockStaticContract(
                     out string gestureMovementLockDetail))
             {

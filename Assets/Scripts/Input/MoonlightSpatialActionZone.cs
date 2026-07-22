@@ -19,6 +19,7 @@ namespace MoonlightMagicHouse
     {
         public const float DefaultPassingScore = 0.58f;
         public const float FeedHungerIncrease = 18f;
+        public const float SleepCuddleRestThreshold = 82f;
 
         public readonly struct RewardSnapshot
         {
@@ -53,44 +54,50 @@ namespace MoonlightMagicHouse
         int _perfectSteps;
         int _currentCombo;
         int _bestCombo;
+        bool _suppressBedtimeExternalSideEffectsForQA;
 
         public MoonlightSpatialActionKind Kind => kind;
         public float Radius => radius;
         public string DisplayName => string.IsNullOrEmpty(displayName) ? kind.ToString() : displayName;
         public float PassingScore => passingScore;
         public int ProgressStep => _progressStep;
-        public int RequiredSteps => IsScoredActivityKind(kind) ? 4 : 1;
-        public MoonlightGestureKind RequiredGesture => kind switch
+        public int RequiredSteps => RequiredStepsFor(kind);
+        public static int RequiredStepsFor(MoonlightSpatialActionKind actionKind) =>
+            IsScoredActivityKind(actionKind) ? 4 : 1;
+        public MoonlightGestureKind RequiredGesture => RequiredGestureFor(kind, _progressStep);
+        public static MoonlightGestureKind RequiredGestureFor(
+            MoonlightSpatialActionKind actionKind, int progressStep) => actionKind switch
         {
-            MoonlightSpatialActionKind.Cook => _progressStep switch
+            MoonlightSpatialActionKind.Cook => progressStep switch
             {
                 0 => MoonlightGestureKind.Tap,
                 1 => MoonlightGestureKind.Circle,
                 2 => MoonlightGestureKind.Hold,
                 _ => MoonlightGestureKind.ZigZag
             },
-            MoonlightSpatialActionKind.Play => _progressStep switch
+            MoonlightSpatialActionKind.Play => progressStep switch
             {
                 0 => MoonlightGestureKind.Swipe,
                 1 => MoonlightGestureKind.ZigZag,
                 2 => MoonlightGestureKind.Swipe,
                 _ => MoonlightGestureKind.Tap
             },
-            MoonlightSpatialActionKind.Garden => _progressStep switch
+            MoonlightSpatialActionKind.Garden => progressStep switch
             {
                 0 => MoonlightGestureKind.Tap,
                 1 => MoonlightGestureKind.Circle,
                 2 => MoonlightGestureKind.ZigZag,
                 _ => MoonlightGestureKind.Hold
             },
-            MoonlightSpatialActionKind.Read => _progressStep switch
+            MoonlightSpatialActionKind.Read => progressStep switch
             {
                 0 => MoonlightGestureKind.Tap,
                 1 => MoonlightGestureKind.Swipe,
                 2 => MoonlightGestureKind.Circle,
                 _ => MoonlightGestureKind.Hold
             },
-            MoonlightSpatialActionKind.Care => CareGestureForStep(_progressStep),
+            MoonlightSpatialActionKind.SleepCuddle => MoonlightGestureKind.Hold,
+            MoonlightSpatialActionKind.Care => CareGestureForStep(progressStep),
             MoonlightSpatialActionKind.Feed => MoonlightGestureKind.Tap,
             _ => MoonlightGestureKind.Tap
         };
@@ -101,6 +108,7 @@ namespace MoonlightMagicHouse
         public bool LastGesturePassed { get; private set; }
         public bool LastAcceptedHapticWasPreplayed { get; private set; }
         public bool LastAcceptedGesturePlayedCompletionHaptic { get; private set; }
+        public bool LastAcceptedGestureSamplePreserved { get; private set; }
         public string LastCueKey { get; private set; } = "";
         public int ActivitySessionAcceptedSteps => _sessionAcceptedSteps;
         public float ActivitySessionAverageScore => _sessionAcceptedSteps > 0
@@ -159,7 +167,8 @@ namespace MoonlightMagicHouse
                     2 => "TRACE",
                     _ => "REMEMBER"
                 },
-                MoonlightSpatialActionKind.SleepCuddle => moonlight != null && moonlight.stats.rest < 82f ? "SLEEP" : "CUDDLE",
+                MoonlightSpatialActionKind.SleepCuddle => SleepCuddleLabelForRest(
+                    moonlight != null ? moonlight.stats.rest : SleepCuddleRestThreshold),
                 MoonlightSpatialActionKind.Care => CareLabelForStep(_progressStep),
                 MoonlightSpatialActionKind.Feed => "FEED",
                 _ => "ACTION"
@@ -191,6 +200,7 @@ namespace MoonlightMagicHouse
             LastGesturePassed = false;
             LastAcceptedHapticWasPreplayed = false;
             LastAcceptedGesturePlayedCompletionHaptic = false;
+            LastAcceptedGestureSamplePreserved = false;
             if (feedback != null && !feedback.CanBeginAction)
             {
                 LastCueKey = "activity-busy";
@@ -199,9 +209,8 @@ namespace MoonlightMagicHouse
                 return feedback.InputBlockReason;
             }
 
-            bool gesturePassed = kind == MoonlightSpatialActionKind.Feed
-                ? IsFeedInputAccepted(gesture, LastGestureScore, passingScore, true)
-                : gesture == RequiredGesture && LastGestureScore >= passingScore;
+            bool gesturePassed = IsInputAccepted(kind, RequiredGesture, gesture,
+                LastGestureScore, passingScore, true);
             if (!gesturePassed)
             {
                 _currentCombo = 0;
@@ -354,22 +363,24 @@ namespace MoonlightMagicHouse
                         BuildRewardReceipt(readBefore, CaptureRewards(moonlight));
 
                 case MoonlightSpatialActionKind.SleepCuddle:
-                    if (moonlight.stats.rest < 82f)
+                    if (moonlight.stats.rest < SleepCuddleRestThreshold)
                     {
-                        if (!TryBeginFeedback(feedback, "Resting")) return feedback.InputBlockReason;
+                        if (!TryBeginFeedback(feedback, "Resting", acceptedHapticAlreadyPlayed))
+                            return feedback.InputBlockReason;
                         LastCueKey = "sleep";
-                        AudioManager.Instance?.Play(LastCueKey);
                         RewardSnapshot sleepBefore = CaptureRewards(moonlight);
-                        moonlight.PutToSleep();
+                        moonlight.PutToSleep(!_suppressBedtimeExternalSideEffectsForQA,
+                            !_suppressBedtimeExternalSideEffectsForQA);
                         return "DREAMING  /  " +
                             BuildRewardReceipt(sleepBefore, CaptureRewards(moonlight));
                     }
-                    if (!TryBeginFeedback(feedback, "Cuddled")) return feedback.InputBlockReason;
+                    if (!TryBeginFeedback(feedback, "Cuddled", acceptedHapticAlreadyPlayed))
+                        return feedback.InputBlockReason;
                     LastCueKey = "cuddle";
-                    AudioManager.Instance?.Play(LastCueKey);
                     RewardSnapshot cuddleBefore = CaptureRewards(moonlight);
-                    moonlight.Cuddle();
-                    AchievementSystem.Instance?.OnFirstCuddle();
+                    moonlight.Cuddle(false, !_suppressBedtimeExternalSideEffectsForQA);
+                    if (!_suppressBedtimeExternalSideEffectsForQA)
+                        AchievementSystem.Instance?.OnFirstCuddle();
                     return "CUDDLED  /  " +
                         BuildRewardReceipt(cuddleBefore, CaptureRewards(moonlight));
 
@@ -401,12 +412,11 @@ namespace MoonlightMagicHouse
         bool TryBeginFeedback(MoonlightActionFeedback feedback, string state,
             bool acceptedHapticAlreadyPlayed = false)
         {
-            bool isScoredActivity = RequiredSteps > 1;
-            bool keepsGestureSample = isScoredActivity || kind == MoonlightSpatialActionKind.Feed;
-            bool began = keepsGestureSample
-                ? feedback.TryBegin(kind, DisplayName, state, _progressStep, RequiredSteps,
-                    LastGestureSample)
-                : feedback.TryBegin(kind, DisplayName, state, _progressStep, RequiredSteps);
+            bool keepsGestureSample = ShouldPreserveGestureSample(kind);
+            MoonlightGestureSample feedbackSample = GestureSampleForFeedback(kind,
+                LastGestureSample);
+            bool began = feedback.TryBegin(kind, DisplayName, state, _progressStep,
+                RequiredSteps, feedbackSample);
             if (!began)
             {
                 LastGesturePassed = false;
@@ -414,6 +424,24 @@ namespace MoonlightMagicHouse
             }
 
             LastGesturePassed = true;
+            LastAcceptedGestureSamplePreserved = keepsGestureSample &&
+                feedback.ActiveGestureSample.ContentEquals(LastGestureSample);
+            if (kind == MoonlightSpatialActionKind.SleepCuddle)
+            {
+                if (!LastAcceptedGestureSamplePreserved)
+                {
+                    LastGesturePassed = false;
+                    Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                        $"bedtime-sample-propagation score={LastGestureSample.Score:0.000} " +
+                        $"duration={LastGestureSample.Duration:0.000} " +
+                        "marker=MOONLIGHT_GESTURE_BEDTIME_RUNTIME_SAMPLE_FAILED");
+                    return false;
+                }
+                Debug.Log("[MoonlightGameplayQA][PASS] " +
+                    $"bedtime-sample-propagation score={LastGestureSample.Score:0.000} " +
+                    $"duration={LastGestureSample.Duration:0.000} " +
+                    "marker=MOONLIGHT_GESTURE_BEDTIME_RUNTIME_SAMPLE_VERIFIED");
+            }
             LastAcceptedHapticWasPreplayed = acceptedHapticAlreadyPlayed;
             // Live Hold readiness can own this pulse before release. Completion
             // methods also suppress their legacy pulse to avoid duplicate feedback.
@@ -428,6 +456,17 @@ namespace MoonlightMagicHouse
             bool acceptedHapticAlreadyPlayed) =>
             keepsGestureSample && !acceptedHapticAlreadyPlayed;
 
+        public static bool ShouldPreserveGestureSample(MoonlightSpatialActionKind actionKind) =>
+            IsScoredActivityKind(actionKind) || actionKind is MoonlightSpatialActionKind.Feed or
+                MoonlightSpatialActionKind.SleepCuddle;
+
+        public static MoonlightGestureSample GestureSampleForFeedback(
+            MoonlightSpatialActionKind actionKind, MoonlightGestureSample acceptedSample) =>
+            ShouldPreserveGestureSample(actionKind)
+                ? acceptedSample
+                : MoonlightGestureSample.Synthetic(MoonlightGestureKind.Swipe,
+                    MoonlightActionFeedback.GreatActionQualityScore);
+
         public static bool IsScoredActivityKind(MoonlightSpatialActionKind actionKind) =>
             actionKind is MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
                 MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
@@ -436,6 +475,13 @@ namespace MoonlightMagicHouse
         public static bool IsFeedInputAccepted(MoonlightGestureKind gesture, float score,
             float threshold, bool canBegin) =>
             canBegin && gesture == MoonlightGestureKind.Tap && Mathf.Clamp01(score) >= threshold;
+
+        public static bool IsInputAccepted(MoonlightSpatialActionKind actionKind,
+            MoonlightGestureKind requiredGesture, MoonlightGestureKind actualGesture, float score,
+            float threshold, bool canBegin) => actionKind == MoonlightSpatialActionKind.Feed
+                ? IsFeedInputAccepted(actualGesture, score, threshold, canBegin)
+                : canBegin && actualGesture == requiredGesture &&
+                    Mathf.Clamp01(score) >= threshold;
 
         public static float FeedHungerAfter(float hunger) =>
             Mathf.Min(100f, Mathf.Clamp(hunger, 0f, 100f) + FeedHungerIncrease);
@@ -488,6 +534,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Cook => progressStep == 2,
                 MoonlightSpatialActionKind.Garden => progressStep == 3,
                 MoonlightSpatialActionKind.Read => progressStep == 3,
+                MoonlightSpatialActionKind.SleepCuddle => progressStep == 0,
                 MoonlightSpatialActionKind.Care => progressStep == 3,
                 _ => false
             };
@@ -501,6 +548,223 @@ namespace MoonlightMagicHouse
             MoonlightGestureKind.ZigZag => "DRAW A ZIG-ZAG TO",
             _ => "TAP TO"
         };
+
+        public static string SleepCuddleLabelForRest(float rest) =>
+            rest < SleepCuddleRestThreshold ? "SLEEP" : "CUDDLE";
+
+        sealed class BedtimeTransactionProbe
+        {
+            public GameObject Root;
+            public MoonlightCharacter Moonlight;
+            public MoonlightActionFeedback Feedback;
+            public MoonlightSpatialActionZone Zone;
+        }
+
+        public static bool ValidateGestureResponsiveBedtimeContract(out string detail)
+        {
+            MoonlightTouchJoystick joystick = Object.FindAnyObjectByType<MoonlightTouchJoystick>();
+            GameObject joystickObject = joystick != null ? joystick.gameObject : null;
+            bool joystickWasActive = joystickObject != null && joystickObject.activeSelf;
+            try
+            {
+                if (joystickWasActive) joystickObject.SetActive(false);
+
+                bool wrongTap = RunBedtimeRejectionTransaction(
+                    MoonlightGestureKind.Tap, 0.95f, false, out string wrongTapDetail);
+                bool lowScore = RunBedtimeRejectionTransaction(
+                    MoonlightGestureKind.Hold, 0.20f, false, out string lowScoreDetail);
+                bool busy = RunBedtimeRejectionTransaction(
+                    MoonlightGestureKind.Hold, 0.95f, true, out string busyDetail);
+                bool sleep = RunBedtimeAcceptedTransaction(35f, 0.95f,
+                    MoonlightActionQualityTier.Perfect, false, out string sleepDetail);
+                bool good = RunBedtimeAcceptedTransaction(82f, 0.60f,
+                    MoonlightActionQualityTier.Good, false, out string goodDetail);
+                bool great = RunBedtimeAcceptedTransaction(82f, 0.78f,
+                    MoonlightActionQualityTier.Great, false, out string greatDetail);
+                bool perfectReadiness = RunBedtimeAcceptedTransaction(82f, 0.95f,
+                    MoonlightActionQualityTier.Perfect, true, out string perfectDetail);
+                bool mapping = RequiredGestureFor(MoonlightSpatialActionKind.SleepCuddle, 0) ==
+                        MoonlightGestureKind.Hold &&
+                    RequiredStepsFor(MoonlightSpatialActionKind.SleepCuddle) == 1 &&
+                    IsLiveHoldReadinessStep(MoonlightSpatialActionKind.SleepCuddle, 0,
+                        MoonlightGestureKind.Hold) &&
+                    !IsLiveHoldReadinessStep(MoonlightSpatialActionKind.SleepCuddle, 0,
+                        MoonlightGestureKind.Tap);
+                detail = $"mapping={mapping} reject=({wrongTapDetail};{lowScoreDetail};" +
+                    $"{busyDetail}) accepted=({sleepDetail};{goodDetail};{greatDetail};" +
+                    $"{perfectDetail})";
+                return mapping && wrongTap && lowScore && busy && sleep && good && great &&
+                    perfectReadiness;
+            }
+            catch (System.Exception exception)
+            {
+                detail = $"exception={exception.GetType().Name}:{exception.Message}";
+                return false;
+            }
+            finally
+            {
+                if (joystickObject != null && joystickObject.activeSelf != joystickWasActive)
+                    joystickObject.SetActive(joystickWasActive);
+            }
+        }
+
+        static bool RunBedtimeRejectionTransaction(MoonlightGestureKind gesture, float score,
+            bool makeBusy, out string detail)
+        {
+            BedtimeTransactionProbe probe = CreateBedtimeTransactionProbe(35f,
+                makeBusy ? "busy" : gesture.ToString().ToLowerInvariant());
+            HapticFeedback.QAObserver haptics = null;
+            try
+            {
+                bool setup = true;
+                if (makeBusy)
+                {
+                    MoonlightGestureSample setupSample = BedtimeTransactionSample(0.95f, 0.91f);
+                    probe.Zone.ExecuteGesture(probe.Moonlight, MoonlightGestureKind.Hold,
+                        setupSample);
+                    setup = probe.Zone.LastGesturePassed && !probe.Feedback.CanBeginAction;
+                }
+
+                RewardSnapshot before = CaptureRewards(probe.Moonlight);
+                int progressBefore = probe.Zone.ProgressStep;
+                haptics = HapticFeedback.BeginQAObservation();
+                MoonlightGestureSample rejectedSample = BedtimeTransactionSample(score, 0.63f);
+                string result = probe.Zone.ExecuteGesture(probe.Moonlight, gesture, rejectedSample);
+                RewardSnapshot after = CaptureRewards(probe.Moonlight);
+                int hapticCount = haptics.InvocationCount;
+                int expectedHaptics = makeBusy ? 0 : 1;
+                bool unchanged = RewardsEqual(before, after) &&
+                    probe.Zone.ProgressStep == progressBefore;
+                bool resultPass = makeBusy
+                    ? result == probe.Feedback.InputBlockReason &&
+                        probe.Zone.LastCueKey == "activity-busy"
+                    : result.StartsWith("TRY AGAIN", System.StringComparison.Ordinal) &&
+                        probe.Zone.LastCueKey == "activity-try-again" &&
+                        haptics.LastPreset == "Failure";
+                bool pass = setup && unchanged && !probe.Zone.LastGesturePassed && resultPass &&
+                    hapticCount == expectedHaptics;
+                detail = $"{(makeBusy ? "busy" : gesture.ToString())}:pass={pass} " +
+                    $"score={score:0.00} unchanged={unchanged} haptic={hapticCount}/" +
+                    $"{expectedHaptics}";
+                return pass;
+            }
+            finally
+            {
+                haptics?.Dispose();
+                DestroyBedtimeTransactionProbe(probe);
+            }
+        }
+
+        static bool RunBedtimeAcceptedTransaction(float initialRest, float score,
+            MoonlightActionQualityTier expectedTier, bool readinessHapticPreplayed,
+            out string detail)
+        {
+            BedtimeTransactionProbe probe = CreateBedtimeTransactionProbe(initialRest,
+                expectedTier.ToString().ToLowerInvariant());
+            HapticFeedback.QAObserver haptics = null;
+            try
+            {
+                RewardSnapshot before = CaptureRewards(probe.Moonlight);
+                int progressBefore = probe.Zone.ProgressStep;
+                haptics = HapticFeedback.BeginQAObservation();
+                if (readinessHapticPreplayed) HapticFeedback.Success();
+                MoonlightGestureSample acceptedSample = BedtimeTransactionSample(score,
+                    0.76f + score * 0.31f);
+                string prompt = probe.Zone.GetPrompt(probe.Moonlight);
+                string result = probe.Zone.ExecuteGesture(probe.Moonlight,
+                    MoonlightGestureKind.Hold, acceptedSample, readinessHapticPreplayed);
+                RewardSnapshot after = CaptureRewards(probe.Moonlight);
+                int hapticCount = haptics.InvocationCount;
+                bool sleeping = initialRest < 82f;
+                bool promptPass = prompt == $"BED  /  PRESS AND HOLD TO " +
+                    (sleeping ? "SLEEP" : "CUDDLE");
+                bool rewardPass = sleeping
+                    ? Mathf.Approximately(after.Rest - before.Rest, 45f) &&
+                        Mathf.Approximately(after.Warmth - before.Warmth, 5f) &&
+                        Mathf.Approximately(after.Wonder - before.Wonder, 0f) &&
+                        after.XP == before.XP
+                    : Mathf.Approximately(after.Rest - before.Rest, 0f) &&
+                        Mathf.Approximately(after.Warmth - before.Warmth, 20f) &&
+                        Mathf.Approximately(after.Wonder - before.Wonder, 5f) &&
+                        after.XP - before.XP == 8;
+                rewardPass &= Mathf.Approximately(after.Magic - before.Magic, 0f) &&
+                    Mathf.Approximately(after.Hunger - before.Hunger, 0f) &&
+                    after.Coins == before.Coins;
+                bool samplePass = probe.Zone.LastAcceptedGestureSamplePreserved &&
+                    probe.Zone.LastGestureSample.ContentEquals(acceptedSample) &&
+                    probe.Feedback.ActiveGestureSample.ContentEquals(acceptedSample);
+                bool tierPass = probe.Feedback.ActionQualityTier == expectedTier &&
+                    probe.Feedback.ActionQualityQAMarker ==
+                        $"MOONLIGHT_ACTION_QUALITY_{expectedTier.ToString().ToUpperInvariant()}";
+                string expectedHapticPreset = expectedTier switch
+                {
+                    MoonlightActionQualityTier.Good => "LightImpact",
+                    MoonlightActionQualityTier.Great => "MediumImpact",
+                    _ => "Success"
+                };
+                bool hapticPass = hapticCount == 1 &&
+                    haptics.LastPreset == expectedHapticPreset &&
+                    probe.Zone.LastAcceptedHapticWasPreplayed == readinessHapticPreplayed &&
+                    probe.Zone.LastAcceptedGesturePlayedCompletionHaptic ==
+                        !readinessHapticPreplayed;
+                bool pass = probe.Zone.LastGesturePassed && promptPass && rewardPass &&
+                    samplePass && tierPass && hapticPass &&
+                    probe.Zone.ProgressStep == progressBefore &&
+                    result.StartsWith(sleeping ? "DREAMING" : "CUDDLED",
+                        System.StringComparison.Ordinal);
+                detail = $"{(sleeping ? "sleep" : expectedTier.ToString())}:pass={pass} " +
+                    $"sample={samplePass} tier={probe.Feedback.ActionQualityTier}/" +
+                    $"{expectedTier} reward={BuildRewardReceipt(before, after)} " +
+                    $"haptic={hapticCount}/1:{haptics.LastPreset}/" +
+                    $"{expectedHapticPreset} preplayed={readinessHapticPreplayed}";
+                return pass;
+            }
+            finally
+            {
+                haptics?.Dispose();
+                DestroyBedtimeTransactionProbe(probe);
+            }
+        }
+
+        static BedtimeTransactionProbe CreateBedtimeTransactionProbe(float rest, string name)
+        {
+            var root = new GameObject($"MoonlightBedtimeTransaction-{name}");
+            var probe = new BedtimeTransactionProbe
+            {
+                Root = root,
+                Moonlight = root.AddComponent<MoonlightCharacter>()
+            };
+            probe.Moonlight.stats.wonder = 31f;
+            probe.Moonlight.stats.warmth = 42f;
+            probe.Moonlight.stats.rest = rest;
+            probe.Moonlight.stats.magic = 64f;
+            probe.Moonlight.stats.hunger = 55f;
+            probe.Moonlight.xp = 10;
+            probe.Moonlight.coins = 9;
+            probe.Feedback = root.AddComponent<MoonlightActionFeedback>();
+            var zoneObject = new GameObject("BedtimeTransactionZone");
+            zoneObject.transform.SetParent(root.transform, false);
+            probe.Zone = zoneObject.AddComponent<MoonlightSpatialActionZone>();
+            probe.Zone.Configure(MoonlightSpatialActionKind.SleepCuddle, "Bed", 1f);
+            probe.Zone._suppressBedtimeExternalSideEffectsForQA = true;
+            return probe;
+        }
+
+        static MoonlightGestureSample BedtimeTransactionSample(float score, float duration) =>
+            MoonlightGestureSample.Create(score, duration, new[]
+            {
+                new Vector2(-0.08f, 0.03f),
+                new Vector2(0.02f, -0.04f),
+                new Vector2(0.07f, 0.01f)
+            });
+
+        static void DestroyBedtimeTransactionProbe(BedtimeTransactionProbe probe)
+        {
+            if (probe == null || probe.Root == null) return;
+            if (probe.Feedback != null) probe.Feedback.enabled = false;
+            probe.Root.SetActive(false);
+            Object.Destroy(probe.Root);
+        }
 
         public static MoonlightGestureKind CareGestureForStep(int step) => step switch
         {

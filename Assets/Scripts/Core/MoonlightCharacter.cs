@@ -164,23 +164,27 @@ namespace MoonlightMagicHouse
             AchievementSystem.Instance?.OnFirstFeed();
         }
 
-        public void Cuddle()
+        public void Cuddle() => Cuddle(true, true);
+
+        public void Cuddle(bool playHaptic, bool playAudio)
         {
             stats.warmth = Mathf.Min(100, stats.warmth + 20f);
             stats.wonder = Mathf.Min(100, stats.wonder + 5f);
             GainXP(8);
             GetComponentInChildren<MoonlightAnimator>()?.TriggerCuddle();
-            AudioManager.Instance?.Play("cuddle");
-            HapticFeedback.Light();
+            if (playAudio) AudioManager.Instance?.Play("cuddle");
+            if (playHaptic) HapticFeedback.Light();
         }
 
-        public void PutToSleep()
+        public void PutToSleep() => PutToSleep(true, true);
+
+        public void PutToSleep(bool playAudio, bool notifyAchievement)
         {
             stats.rest   = Mathf.Min(100, stats.rest   + 45f);
             stats.warmth = Mathf.Min(100, stats.warmth + 5f);
             GetComponentInChildren<MoonlightAnimator>()?.TriggerSleep();
-            AudioManager.Instance?.Play("sleep");
-            AchievementSystem.Instance?.OnFirstSleep();
+            if (playAudio) AudioManager.Instance?.Play("sleep");
+            if (notifyAchievement) AchievementSystem.Instance?.OnFirstSleep();
         }
 
         public void Explore(RoomType room)
