@@ -85,7 +85,9 @@ namespace MoonlightMagicHouse
         public const int NavigationCueMaximumLabelCharacters = 10;
         const float IPadProgressTrackWidth = 84f;
 
-        static readonly string[] MoodEmojis = { "😴", "😠", "😑", "🌸", "✨", "🌟" };
+        static readonly string[] MoodLabels = { "ASLEEP", "GRUMPY", "BORED", "CALM", "HAPPY", "RADIANT" };
+        static TMP_FontAsset _runtimeUIFontAsset;
+        static bool _runtimeUIFontResolved;
         // The character's name is Moonlight. "Stage" is still tracked internally for evolution/achievements,
         // but the HUD shows her name + stage descriptor rather than the raw stage codename ("Moonbud").
         static readonly string[] StageNames       = { "Moonlight", "Moonlight", "Moonlight", "Moonlight", "Moonlight" };
@@ -93,8 +95,98 @@ namespace MoonlightMagicHouse
         static readonly string[] RoomNames  = { "", "Living Room", "Kitchen", "Bedroom", "Garden", "Library" };
 
         // Runtime layout metrics used by iPad screenshot and touch-target QA.
+        public const int RequiredVisibleTMPHUDLabelCount = 5;
         public bool IsIPadHUDLayoutActive => _iPadLayoutActive;
         public string HUDLayoutQAMarker => _iPadLayoutActive ? "ipad-activity-focus-v3" : "desktop-hud";
+        public int VisibleTMPHUDLabelCount
+        {
+            get
+            {
+                int count = 0;
+                foreach (var label in PrimaryHUDLabels())
+                    if (IsVisibleTMPHUDLabel(label)) count++;
+                return count;
+            }
+        }
+        public bool VisibleTMPHUDLabelsActive =>
+            VisibleTMPHUDLabelCount == RequiredVisibleTMPHUDLabelCount;
+        public bool VisibleTMPHUDLabelsInsideSafeArea
+        {
+            get
+            {
+                foreach (var label in PrimaryHUDLabels())
+                    if (!IsVisibleTMPHUDLabel(label) ||
+                        !ContainsRect(Screen.safeArea, ScreenRect(label.transform as RectTransform)))
+                        return false;
+                return true;
+            }
+        }
+        public bool VisibleTMPHUDLabelsDoNotOverlap
+        {
+            get
+            {
+                var labels = PrimaryHUDLabels();
+                for (int i = 0; i < labels.Length; i++)
+                {
+                    if (!IsVisibleTMPHUDLabel(labels[i])) return false;
+                    Rect first = ScreenRect(labels[i].transform as RectTransform);
+                    for (int j = i + 1; j < labels.Length; j++)
+                        if (OverlapsWithPadding(first,
+                            ScreenRect(labels[j].transform as RectTransform), 2f))
+                            return false;
+
+                    if (promptLabel != null && promptLabel.gameObject.activeInHierarchy &&
+                        OverlapsWithPadding(first,
+                            ScreenRect(promptLabel.transform as RectTransform), 2f))
+                        return false;
+                }
+                return true;
+            }
+        }
+        public bool VisibleHUDHasNoLegacyMirrorDependency =>
+            GetComponent<LegacyLabelMirror>() == null &&
+            legacyStageLabel == null && legacyCoinsLabel == null && legacyXPLabel == null &&
+            legacyMoodLabel == null && legacyDaysLabel == null;
+        public bool VisibleHUDTypographyQAReady => VisibleTMPHUDLabelsActive &&
+            VisibleTMPHUDLabelsInsideSafeArea && VisibleTMPHUDLabelsDoNotOverlap &&
+            VisibleHUDHasNoLegacyMirrorDependency;
+        public string VisibleHUDTypographyQAMarker => VisibleHUDTypographyQAReady
+            ? "MOONLIGHT_VISIBLE_TMP_HUD_READY"
+            : "MOONLIGHT_VISIBLE_TMP_HUD_INVALID";
+
+        public static bool EnsureRuntimeFont(TMP_Text label)
+        {
+            if (label == null) return false;
+            if (label.font != null && label.fontSharedMaterial != null) return true;
+
+            if (!_runtimeUIFontResolved)
+            {
+                _runtimeUIFontResolved = true;
+                try
+                {
+                    _runtimeUIFontAsset = TMP_Settings.defaultFontAsset;
+                    if (_runtimeUIFontAsset == null)
+                    {
+                        Font source = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+                        if (source != null)
+                        {
+                            _runtimeUIFontAsset = TMP_FontAsset.CreateFontAsset(source);
+                            if (_runtimeUIFontAsset != null)
+                                _runtimeUIFontAsset.hideFlags = HideFlags.HideAndDontSave;
+                        }
+                    }
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogError($"[MoonlightHUDQA] Runtime TMP font creation failed: " +
+                        exception.Message);
+                }
+            }
+
+            if (_runtimeUIFontAsset == null) return false;
+            label.font = _runtimeUIFontAsset;
+            return label.fontSharedMaterial != null;
+        }
         public bool IsRoomNavigationVisible => _roomNavigationRoot != null && _roomNavigationRoot.activeSelf;
         public bool IsRoomNavigationLocked => _roomNavigationLocked;
         public string RoomNavigationQAMarker => _roomNavigationLocked
@@ -239,6 +331,7 @@ namespace MoonlightMagicHouse
             if (feedBtn && feedOpensMenu) feedBtn.onClick.AddListener(OpenFeedMenu);
             if (actionBtn && actionBtn.GetComponent<MoonlightGesturePad>() == null)
                 actionBtn.onClick.AddListener(ExecuteContextAction);
+            StartCoroutine(ReportVisibleHUDTypographyAfterCanvasUpdate());
         }
 
         // Called by MoonlightHouseSetup to inject all UI refs programmatically
@@ -255,9 +348,13 @@ namespace MoonlightMagicHouse
             magicBar  = magic;  hungerBar = hunger;
             stageLabel = stage; coinsLabel = coins; xpLabel = xp;
             moodEmoji  = mood;  daysLabel  = days;
+            legacyStageLabel = null; legacyCoinsLabel = null; legacyXPLabel = null;
+            legacyMoodLabel = null; legacyDaysLabel = null;
             feedBtn = feed; cuddleBtn = cuddle; sleepBtn = sleep;
             stagePanel = stgPanel; stagePanelLabel = stgLabel;
+            legacyStagePanelLabel = null;
             roomUnlockPanel = roomPanel; roomUnlockLabel = roomLabel;
+            legacyRoomUnlockLabel = null;
             offlinePanel = offline; sleepOverlay = sleepOvr;
             feedMenuRoot = feedRoot; feedMenuContent = feedContent;
         }
@@ -273,10 +370,14 @@ namespace MoonlightMagicHouse
         {
             wonderBar = wonder; warmthBar = warmth; restBar = rest;
             magicBar  = magic;  hungerBar = hunger;
+            stageLabel = null; coinsLabel = null; xpLabel = null;
+            moodEmoji = null; daysLabel = null;
             legacyStageLabel = stage; legacyCoinsLabel = coins; legacyXPLabel = xp;
             legacyMoodLabel  = mood;  legacyDaysLabel  = days;
             feedBtn = feed; cuddleBtn = cuddle; sleepBtn = sleep;
+            stagePanelLabel = null;
             stagePanel = stgPanel; legacyStagePanelLabel = stgLabel;
+            roomUnlockLabel = null;
             roomUnlockPanel = roomPanel; legacyRoomUnlockLabel = roomLabel;
             offlinePanel = offline; sleepOverlay = sleepOvr;
             feedMenuRoot = feedRoot; feedMenuContent = feedContent;
@@ -476,6 +577,7 @@ namespace MoonlightMagicHouse
             var labelObject = new GameObject("ProgressLabel");
             labelObject.transform.SetParent(_iPadProgressRoot.transform, false);
             _iPadProgressLabel = labelObject.AddComponent<TextMeshProUGUI>();
+            EnsureRuntimeFont(_iPadProgressLabel);
             _iPadProgressLabel.fontSize = 23f;
             _iPadProgressLabel.fontStyle = FontStyles.Bold;
             _iPadProgressLabel.color = Color.white;
@@ -956,6 +1058,9 @@ namespace MoonlightMagicHouse
             _qaReportPending = false;
             Rect touchRect = ActionTouchTargetScreenRect;
             Debug.Log($"[MoonlightHUDQA] marker={HUDLayoutQAMarker} screen={Screen.width}x{Screen.height} " +
+                $"typography={VisibleHUDTypographyQAMarker} tmpLabels={VisibleTMPHUDLabelCount}/" +
+                $"{RequiredVisibleTMPHUDLabelCount} typographySafe={VisibleTMPHUDLabelsInsideSafeArea} " +
+                $"typographySeparated={VisibleTMPHUDLabelsDoNotOverlap} noMirror={VisibleHUDHasNoLegacyMirrorDependency} " +
                 $"safe={Screen.safeArea} touchPixels={touchRect.size} touchLayout={ActionTouchTargetLayoutSize} " +
                 $"touchMinimumPass={ActionTouchTargetMeetsIPadMinimum} insideSafeArea={ActionTouchTargetIsInsideSafeArea} " +
                 $"promptSafe={ActivityPromptIsInsideSafeArea} resultSafe={ActivityResultIsInsideSafeArea} " +
@@ -968,6 +1073,40 @@ namespace MoonlightMagicHouse
                 $"cueAngle={NavigationCueAngleDegrees:0.0} cueTarget={NavigationCueTargetName} " +
                 $"cueLabel={NavigationCueRenderedLabel}/{NavigationCueRenderedLabel.Length} " +
                 $"cueDistance={NavigationCueTargetDistance:0.0}m");
+        }
+
+        IEnumerator ReportVisibleHUDTypographyAfterCanvasUpdate()
+        {
+            yield return new WaitForEndOfFrame();
+            Canvas.ForceUpdateCanvases();
+            Debug.Log($"[MoonlightHUDQA] typography={VisibleHUDTypographyQAMarker} " +
+                $"tmpLabels={VisibleTMPHUDLabelCount}/{RequiredVisibleTMPHUDLabelCount} " +
+                $"active={VisibleTMPHUDLabelsActive} safe={VisibleTMPHUDLabelsInsideSafeArea} " +
+                $"separated={VisibleTMPHUDLabelsDoNotOverlap} " +
+                $"noMirror={VisibleHUDHasNoLegacyMirrorDependency}");
+        }
+
+        TMP_Text[] PrimaryHUDLabels() =>
+            new[] { stageLabel, moodEmoji, coinsLabel, xpLabel, daysLabel };
+
+        static bool IsVisibleTMPHUDLabel(TMP_Text label)
+        {
+            if (!(label is TextMeshProUGUI) || !label.isActiveAndEnabled ||
+                !label.gameObject.activeInHierarchy || label.color.a <= 0.01f ||
+                string.IsNullOrEmpty(label.text) || !EnsureRuntimeFont(label) ||
+                label.canvasRenderer == null || label.canvasRenderer.cull)
+                return false;
+            label.ForceMeshUpdate(false, false);
+            bool hasVisibleGlyph = false;
+            for (int i = 0; i < label.textInfo.characterCount; i++)
+            {
+                if (!label.textInfo.characterInfo[i].isVisible) continue;
+                hasVisibleGlyph = true;
+                break;
+            }
+            Rect rect = ScreenRect(label.transform as RectTransform);
+            return hasVisibleGlyph && !label.isTextOverflowing &&
+                rect.width > 0f && rect.height > 0f;
         }
 
         static Rect ScreenRect(RectTransform rect)
@@ -1057,17 +1196,19 @@ namespace MoonlightMagicHouse
             if (magicBar)  magicBar.value  = m.stats.magic  / 100f;
             if (hungerBar) hungerBar.value = m.stats.hunger / 100f;
 
-            SetText(stageLabel, legacyStageLabel, StageNames[(int)m.stage]);
+            int stageIndex = Mathf.Clamp((int)m.stage, 0, StageDescriptors.Length - 1);
+            SetText(stageLabel, legacyStageLabel,
+                $"{StageNames[stageIndex]} / {StageDescriptors[stageIndex]}");
             SetText(coinsLabel, legacyCoinsLabel, $"COINS {m.coins}");
             SetText(xpLabel, legacyXPLabel, $"XP {m.xp}");
-            SetText(daysLabel, legacyDaysLabel, $"Day {Mathf.FloorToInt(m.daysInHouse) + 1}");
-            SetText(moodEmoji, legacyMoodLabel, MoodEmojis[(int)m.stats.GetMood()]);
+            SetText(daysLabel, legacyDaysLabel, $"DAY {Mathf.FloorToInt(m.daysInHouse) + 1}");
+            SetText(moodEmoji, legacyMoodLabel, MoodLabels[(int)m.stats.GetMood()]);
             UpdateCarePrompt(m);
         }
 
         public void OnMoodChange(MoonlightMood mood)
         {
-            SetText(moodEmoji, legacyMoodLabel, MoodEmojis[(int)mood]);
+            SetText(moodEmoji, legacyMoodLabel, MoodLabels[(int)mood]);
         }
         public void UpdateCoins(int coins) => SetText(coinsLabel, legacyCoinsLabel, $"COINS {coins}");
         public void UpdateXP(int xp)       => SetText(xpLabel, legacyXPLabel, $"XP {xp}");
@@ -1120,6 +1261,7 @@ namespace MoonlightMagicHouse
                 var lblGO = new GameObject("Label");
                 lblGO.transform.SetParent(itemGO.transform, false);
                 var lbl = lblGO.AddComponent<TextMeshProUGUI>();
+                EnsureRuntimeFont(lbl);
                 lbl.text = $"{food.itemName}\nCOINS {food.cost}";
                 lbl.fontSize = 18;
                 lbl.alignment = TextAlignmentOptions.Center;

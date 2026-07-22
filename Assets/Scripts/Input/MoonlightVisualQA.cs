@@ -812,6 +812,7 @@ namespace MoonlightMagicHouse
                     ui.NavigationCueQAMarker == "MOONLIGHT_IPAD_NAVIGATION_CUE_READY";
                 bool layoutPass = ui.IsIPadHUDLayoutActive &&
                     ui.HUDLayoutQAMarker == "ipad-activity-focus-v3" &&
+                    ui.VisibleHUDTypographyQAMarker == "MOONLIGHT_VISIBLE_TMP_HUD_READY" &&
                     ui.ActionTouchTargetMeetsIPadMinimum &&
                     ui.ActionTouchTargetIsInsideSafeArea &&
                     ui.ActivityPromptIsInsideSafeArea &&
@@ -828,6 +829,11 @@ namespace MoonlightMagicHouse
                 {
                     Debug.LogError("[MoonlightGameplayQA][FAIL] ipad-hud-layout " +
                         $"active={ui.IsIPadHUDLayoutActive} marker={ui.HUDLayoutQAMarker} " +
+                        $"typography={ui.VisibleHUDTypographyQAMarker} " +
+                        $"tmpLabels={ui.VisibleTMPHUDLabelCount}/{MoonlightUI.RequiredVisibleTMPHUDLabelCount} " +
+                        $"typographySafe={ui.VisibleTMPHUDLabelsInsideSafeArea} " +
+                        $"typographySeparated={ui.VisibleTMPHUDLabelsDoNotOverlap} " +
+                        $"noMirror={ui.VisibleHUDHasNoLegacyMirrorDependency} " +
                         $"touch={ui.ActionTouchTargetLayoutSize} minimum={ui.IPadMinimumTouchTargetLayoutSize} " +
                         $"insideSafe={ui.ActionTouchTargetIsInsideSafeArea} " +
                         $"promptSafe={ui.ActivityPromptIsInsideSafeArea} resultSafe={ui.ActivityResultIsInsideSafeArea} " +
@@ -857,6 +863,11 @@ namespace MoonlightMagicHouse
                 }
                 Debug.Log("[MoonlightGameplayQA][PASS] ipad-hud-layout " +
                     $"marker={ui.HUDLayoutQAMarker} touch={ui.ActionTouchTargetLayoutSize} " +
+                    $"typography={ui.VisibleHUDTypographyQAMarker} " +
+                    $"tmpLabels={ui.VisibleTMPHUDLabelCount}/{MoonlightUI.RequiredVisibleTMPHUDLabelCount} " +
+                    $"typographySafe={ui.VisibleTMPHUDLabelsInsideSafeArea} " +
+                    $"typographySeparated={ui.VisibleTMPHUDLabelsDoNotOverlap} " +
+                    $"noMirror={ui.VisibleHUDHasNoLegacyMirrorDependency} " +
                     $"safe={ui.HUDSafeAreaScreenRect} panelsSeparated={ui.ActivityHUDPanelsDoNotOverlap} " +
                     $"gestureCoordinates={pad.CoordinateQAMarker} gestureSurface={pad.TouchSurfaceSize} " +
                     $"touchJoystick={touchJoystick.gameObject.activeInHierarchy} " +

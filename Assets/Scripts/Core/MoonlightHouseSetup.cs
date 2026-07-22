@@ -3079,7 +3079,6 @@ namespace MoonlightMagicHouse
                 .Configure(MoonlightSafeAreaBand.Edge.Top);
 
             // Stat sliders
-            float[] xPos   = { -420f, -210f, 0f, 210f, 420f };
             string[] names = { "Wonder", "Warmth", "Rest", "Magic", "Hunger" };
             Color[]  cols  = {
                 new Color(0.45f, 0.76f, 0.82f),
@@ -3093,17 +3092,17 @@ namespace MoonlightMagicHouse
             var sliders = new Slider[5];
             for (int i = 0; i < 5; i++)
             {
-                // Anchor to top-center of HUD so positions are predictable
+                // Normalized anchors keep all five columns inside narrow safe areas.
                 var res = new DefaultControls.Resources();
                 var slGO = DefaultControls.CreateSlider(res);
                 slGO.name = names[i] + "Bar";
                 slGO.transform.SetParent(hud.transform, false);
                 var slRt = slGO.GetComponent<RectTransform>();
-                slRt.anchorMin        = new Vector2(0.5f, 1f);
-                slRt.anchorMax        = new Vector2(0.5f, 1f);
+                slRt.anchorMin        = new Vector2(i / 5f, 1f);
+                slRt.anchorMax        = new Vector2((i + 1f) / 5f, 1f);
                 slRt.pivot            = new Vector2(0.5f, 0.5f);
-                slRt.anchoredPosition = new Vector2(xPos[i], -60f);
-                slRt.sizeDelta        = new Vector2(176f, 18f);
+                slRt.anchoredPosition = new Vector2(0f, -60f);
+                slRt.sizeDelta        = new Vector2(-24f, 18f);
                 var sl = slGO.GetComponent<Slider>();
                 sl.value = 0.8f;
                 sl.interactable = false;
@@ -3116,36 +3115,24 @@ namespace MoonlightMagicHouse
                 }
                 sliders[i] = sl;
 
-                // Label above slider (legacy UI.Text — guaranteed to render)
-                MakeLegacyLabel(names[i] + "Lbl", hud.transform,
-                    new Vector2(xPos[i], -32f), new Vector2(180f, 22f),
-                    shortNames[i], 18, cols[i], FontStyle.Bold);
+                // Compact labels leave the authored room visible while remaining readable on iPad.
+                var statLabel = MakeTMPLabelAnchored(names[i] + "Lbl", hud.transform,
+                    new Vector2(0f, -32f), new Vector2(180f, 22f),
+                    shortNames[i], 18f, cols[i]);
+                SetHorizontalColumn(statLabel, i);
             }
 
-            // Info labels (stage, mood, coins, xp, days) — legacy Text so they always show
-            var stageLblGO = MakeLegacyLabel("StageLabel", hud.transform, new Vector2(-420f, -105f), new Vector2(220f, 26f), "Moonlight", 20, Color.white, FontStyle.Bold);
-            var moodLblGO  = MakeLegacyLabel("MoodLabel",  hud.transform, new Vector2(-200f, -105f), new Vector2(120f, 26f), "HAPPY",   18, new Color(1f, 0.72f, 0.78f), FontStyle.Bold);
-            var coinsLblGO = MakeLegacyLabel("CoinsLabel", hud.transform, new Vector2(  40f, -105f), new Vector2(180f, 26f), "COINS 30", 20, new Color(1f, 0.86f, 0.42f), FontStyle.Bold);
-            var xpLblGO    = MakeLegacyLabel("XPLabel",    hud.transform, new Vector2( 240f, -105f), new Vector2(160f, 26f), "XP 0",    18, new Color(0.76f, 0.68f, 0.88f), FontStyle.Bold);
-            var daysLblGO  = MakeLegacyLabel("DaysLabel",  hud.transform, new Vector2( 420f, -105f), new Vector2(140f, 26f), "DAY 1",   18, new Color(0.66f, 0.82f, 0.84f), FontStyle.Bold);
-
-            // Wrap legacy Text in TMP_Text-compatible adapters? No — MoonlightUI.Wire needs TMP_Text.
-            // Create hidden TMP labels that mirror nothing but satisfy the signature — OR swap Wire signature.
-            // Simpler: create invisible TMP labels purely for Wire(), and the visible info is the legacy labels above.
-            // MoonlightUI will update the invisible TMP labels; we also write their text to the legacy ones via a small sync component.
-            var stageLabel = MakeTMPLabelAnchored("StageLabelTMP", hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "Moonlight",  1, new Color(0,0,0,0));
-            var moodLabel  = MakeTMPLabelAnchored("MoodLabelTMP",  hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "HAPPY",    1, new Color(0,0,0,0));
-            var coinsLabel = MakeTMPLabelAnchored("CoinsLabelTMP", hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "30",       1, new Color(0,0,0,0));
-            var xpLabel    = MakeTMPLabelAnchored("XPLabelTMP",    hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "XP 0",     1, new Color(0,0,0,0));
-            var daysLabel  = MakeTMPLabelAnchored("DaysLabelTMP",  hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "Day 1",    1, new Color(0,0,0,0));
-
-            // Add a TMP→legacy mirror so the visible legacy labels reflect the game state
-            var mirror = canvasGO.AddComponent<LegacyLabelMirror>();
-            mirror.Bind(stageLabel, stageLblGO, "",
-                        moodLabel,  moodLblGO,  "",
-                        coinsLabel, coinsLblGO, "COINS ",
-                        xpLabel,    xpLblGO,    "",
-                        daysLabel,  daysLblGO,  "");
+            // TMP is the visible, state-bearing HUD source. No offscreen mirror is involved.
+            var stageLabel = MakeTMPLabelAnchored("StageLabel", hud.transform, new Vector2(0f, -105f), new Vector2(210f, 26f), "Moonlight / Sprout", 20f, Color.white);
+            var moodLabel  = MakeTMPLabelAnchored("MoodLabel",  hud.transform, new Vector2(0f, -105f), new Vector2(110f, 26f), "HAPPY", 18f, new Color(1f, 0.72f, 0.78f));
+            var coinsLabel = MakeTMPLabelAnchored("CoinsLabel", hud.transform, new Vector2(0f, -105f), new Vector2(150f, 26f), "COINS 30", 20f, new Color(1f, 0.86f, 0.42f));
+            var xpLabel    = MakeTMPLabelAnchored("XPLabel",    hud.transform, new Vector2(0f, -105f), new Vector2(130f, 26f), "XP 0", 18f, new Color(0.76f, 0.68f, 0.88f));
+            var daysLabel  = MakeTMPLabelAnchored("DaysLabel",  hud.transform, new Vector2(0f, -105f), new Vector2(120f, 26f), "DAY 1", 18f, new Color(0.66f, 0.82f, 0.84f));
+            SetHorizontalColumn(stageLabel, 0);
+            SetHorizontalColumn(moodLabel, 1);
+            SetHorizontalColumn(coinsLabel, 2);
+            SetHorizontalColumn(xpLabel, 3);
+            SetHorizontalColumn(daysLabel, 4);
 
             // Action buttons (bottom) — 2×3 grid of 6 actions w/ emoji icons and softer chrome.
             var btnPanel = Panel("ActionBar", canvasGO.transform,
@@ -3172,9 +3159,18 @@ namespace MoonlightMagicHouse
             var actionBtn = MakeButton("ContextActionBtn", btnPanel.transform,
                 new Vector2(485f, 74f), "ACTION", new Color(0.46f, 0.58f, 0.72f));
             actionBtn.GetComponent<RectTransform>().sizeDelta = new Vector2(250f, 84f);
-            var legacyActionText = actionBtn.GetComponentInChildren<Text>();
-            if (legacyActionText) legacyActionText.enabled = false;
-            var actionBtnLabel = MakeTMPButtonLabel("ActionBtnLabel", actionBtn.transform, "ACTION", 24, Color.white);
+            var actionBtnLabel = actionBtn.GetComponentInChildren<TMP_Text>();
+            if (actionBtnLabel == null)
+                actionBtnLabel = MakeTMPButtonLabel("ActionBtnLabel", actionBtn.transform,
+                    "ACTION", 24f, Color.white);
+            else
+            {
+                actionBtnLabel.name = "ActionBtnLabel";
+                actionBtnLabel.text = "ACTION";
+                actionBtnLabel.fontSize = 24f;
+                actionBtnLabel.fontSizeMax = 24f;
+                actionBtnLabel.color = Color.white;
+            }
 
             bool useIPadLayout = MoonlightUI.ShouldUseIPadLayout();
             var joystick = MakeJoystick(btnPanel.transform);
@@ -3285,25 +3281,30 @@ namespace MoonlightMagicHouse
             scaler.matchWidthOrHeight = 0.5f;
             canvasGO.AddComponent<GraphicRaycaster>();
 
-            var hud = Panel("PhotoHUD", canvasGO.transform,
+            var topSafeBand = MakeSafeAreaBand("PhotoTopSafeArea", canvasGO.transform,
+                MoonlightSafeAreaBand.Edge.Top);
+            var bottomSafeBand = MakeSafeAreaBand("PhotoBottomSafeArea", canvasGO.transform,
+                MoonlightSafeAreaBand.Edge.Bottom);
+
+            var hud = Panel("PhotoHUD", topSafeBand,
                 new Vector2(0f, 1f), new Vector2(0f, 1f),
-                new Vector2(24f, -112f), new Vector2(330f, -22f),
+                new Vector2(24f, -140f), new Vector2(340f, -22f),
                 new Color(1f, 0.92f, 0.84f, 0.42f));
 
-            var stageLabel = MakeLegacyLabel("StageLabel", hud.transform, new Vector2(0f, -28f), new Vector2(260f, 30f), "Moonlight", 22, new Color(0.34f, 0.18f, 0.18f), FontStyle.Bold);
-            var moodLabel  = MakeLegacyLabel("MoodLabel",  hud.transform, new Vector2(-66f, -62f), new Vector2(124f, 24f), "HAPPY", 15, new Color(0.72f, 0.30f, 0.46f), FontStyle.Bold);
-            var coinsLabel = MakeLegacyLabel("CoinsLabel", hud.transform, new Vector2( 66f, -62f), new Vector2(124f, 24f), "COINS 30", 15, new Color(0.54f, 0.34f, 0.05f), FontStyle.Bold);
-            var xpLabel    = MakeLegacyLabel("XPLabel",    hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "XP 0", 1, Color.clear, FontStyle.Normal);
-            var daysLabel  = MakeLegacyLabel("DaysLabel",  hud.transform, new Vector2(-9999f, 0f), new Vector2(1f, 1f), "DAY 1", 1, Color.clear, FontStyle.Normal);
+            var stageLabel = MakeTMPLabelAnchored("StageLabel", hud.transform, new Vector2(0f, -25f), new Vector2(276f, 28f), "Moonlight / Sprout", 21f, new Color(0.34f, 0.18f, 0.18f));
+            var moodLabel  = MakeTMPLabelAnchored("MoodLabel",  hud.transform, new Vector2(-72f, -57f), new Vector2(124f, 24f), "HAPPY", 15f, new Color(0.72f, 0.30f, 0.46f));
+            var coinsLabel = MakeTMPLabelAnchored("CoinsLabel", hud.transform, new Vector2( 72f, -57f), new Vector2(124f, 24f), "COINS 30", 15f, new Color(0.54f, 0.34f, 0.05f));
+            var xpLabel    = MakeTMPLabelAnchored("XPLabel",    hud.transform, new Vector2(-72f, -88f), new Vector2(124f, 22f), "XP 0", 14f, new Color(0.38f, 0.30f, 0.52f));
+            var daysLabel  = MakeTMPLabelAnchored("DaysLabel",  hud.transform, new Vector2( 72f, -88f), new Vector2(124f, 22f), "DAY 1", 14f, new Color(0.24f, 0.42f, 0.48f));
 
-            var carePanel = Panel("CarePanel", canvasGO.transform,
+            var carePanel = Panel("CarePanel", topSafeBand,
                 new Vector2(1f, 1f), new Vector2(1f, 1f),
-                new Vector2(-386f, -238f), new Vector2(-76f, -86f),
+                new Vector2(-386f, -388f), new Vector2(-76f, -236f),
                 new Color(1f, 0.94f, 0.86f, 0.38f));
 
-            var careHint = MakeLegacyLabel("CareHint", carePanel.transform,
+            var careHint = MakeTMPLabelAnchored("CareHint", carePanel.transform,
                 new Vector2(0f, -20f), new Vector2(276f, 24f),
-                "Moonlight feels cozy", 15, new Color(0.34f, 0.18f, 0.18f), FontStyle.Bold);
+                "Moonlight feels cozy", 15f, new Color(0.34f, 0.18f, 0.18f));
 
             var sliders = new Slider[5];
             sliders[0] = MakeCareSlider(carePanel.transform, "FUN",   -48f, new Color(1.00f, 0.78f, 0.30f));
@@ -3312,7 +3313,7 @@ namespace MoonlightMagicHouse
             sliders[3] = MakeCareSlider(carePanel.transform, "MAGIC", -114f, new Color(0.76f, 0.55f, 1.00f));
             sliders[4] = MakeCareSlider(carePanel.transform, "FOOD",  -136f, new Color(1.00f, 0.58f, 0.40f));
 
-            var btnPanel = Panel("CandyActionBar", canvasGO.transform,
+            var btnPanel = Panel("CandyActionBar", bottomSafeBand,
                 new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
                 new Vector2(-350f, 10f), new Vector2(350f, 116f),
                 new Color(1f, 0.88f, 0.78f, 0.00f));
@@ -3389,30 +3390,34 @@ namespace MoonlightMagicHouse
                 Vector2.zero, Vector2.zero,
                 new Color(1f, 0.78f, 0.90f, 0.92f));
             stgPanel.SetActive(false);
-            var stgLabel = MakeLegacyLabel("StgLabel", stgPanel.transform, new Vector2(0f, -76f), new Vector2(760f, 90f), "Moonlight shines brighter!", 34, new Color(0.38f, 0.18f, 0.34f), FontStyle.Bold);
+            var stgLabel = MakeTMPLabel("StgLabel", stgPanel.transform, new Vector2(0f, -76f), new Vector2(760f, 90f), "Moonlight shines brighter!", 34f, new Color(0.38f, 0.18f, 0.34f));
+            stgLabel.fontStyle = FontStyles.Bold;
 
             var roomPanel = Panel("RoomPanel", canvasGO.transform,
                 new Vector2(0.24f, 0.36f), new Vector2(0.76f, 0.64f),
                 Vector2.zero, Vector2.zero,
                 new Color(0.86f, 0.96f, 1f, 0.92f));
             roomPanel.SetActive(false);
-            var roomLabel = MakeLegacyLabel("RoomLabel", roomPanel.transform, new Vector2(0f, -70f), new Vector2(760f, 80f), "A new room is glowing!", 30, new Color(0.18f, 0.30f, 0.42f), FontStyle.Bold);
+            var roomLabel = MakeTMPLabel("RoomLabel", roomPanel.transform, new Vector2(0f, -70f), new Vector2(760f, 80f), "A new room is glowing!", 30f, new Color(0.18f, 0.30f, 0.42f));
+            roomLabel.fontStyle = FontStyles.Bold;
 
             var offlinePanel = Panel("OfflinePanel", canvasGO.transform,
                 new Vector2(0.26f, 0.42f), new Vector2(0.74f, 0.58f),
                 Vector2.zero, Vector2.zero,
                 new Color(1f, 0.88f, 0.72f, 0.92f));
             offlinePanel.SetActive(false);
-            MakeLegacyLabel("OfflineLbl", offlinePanel.transform, new Vector2(0f, -58f), new Vector2(720f, 60f), "Moonlight missed you!", 28, new Color(0.42f, 0.22f, 0.14f), FontStyle.Bold);
+            var offlineLabel = MakeTMPLabel("OfflineLbl", offlinePanel.transform, new Vector2(0f, -58f), new Vector2(720f, 60f), "Moonlight missed you!", 28f, new Color(0.42f, 0.22f, 0.14f));
+            offlineLabel.fontStyle = FontStyles.Bold;
 
             var sleepOvr = Panel("SleepOverlay", canvasGO.transform,
                 Vector2.zero, Vector2.one,
                 Vector2.zero, Vector2.zero,
                 new Color(0.04f, 0.03f, 0.08f, 0.50f));
             sleepOvr.SetActive(false);
-            MakeLegacyLabel("SleepLbl", sleepOvr.transform, new Vector2(0f, -140f), new Vector2(460f, 80f), "Sweet dreams", 42, new Color(1f, 0.90f, 0.70f), FontStyle.Bold);
+            var sleepLabel = MakeTMPLabel("SleepLbl", sleepOvr.transform, new Vector2(0f, -140f), new Vector2(460f, 80f), "Sweet dreams", 42f, new Color(1f, 0.90f, 0.70f));
+            sleepLabel.fontStyle = FontStyles.Bold;
 
-            var quitBtn = MakePhotorealButton("QuitBtn", canvasGO.transform, Vector2.zero, "X", new Color(0.54f, 0.20f, 0.24f, 0.82f));
+            var quitBtn = MakePhotorealButton("QuitBtn", topSafeBand, Vector2.zero, "X", new Color(0.54f, 0.20f, 0.24f, 0.82f));
             var quitRt = quitBtn.GetComponent<RectTransform>();
             quitRt.anchorMin = new Vector2(1f, 1f);
             quitRt.anchorMax = new Vector2(1f, 1f);
@@ -3437,7 +3442,7 @@ namespace MoonlightMagicHouse
 
             var ui = canvasGO.AddComponent<MoonlightUI>();
             ui.feedOpensMenu = false;
-            ui.WireLegacy(
+            ui.Wire(
                 sliders[0], sliders[1], sliders[2], sliders[3], sliders[4],
                 stageLabel, coinsLabel, xpLabel, moodLabel, daysLabel,
                 feedBtn, cuddleBtn, sleepBtn,
@@ -3446,7 +3451,7 @@ namespace MoonlightMagicHouse
                 offlinePanel, sleepOvr,
                 feedMenu, contentGO.transform);
             ui.promptRoot = carePanel;
-            ui.legacyPromptLabel = careHint;
+            ui.promptLabel = careHint;
             ui.keepPromptVisible = true;
 
             return (canvasGO, ui);
@@ -3483,6 +3488,21 @@ namespace MoonlightMagicHouse
         }
 
         // ── UI Helpers ───────────────────────────────────────────────────────
+        static RectTransform MakeSafeAreaBand(string name, Transform parent,
+            MoonlightSafeAreaBand.Edge edge)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var rect = go.GetComponent<RectTransform>();
+            float edgeAnchor = edge == MoonlightSafeAreaBand.Edge.Top ? 1f : 0f;
+            rect.anchorMin = new Vector2(0f, edgeAnchor);
+            rect.anchorMax = new Vector2(1f, edgeAnchor);
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            go.AddComponent<MoonlightSafeAreaBand>().Configure(edge);
+            return rect;
+        }
+
         static Slider MakeHiddenSlider(Transform parent, int index)
         {
             var res = new DefaultControls.Resources();
@@ -3513,13 +3533,20 @@ namespace MoonlightMagicHouse
 
             var labelGO = new GameObject($"{label}Label");
             labelGO.transform.SetParent(row.transform, false);
-            var text = labelGO.AddComponent<Text>();
+            var text = labelGO.AddComponent<TextMeshProUGUI>();
+            MoonlightUI.EnsureRuntimeFont(text);
             text.text = label;
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            text.fontSize = 11;
-            text.fontStyle = FontStyle.Bold;
+            text.fontSize = 11f;
+            text.fontStyle = FontStyles.Bold;
             text.color = new Color(0.30f, 0.16f, 0.14f);
-            text.alignment = TextAnchor.MiddleLeft;
+            text.alignment = TextAlignmentOptions.Left;
+            text.enableAutoSizing = true;
+            text.fontSizeMin = 9f;
+            text.fontSizeMax = 11f;
+            text.enableWordWrapping = false;
+            text.overflowMode = TextOverflowModes.Ellipsis;
+            text.characterSpacing = 0f;
+            text.raycastTarget = false;
             var labelRt = labelGO.GetComponent<RectTransform>();
             labelRt.anchorMin = new Vector2(0f, 0f);
             labelRt.anchorMax = new Vector2(0f, 1f);
@@ -3569,23 +3596,30 @@ namespace MoonlightMagicHouse
             return go;
         }
 
-        static Text MakeLegacyLabel(string name, Transform parent,
+        static TMP_Text MakeTMPLabelAnchored(string name, Transform parent,
             Vector2 anchoredPos, Vector2 size, string text,
-            int fontSize, Color color, FontStyle style)
+            float fontSize, Color color)
         {
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
-            var t = go.AddComponent<Text>();
+            var t = go.AddComponent<TextMeshProUGUI>();
+            MoonlightUI.EnsureRuntimeFont(t);
             t.text      = text;
-            t.font      = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             t.fontSize  = fontSize;
-            t.fontStyle = style;
+            t.fontStyle = FontStyles.Bold;
             t.color     = color;
-            t.alignment = TextAnchor.MiddleCenter;
-            t.horizontalOverflow = HorizontalWrapMode.Overflow;
-            var outline = go.AddComponent<Outline>();
-            outline.effectColor = new Color(0.08f, 0.06f, 0.08f, 0.72f);
-            outline.effectDistance = new Vector2(1f, -1f);
+            t.alignment = TextAlignmentOptions.Center;
+            t.enableAutoSizing = true;
+            t.fontSizeMin = Mathf.Max(10f, fontSize * 0.72f);
+            t.fontSizeMax = fontSize;
+            t.enableWordWrapping = false;
+            t.overflowMode = TextOverflowModes.Ellipsis;
+            t.characterSpacing = 0f;
+            t.raycastTarget = false;
+            var shadow = go.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0.08f, 0.06f, 0.08f, 0.58f);
+            shadow.effectDistance = new Vector2(1f, -1f);
+            shadow.useGraphicAlpha = true;
             var rt = go.GetComponent<RectTransform>();
             rt.anchorMin        = new Vector2(0.5f, 1f);
             rt.anchorMax        = new Vector2(0.5f, 1f);
@@ -3595,25 +3629,16 @@ namespace MoonlightMagicHouse
             return t;
         }
 
-        static TMP_Text MakeTMPLabelAnchored(string name, Transform parent,
-            Vector2 anchoredPos, Vector2 size, string text,
-            float fontSize, Color color)
+        static void SetHorizontalColumn(TMP_Text label, int column)
         {
-            var go = new GameObject(name);
-            go.transform.SetParent(parent, false);
-            var t = go.AddComponent<TextMeshProUGUI>();
-            t.text      = text;
-            t.fontSize  = fontSize;
-            t.fontStyle = FontStyles.Bold;
-            t.color     = color;
-            t.alignment = TextAlignmentOptions.Center;
-            var rt = go.GetComponent<RectTransform>();
-            rt.anchorMin        = new Vector2(0.5f, 1f);
-            rt.anchorMax        = new Vector2(0.5f, 1f);
-            rt.pivot            = new Vector2(0.5f, 0.5f);
-            rt.anchoredPosition = anchoredPos;
-            rt.sizeDelta        = size;
-            return t;
+            var rect = label != null ? label.transform as RectTransform : null;
+            if (rect == null) return;
+            float minimum = Mathf.Clamp(column, 0, 4) / 5f;
+            float maximum = (Mathf.Clamp(column, 0, 4) + 1f) / 5f;
+            rect.anchorMin = new Vector2(minimum, 1f);
+            rect.anchorMax = new Vector2(maximum, 1f);
+            rect.anchoredPosition = new Vector2(0f, rect.anchoredPosition.y);
+            rect.sizeDelta = new Vector2(-24f, rect.sizeDelta.y);
         }
 
         static TMP_Text MakeTMPLabel(string name, Transform parent,
@@ -3623,6 +3648,7 @@ namespace MoonlightMagicHouse
             var go = new GameObject(name);
             go.transform.SetParent(parent, false);
             var t = go.AddComponent<TextMeshProUGUI>();
+            MoonlightUI.EnsureRuntimeFont(t);
             t.text      = text;
             t.fontSize  = fontSize;
             t.color     = color;
@@ -3798,12 +3824,15 @@ namespace MoonlightMagicHouse
             if (img) img.color = tint;
             var lbl = btnGO.GetComponentInChildren<Text>();
             if (lbl)
-            {
-                lbl.text      = label;
-                lbl.fontSize  = 18;
-                lbl.fontStyle = FontStyle.Bold;
-                lbl.color     = Color.white;
-            }
+                lbl.enabled = false;
+            var tmpLabel = MakeTMPButtonLabel("LabelTMP", btnGO.transform, label, 18f, Color.white);
+            tmpLabel.enableAutoSizing = true;
+            tmpLabel.fontSizeMin = 14f;
+            tmpLabel.fontSizeMax = 18f;
+            tmpLabel.enableWordWrapping = false;
+            tmpLabel.overflowMode = TextOverflowModes.Ellipsis;
+            tmpLabel.characterSpacing = 0f;
+            tmpLabel.raycastTarget = false;
             return btnGO.GetComponent<Button>();
         }
 
@@ -3820,13 +3849,16 @@ namespace MoonlightMagicHouse
             if (img) img.color = tint;
             var lbl = btnGO.GetComponentInChildren<Text>();
             if (lbl)
-            {
-                lbl.text = label;
-                lbl.fontSize = label.Length <= 3 ? 21 : 18;
-                lbl.fontStyle = FontStyle.Bold;
-                lbl.color = new Color(0.26f, 0.12f, 0.10f);
-                lbl.alignment = TextAnchor.MiddleCenter;
-            }
+                lbl.enabled = false;
+            var tmpLabel = MakeTMPButtonLabel("LabelTMP", btnGO.transform, label,
+                label.Length <= 3 ? 21f : 18f, new Color(0.26f, 0.12f, 0.10f));
+            tmpLabel.enableAutoSizing = true;
+            tmpLabel.fontSizeMin = 14f;
+            tmpLabel.fontSizeMax = label.Length <= 3 ? 21f : 18f;
+            tmpLabel.enableWordWrapping = false;
+            tmpLabel.overflowMode = TextOverflowModes.Ellipsis;
+            tmpLabel.characterSpacing = 0f;
+            tmpLabel.raycastTarget = false;
             var colors = btnGO.GetComponent<Button>().colors;
             colors.highlightedColor = Color.Lerp(tint, Color.white, 0.35f);
             colors.pressedColor = Color.Lerp(tint, new Color(0.75f, 0.45f, 0.40f), 0.30f);
