@@ -177,9 +177,20 @@ namespace MoonlightMagicHouse
                 string result = interactor.ExecuteCurrent();
                 ui?.ShowContextResult(result);
                 var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
-                if (feedback == null || !feedback.IsPerformingAction || string.IsNullOrEmpty(feedback.ActiveEffectName))
+                string expectedVisualSignature = MoonlightActionFeedback.ActionVisualSignatureFor(
+                    zone.Kind, feedback != null ? feedback.StateText : "");
+                if (feedback == null || !feedback.IsPerformingAction ||
+                    string.IsNullOrEmpty(feedback.ActiveEffectName) ||
+                    feedback.ActionVisualSignature != expectedVisualSignature ||
+                    feedback.ActionAccentRendererCount != 1 ||
+                    feedback.ActionAccentWorldExtent < 0.17f)
                 {
-                    Debug.LogError($"[MoonlightVisualQA][FAIL] action={zone.Kind} animated feedback missing");
+                    Debug.LogError($"[MoonlightVisualQA][FAIL] action={zone.Kind} animated feedback " +
+                        $"effect={(feedback != null ? feedback.ActiveEffectName : "missing")} " +
+                        $"visual={(feedback != null ? feedback.ActionVisualSignature : "missing")}/" +
+                        $"{expectedVisualSignature} accents=" +
+                        $"{(feedback != null ? feedback.ActionAccentRendererCount : 0)} " +
+                        $"extent={(feedback != null ? feedback.ActionAccentWorldExtent : 0f):0.000}");
                     Application.Quit(5);
                     yield break;
                 }
@@ -232,6 +243,8 @@ namespace MoonlightMagicHouse
                 ScreenCapture.CaptureScreenshot(actionOutput);
                 Debug.Log($"[MoonlightVisualQA][PASS] action={zone.Kind} prompt=\"{prompt}\" " +
                     $"result=\"{result}\" effect={feedback.ActiveEffectName} " +
+                    $"visual={feedback.ActionVisualSignature} accents={feedback.ActionAccentRendererCount} " +
+                    $"accentExtent={feedback.ActionAccentWorldExtent:0.000} " +
                     $"eyeExpression={heroEyeQuality.CurrentExpressionName} " +
                     $"eyeColorDistance={expressionColorDistance:0.000} " +
                     $"marker=MOONLIGHT_ACTIVITY_EYE_EXPRESSION_VERIFIED screenshot={actionOutput}");
@@ -284,9 +297,17 @@ namespace MoonlightMagicHouse
                 string cuddleResult = interactor.ExecuteCurrent();
                 ui?.ShowContextResult(cuddleResult);
                 feedback = moonlight.GetComponent<MoonlightActionFeedback>();
-                if (feedback == null || !feedback.IsPerformingAction || feedback.ActiveEffectName != "cuddle-orbit")
+                if (feedback == null || !feedback.IsPerformingAction ||
+                    feedback.ActiveEffectName != "cuddle-orbit" ||
+                    feedback.ActionVisualSignature != "cuddle-heart-pair" ||
+                    feedback.ActionAccentRendererCount != 1 ||
+                    feedback.ActionAccentWorldExtent < 0.17f)
                 {
-                    Debug.LogError("[MoonlightVisualQA][FAIL] action=Cuddle animated feedback missing");
+                    Debug.LogError("[MoonlightVisualQA][FAIL] action=Cuddle animated feedback missing " +
+                        $"effect={feedback?.ActiveEffectName ?? "missing"} " +
+                        $"visual={feedback?.ActionVisualSignature ?? "missing"} " +
+                        $"accent={feedback?.ActionAccentRendererCount ?? 0} " +
+                        $"extent={(feedback?.ActionAccentWorldExtent ?? 0f):0.000}");
                     Application.Quit(6);
                     yield break;
                 }
@@ -301,7 +322,10 @@ namespace MoonlightMagicHouse
                 yield return new WaitForEndOfFrame();
                 ScreenCapture.CaptureScreenshot(cuddleOutput);
                 Debug.Log($"[MoonlightVisualQA][PASS] action=Cuddle prompt=\"{cuddlePrompt}\" " +
-                    $"result=\"{cuddleResult}\" effect={feedback.ActiveEffectName} screenshot={cuddleOutput}");
+                    $"result=\"{cuddleResult}\" effect={feedback.ActiveEffectName} " +
+                    $"visual={feedback.ActionVisualSignature} accent={feedback.ActionAccentRendererCount} " +
+                    $"accentExtent={feedback.ActionAccentWorldExtent:0.000} " +
+                    $"screenshot={cuddleOutput}");
                 passedActions++;
                 yield return new WaitForSeconds(1.2f);
             }
@@ -364,6 +388,16 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-activity-phase-feedback " +
                 $"{phaseFeedbackDetail} marker=MOONLIGHT_IPAD_ACTIVITY_PHASE_FEEDBACK_VERIFIED");
+            if (!MoonlightActionFeedback.ValidateActionVisualSignatureContract(
+                    out string actionVisualDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] action-visual-signatures " +
+                    actionVisualDetail);
+                Application.Quit(78);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] action-visual-signatures " +
+                $"{actionVisualDetail} marker=MOONLIGHT_ACTIVITY_VISUAL_SIGNATURES_VERIFIED");
 
             bool recognizerPass = MoonlightGesturePad.ValidateRecognizerContract(
                 out string recognizerDetail);

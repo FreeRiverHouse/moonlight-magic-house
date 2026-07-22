@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace MoonlightMagicHouse
@@ -17,8 +18,10 @@ namespace MoonlightMagicHouse
         Vector3 _basePosition;
         Quaternion _baseRotation = Quaternion.identity;
         GameObject _actionOrb;
+        GameObject _actionAccent;
         TrailRenderer _actionTrail;
         Material _actionMaterial;
+        Material _actionAccentMaterial;
         Material _trailMaterial;
         Material _particleMaterial;
         Texture2D _particleTexture;
@@ -105,6 +108,9 @@ namespace MoonlightMagicHouse
             }
         }
         public string ActiveEffectName { get; private set; } = "";
+        public string ActionVisualSignature { get; private set; } = "";
+        public int ActionAccentRendererCount { get; private set; }
+        public float ActionAccentWorldExtent { get; private set; }
         public bool MasteryCelebrationIsQueued => _masteryCelebrationQueued;
         public int QueuedMasteryTier => _queuedMasteryTier;
         public int LastMasteryCelebrationTier { get; private set; } = -1;
@@ -220,7 +226,9 @@ namespace MoonlightMagicHouse
             CreateActionOrb(kind, state, color, duration);
             Debug.Log($"[MoonlightVisualQA] action-start kind={kind} state={state} label=\"{label}\" " +
                 $"step={_activityStep + 1}/{_activityRequiredSteps} duration={duration:0.00}s " +
-                $"motionProfile=\"{ActionMotionProfile}\" contactTarget=\"{ActionContactTarget}\"");
+                $"motionProfile=\"{ActionMotionProfile}\" contactTarget=\"{ActionContactTarget}\" " +
+                $"visual=\"{ActionVisualSignature}\" accents={ActionAccentRendererCount} " +
+                $"accentExtent={ActionAccentWorldExtent:0.000}");
 
             if (_flash != null)
             {
@@ -1091,6 +1099,27 @@ namespace MoonlightMagicHouse
             renderer.sharedMaterial = _actionMaterial;
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
+            ActionVisualSignature = ActionVisualSignatureFor(kind, state);
+            _actionAccent = GameObject.CreatePrimitive(ActionAccentPrimitiveFor(kind));
+            _actionAccent.name = $"ActionAccent-{ActionVisualSignature}";
+            _actionAccent.transform.localScale = ActionAccentWorldScaleFor(kind);
+            var accentCollider = _actionAccent.GetComponent<Collider>();
+            if (accentCollider != null) Destroy(accentCollider);
+            _actionAccentMaterial = new Material(shader);
+            Color accentColor = Color.Lerp(color, Color.white, 0.46f);
+            _actionAccentMaterial.color = accentColor;
+            if (_actionAccentMaterial.HasProperty("_EmissionColor"))
+            {
+                _actionAccentMaterial.EnableKeyword("_EMISSION");
+                _actionAccentMaterial.SetColor("_EmissionColor", accentColor * 1.15f);
+            }
+            var accentRenderer = _actionAccent.GetComponent<Renderer>();
+            accentRenderer.sharedMaterial = _actionAccentMaterial;
+            accentRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            ActionAccentRendererCount = _actionAccent.GetComponentsInChildren<Renderer>(true).Length;
+            UpdateActionAccent(kind, 0f);
+            ActionAccentWorldExtent = MaximumAxis(accentRenderer.bounds.size);
+
             _actionTrail = _actionOrb.AddComponent<TrailRenderer>();
             _actionTrail.time = Mathf.Min(0.75f, duration * 0.55f);
             _actionTrail.minVertexDistance = 0.015f;
@@ -1149,22 +1178,133 @@ namespace MoonlightMagicHouse
                     _actionOrb.transform.localScale = Vector3.one * Mathf.Lerp(startScale, 0.045f, eased);
                     break;
             }
+            UpdateActionAccent(kind, t);
+        }
+
+        void UpdateActionAccent(MoonlightSpatialActionKind kind, float t)
+        {
+            if (_actionAccent == null || _actionOrb == null) return;
+            _actionAccent.transform.position = _actionOrb.transform.position +
+                ActionAccentWorldOffsetFor(kind);
+            _actionAccent.transform.rotation = ActionAccentRotationFor(kind, t);
         }
 
         void DestroyActionOrb()
         {
             ActiveEffectName = "";
+            ActionVisualSignature = "";
+            ActionAccentRendererCount = 0;
+            ActionAccentWorldExtent = 0f;
+            if (_actionAccent != null) Destroy(_actionAccent);
             if (_actionOrb != null) Destroy(_actionOrb);
             if (_actionMaterial != null) Destroy(_actionMaterial);
+            if (_actionAccentMaterial != null) Destroy(_actionAccentMaterial);
             if (_trailMaterial != null) Destroy(_trailMaterial);
             _actionOrb = null;
+            _actionAccent = null;
             _actionTrail = null;
             _actionMaterial = null;
+            _actionAccentMaterial = null;
             _trailMaterial = null;
+        }
+
+        public static string ActionVisualSignatureFor(MoonlightSpatialActionKind kind,
+                                                       string state) => kind switch
+        {
+            MoonlightSpatialActionKind.Cook => "utensil-capsule",
+            MoonlightSpatialActionKind.Play => "ball-energy-band",
+            MoonlightSpatialActionKind.Garden => "leaf-sprout",
+            MoonlightSpatialActionKind.Read => "turning-page",
+            MoonlightSpatialActionKind.SleepCuddle when state == "Resting" => "dream-moon-pair",
+            MoonlightSpatialActionKind.SleepCuddle => "cuddle-heart-pair",
+            _ => "magic-accent"
+        };
+
+        static PrimitiveType ActionAccentPrimitiveFor(MoonlightSpatialActionKind kind) => kind switch
+        {
+            MoonlightSpatialActionKind.Cook => PrimitiveType.Capsule,
+            MoonlightSpatialActionKind.Play => PrimitiveType.Cube,
+            MoonlightSpatialActionKind.Garden => PrimitiveType.Sphere,
+            MoonlightSpatialActionKind.Read => PrimitiveType.Cube,
+            MoonlightSpatialActionKind.SleepCuddle => PrimitiveType.Sphere,
+            _ => PrimitiveType.Sphere
+        };
+
+        static Vector3 ActionAccentWorldScaleFor(MoonlightSpatialActionKind kind) => kind switch
+        {
+            MoonlightSpatialActionKind.Cook => new Vector3(0.07f, 0.20f, 0.07f),
+            MoonlightSpatialActionKind.Play => new Vector3(0.22f, 0.035f, 0.22f),
+            MoonlightSpatialActionKind.Garden => new Vector3(0.08f, 0.20f, 0.04f),
+            MoonlightSpatialActionKind.Read => new Vector3(0.24f, 0.025f, 0.16f),
+            MoonlightSpatialActionKind.SleepCuddle => new Vector3(0.17f, 0.11f, 0.08f),
+            _ => Vector3.one * 0.10f
+        };
+
+        static Vector3 ActionAccentWorldOffsetFor(MoonlightSpatialActionKind kind) => kind switch
+        {
+            MoonlightSpatialActionKind.Cook => new Vector3(0f, 0.12f, 0f),
+            MoonlightSpatialActionKind.Garden => new Vector3(0.10f, 0.06f, 0f),
+            MoonlightSpatialActionKind.Read => new Vector3(0f, 0.05f, 0f),
+            MoonlightSpatialActionKind.SleepCuddle => new Vector3(0.11f, 0.04f, 0f),
+            _ => Vector3.zero
+        };
+
+        static float MaximumAxis(Vector3 value) =>
+            Mathf.Max(value.x, Mathf.Max(value.y, value.z));
+
+        static Quaternion ActionAccentRotationFor(MoonlightSpatialActionKind kind, float t)
+        {
+            float wave = Mathf.Sin(Mathf.Clamp01(t) * Mathf.PI * 2f);
+            return kind switch
+            {
+                MoonlightSpatialActionKind.Cook => Quaternion.Euler(0f, 0f, 12f + t * 300f),
+                MoonlightSpatialActionKind.Play => Quaternion.Euler(0f, t * 360f, 45f),
+                MoonlightSpatialActionKind.Garden => Quaternion.Euler(0f, t * 90f, 34f + wave * 12f),
+                MoonlightSpatialActionKind.Read => Quaternion.Euler(0f, wave * 22f, 8f),
+                MoonlightSpatialActionKind.SleepCuddle => Quaternion.Euler(0f, 0f, wave * 18f),
+                _ => Quaternion.identity
+            };
+        }
+
+        public static bool ValidateActionVisualSignatureContract(out string detail)
+        {
+            var samples = new[]
+            {
+                (MoonlightSpatialActionKind.Cook, ""),
+                (MoonlightSpatialActionKind.Play, ""),
+                (MoonlightSpatialActionKind.Garden, ""),
+                (MoonlightSpatialActionKind.Read, ""),
+                (MoonlightSpatialActionKind.SleepCuddle, "Resting"),
+                (MoonlightSpatialActionKind.SleepCuddle, "Cuddled")
+            };
+            var signatures = new HashSet<string>();
+            var primitives = new HashSet<PrimitiveType>();
+            float minimumAspect = float.PositiveInfinity;
+            float minimumExtent = float.PositiveInfinity;
+            foreach (var sample in samples)
+            {
+                signatures.Add(ActionVisualSignatureFor(sample.Item1, sample.Item2));
+                primitives.Add(ActionAccentPrimitiveFor(sample.Item1));
+                Vector3 scale = ActionAccentWorldScaleFor(sample.Item1);
+                float minimumAxis = Mathf.Max(0.001f, Mathf.Min(scale.x, Mathf.Min(scale.y, scale.z)));
+                float maximumAxis = Mathf.Max(scale.x, Mathf.Max(scale.y, scale.z));
+                minimumAspect = Mathf.Min(minimumAspect, maximumAxis / minimumAxis);
+                minimumExtent = Mathf.Min(minimumExtent, maximumAxis);
+            }
+            detail = $"signatures={signatures.Count}/{samples.Length} primitives={primitives.Count} " +
+                $"minAspect={minimumAspect:0.00} minWorldExtent={minimumExtent:0.000} " +
+                $"renderersPerEffect=2";
+            return signatures.Count == samples.Length && primitives.Count >= 3 &&
+                minimumAspect >= 1.40f && minimumExtent >= 0.17f;
         }
 
         void OnDisable()
         {
+            if (_running != null)
+            {
+                StopCoroutine(_running);
+                _running = null;
+            }
             if (_cameraHoldRoutine != null)
             {
                 StopCoroutine(_cameraHoldRoutine);
