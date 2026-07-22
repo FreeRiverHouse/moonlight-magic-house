@@ -704,6 +704,7 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Garden => "GARDEN",
             MoonlightSpatialActionKind.Read => "STORY",
             MoonlightSpatialActionKind.SleepCuddle => "BED",
+            MoonlightSpatialActionKind.Care => "CARE",
             _ => "ACTIVITY"
         };
 
@@ -732,7 +733,8 @@ namespace MoonlightMagicHouse
                 CompactNavigationLabel(MoonlightSpatialActionKind.Play) == "STAR BALL" &&
                 CompactNavigationLabel(MoonlightSpatialActionKind.Garden) == "GARDEN" &&
                 CompactNavigationLabel(MoonlightSpatialActionKind.Read) == "STORY" &&
-                CompactNavigationLabel(MoonlightSpatialActionKind.SleepCuddle) == "BED";
+                CompactNavigationLabel(MoonlightSpatialActionKind.SleepCuddle) == "BED" &&
+                CompactNavigationLabel(MoonlightSpatialActionKind.Care) == "CARE";
             string fallbackLabel = CompactNavigationLabel((MoonlightSpatialActionKind)int.MaxValue);
             bool compactFallbackValid = fallbackLabel == "ACTIVITY" &&
                 IsValidCompactNavigationLabel(fallbackLabel);
@@ -1012,6 +1014,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Garden => new Color(0.34f, 0.68f, 0.42f, 0.96f),
                 MoonlightSpatialActionKind.Read => new Color(0.76f, 0.54f, 0.26f, 0.96f),
                 MoonlightSpatialActionKind.SleepCuddle => new Color(0.71f, 0.48f, 0.72f, 0.96f),
+                MoonlightSpatialActionKind.Care => new Color(0.16f, 0.74f, 0.66f, 0.96f),
                 _ => new Color(0.46f, 0.58f, 0.72f, 0.96f)
             };
         }
@@ -1229,7 +1232,8 @@ namespace MoonlightMagicHouse
             return text.Contains("DECORATED", StringComparison.Ordinal) ||
                 text.Contains("COMBO", StringComparison.Ordinal) ||
                 text.Contains("BLOOMED", StringComparison.Ordinal) ||
-                text.Contains("REMEMBERED", StringComparison.Ordinal);
+                text.Contains("REMEMBERED", StringComparison.Ordinal) ||
+                text.Contains("MOON SPA COMPLETE", StringComparison.Ordinal);
         }
 
         bool ResultZoneStillCurrent()

@@ -50,6 +50,12 @@ namespace MoonlightMagicHouse
 
     public class MoonlightCharacter : MonoBehaviour
     {
+        public const float CareWarmthReward = 18f;
+        public const float CareRestReward = 12f;
+        public const float CareMagicReward = 6f;
+        public const int CareXPReward = 12;
+        public const int CareCoinReward = 2;
+
         // ── State ──────────────────────────────────────────────────────────
         public MoonlightStats stats = new();
         public MoonlightStage stage = MoonlightStage.Moonbud;
@@ -252,6 +258,26 @@ namespace MoonlightMagicHouse
             GainXP(12);
             AchievementSystem.Instance?.Check("room_library");
             if (playHaptic) HapticFeedback.Success();
+        }
+
+        public void CompleteCare(bool playHaptic = true)
+        {
+            stats.warmth = Mathf.Min(100, stats.warmth + CareWarmthReward);
+            stats.rest = Mathf.Min(100, stats.rest + CareRestReward);
+            stats.magic = Mathf.Min(100, stats.magic + CareMagicReward);
+            EarnCoins(CareCoinReward);
+            GainXP(CareXPReward);
+            if (playHaptic) HapticFeedback.Success();
+        }
+
+        public static bool ValidateCareRewardContract(out string detail)
+        {
+            detail = $"warmth={CareWarmthReward:0} rest={CareRestReward:0} " +
+                $"magic={CareMagicReward:0} xp={CareXPReward} coins={CareCoinReward}";
+            return Mathf.Approximately(CareWarmthReward, 18f) &&
+                Mathf.Approximately(CareRestReward, 12f) &&
+                Mathf.Approximately(CareMagicReward, 6f) &&
+                CareXPReward == 12 && CareCoinReward == 2;
         }
 
         // ── Economy ────────────────────────────────────────────────────────

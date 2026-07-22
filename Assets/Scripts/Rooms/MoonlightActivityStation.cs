@@ -9,7 +9,12 @@ namespace MoonlightMagicHouse
         const string MagicFlowerResourcePath = "Models/Props/Garden/MagicFlowerBloom";
         const int CompletionMagicFlowerRequiredInstances = 5;
         const int CompletionMagicFlowerMaxRenderers = 10;
+        const int CareFallbackRendererCount = 15;
+        const int CareFallbackMaterialBudget = 8;
 
+        readonly List<Material> _visualMaterials = new();
+        readonly Dictionary<int, Material> _visualMaterialCache = new();
+        readonly HashSet<int> _visualMaterialIds = new();
         readonly List<Material> _completionMaterials = new();
         readonly Dictionary<int, Material> _completionMaterialCache = new();
         readonly List<Transform> _animatedCompletionDetails = new();
@@ -25,7 +30,25 @@ namespace MoonlightMagicHouse
         public int UniqueMaterialCount { get; private set; }
         public int ColliderCount { get; private set; }
         public int LightCount { get; private set; }
+        public int EnabledColliderCount { get; private set; }
+        public int EnabledLightCount { get; private set; }
         public Vector3 BoundsSize { get; private set; }
+        public bool UsesProceduralFallback { get; private set; }
+        public string VisualSourceQAMarker
+        {
+            get
+            {
+                bool visualReady = VisualRoot != null && RendererCount > 0 &&
+                    EnabledColliderCount == 0 && EnabledLightCount == 0;
+                if (!visualReady) return "MOONLIGHT_PERSISTENT_STATION_VISUAL_INCOMPLETE";
+                if (!UsesProceduralFallback) return "MOONLIGHT_PERSISTENT_STATION_AUTHORED_READY";
+                return Kind == MoonlightSpatialActionKind.Care &&
+                    RendererCount == CareFallbackRendererCount &&
+                    UniqueMaterialCount <= CareFallbackMaterialBudget
+                        ? "MOONLIGHT_CARE_VANITY_PROCEDURAL_FALLBACK_READY"
+                        : "MOONLIGHT_CARE_VANITY_PROCEDURAL_FALLBACK_INCOMPLETE";
+            }
+        }
         public Vector3 AnchorPosition => transform.position;
         public Vector3 AnchorScale => transform.lossyScale;
         public bool HasCompletionState => _completionRoot != null && _completionRoot.activeInHierarchy;
@@ -33,6 +56,7 @@ namespace MoonlightMagicHouse
         public int CompletionUniqueMaterialCount { get; private set; }
         public int CompletionEnabledColliderCount { get; private set; }
         public int CompletionEnabledLightCount { get; private set; }
+        public bool CompletionUsesSeparateMaterials { get; private set; } = true;
         public bool HasCompletionMagicFlowerPrefab =>
             CompletionMagicFlowerInstanceCount == CompletionMagicFlowerRequiredInstances &&
             CompletionMagicFlowerRendererCount > 0;
@@ -58,20 +82,42 @@ namespace MoonlightMagicHouse
             transform.rotation = Quaternion.identity;
             transform.localScale = stageScale;
 
-            var prefab = Resources.Load<GameObject>(resourcePath);
+            bool forceCareFallback = kind == MoonlightSpatialActionKind.Care &&
+                System.Array.Exists(System.Environment.GetCommandLineArgs(), argument =>
+                    string.Equals(argument, "-moonlightForceCareFallback",
+                        System.StringComparison.OrdinalIgnoreCase));
+            var prefab = forceCareFallback ? null : Resources.Load<GameObject>(resourcePath);
+            GameObject instance;
             if (prefab == null)
             {
-                Debug.LogError($"[MoonlightActivityStation] missing authored asset kind={kind} path={resourcePath}");
-                return false;
+                if (kind == MoonlightSpatialActionKind.Care)
+                {
+                    instance = BuildProceduralCareVanity();
+                    UsesProceduralFallback = true;
+                    Debug.LogWarning($"[MoonlightActivityStation] using procedural Care vanity " +
+                        $"path={resourcePath} forced={forceCareFallback}");
+                }
+                else
+                {
+                    Debug.LogError($"[MoonlightActivityStation] missing authored asset kind={kind} path={resourcePath}");
+                    return false;
+                }
+            }
+            else
+            {
+                instance = Instantiate(prefab, transform, false);
+                UsesProceduralFallback = false;
             }
 
-            var instance = Instantiate(prefab, transform, false);
             instance.name = $"Persistent{kind}Visual";
-            instance.transform.localPosition = visualLocalPosition;
-            instance.transform.localRotation = Quaternion.Euler(visualLocalEuler);
-            instance.transform.localScale = visualLocalScale;
+            instance.transform.localPosition = UsesProceduralFallback ? Vector3.zero : visualLocalPosition;
+            instance.transform.localRotation = UsesProceduralFallback
+                ? Quaternion.identity
+                : Quaternion.Euler(visualLocalEuler);
+            instance.transform.localScale = UsesProceduralFallback ? Vector3.one : visualLocalScale;
             VisualRoot = instance.transform;
 
+            _visualMaterialIds.Clear();
             var materialIds = new HashSet<int>();
             var renderers = instance.GetComponentsInChildren<Renderer>(true);
             for (int i = 0; i < renderers.Length; i++)
@@ -81,7 +127,12 @@ namespace MoonlightMagicHouse
                 renderer.receiveShadows = true;
                 renderer.reflectionProbeUsage = ReflectionProbeUsage.BlendProbes;
                 foreach (var material in renderer.sharedMaterials)
-                    if (material != null) materialIds.Add(material.GetInstanceID());
+                {
+                    if (material == null) continue;
+                    int materialId = material.GetInstanceID();
+                    materialIds.Add(materialId);
+                    _visualMaterialIds.Add(materialId);
+                }
             }
 
             var colliders = instance.GetComponentsInChildren<Collider>(true);
@@ -93,6 +144,8 @@ namespace MoonlightMagicHouse
             UniqueMaterialCount = materialIds.Count;
             ColliderCount = colliders.Length;
             LightCount = lights.Length;
+            EnabledColliderCount = CountEnabled(colliders);
+            EnabledLightCount = CountEnabled(lights);
             if (renderers.Length > 0)
             {
                 var bounds = renderers[0].bounds;
@@ -101,21 +154,125 @@ namespace MoonlightMagicHouse
             }
 
             Debug.Log($"[MoonlightActivityStation] ready kind={kind} renderers={RendererCount} " +
-                $"materials={UniqueMaterialCount} colliders={ColliderCount} lights={LightCount} " +
-                $"anchor={AnchorPosition:F2} bounds={BoundsSize:F2} marker=MOONLIGHT_PERSISTENT_STATION_READY");
+                $"materials={UniqueMaterialCount} colliders={EnabledColliderCount}/{ColliderCount} " +
+                $"lights={EnabledLightCount}/{LightCount} fallback={UsesProceduralFallback} " +
+                $"anchor={AnchorPosition:F2} bounds={BoundsSize:F2} marker={VisualSourceQAMarker}");
             return true;
         }
 
+        GameObject BuildProceduralCareVanity()
+        {
+            var root = new GameObject("ProceduralCareVanityVisual");
+            root.transform.SetParent(transform, false);
+
+            VisualPrimitive(root.transform, PrimitiveType.Cube, "VanityBase",
+                new Vector3(0f, 0.36f, 0f), new Vector3(1.42f, 0.66f, 0.58f),
+                new Color(0.28f, 0.66f, 0.64f), 0.02f);
+            VisualPrimitive(root.transform, PrimitiveType.Cube, "VanityTop",
+                new Vector3(0f, 0.72f, 0f), new Vector3(1.58f, 0.10f, 0.72f),
+                new Color(0.92f, 0.88f, 0.78f), 0.02f);
+            VisualPrimitive(root.transform, PrimitiveType.Cube, "LeftDrawer",
+                new Vector3(-0.38f, 0.45f, -0.305f), new Vector3(0.58f, 0.20f, 0.035f),
+                new Color(0.42f, 0.78f, 0.74f), 0.03f);
+            VisualPrimitive(root.transform, PrimitiveType.Cube, "RightDrawer",
+                new Vector3(0.38f, 0.45f, -0.305f), new Vector3(0.58f, 0.20f, 0.035f),
+                new Color(0.42f, 0.78f, 0.74f), 0.03f);
+            VisualPrimitive(root.transform, PrimitiveType.Sphere, "LeftDrawerKnob",
+                new Vector3(-0.38f, 0.45f, -0.35f), Vector3.one * 0.065f,
+                new Color(0.94f, 0.70f, 0.30f), 0.10f);
+            VisualPrimitive(root.transform, PrimitiveType.Sphere, "RightDrawerKnob",
+                new Vector3(0.38f, 0.45f, -0.35f), Vector3.one * 0.065f,
+                new Color(0.94f, 0.70f, 0.30f), 0.10f);
+            VisualPrimitive(root.transform, PrimitiveType.Cylinder, "MoonMirrorFrame",
+                new Vector3(0f, 1.33f, 0.18f), new Vector3(0.58f, 0.055f, 0.68f),
+                new Color(0.94f, 0.70f, 0.30f), 0.10f, new Vector3(90f, 0f, 0f));
+            VisualPrimitive(root.transform, PrimitiveType.Cylinder, "MoonMirrorGlass",
+                new Vector3(0f, 1.33f, 0.115f), new Vector3(0.50f, 0.045f, 0.60f),
+                new Color(0.62f, 0.84f, 0.88f), 0.06f, new Vector3(90f, 0f, 0f));
+            VisualPrimitive(root.transform, PrimitiveType.Cube, "LeftMirrorPost",
+                new Vector3(-0.57f, 1.10f, 0.18f), new Vector3(0.07f, 0.72f, 0.07f),
+                new Color(0.28f, 0.66f, 0.64f), 0.02f);
+            VisualPrimitive(root.transform, PrimitiveType.Cube, "RightMirrorPost",
+                new Vector3(0.57f, 1.10f, 0.18f), new Vector3(0.07f, 0.72f, 0.07f),
+                new Color(0.28f, 0.66f, 0.64f), 0.02f);
+            VisualPrimitive(root.transform, PrimitiveType.Cylinder, "CareBottle",
+                new Vector3(-0.47f, 0.87f, -0.05f), new Vector3(0.11f, 0.18f, 0.11f),
+                new Color(0.82f, 0.50f, 0.68f), 0.04f);
+            VisualPrimitive(root.transform, PrimitiveType.Cylinder, "CareBottleCap",
+                new Vector3(-0.47f, 1.06f, -0.05f), new Vector3(0.065f, 0.035f, 0.065f),
+                new Color(0.94f, 0.70f, 0.30f), 0.10f);
+            VisualPrimitive(root.transform, PrimitiveType.Cylinder, "CareBrushHandle",
+                new Vector3(0.42f, 0.92f, -0.08f), new Vector3(0.045f, 0.24f, 0.045f),
+                new Color(0.82f, 0.50f, 0.68f), 0.04f, new Vector3(0f, 0f, 24f));
+            VisualPrimitive(root.transform, PrimitiveType.Sphere, "CareBrushHead",
+                new Vector3(0.32f, 1.13f, -0.08f), new Vector3(0.13f, 0.09f, 0.10f),
+                new Color(0.92f, 0.88f, 0.78f), 0.02f);
+            VisualPrimitive(root.transform, PrimitiveType.Cylinder, "VanityStool",
+                new Vector3(0f, 0.20f, -0.68f), new Vector3(0.38f, 0.18f, 0.38f),
+                new Color(0.58f, 0.42f, 0.70f), 0.03f);
+            return root;
+        }
+
+        Transform VisualPrimitive(Transform parent, PrimitiveType type, string name,
+            Vector3 localPosition, Vector3 localScale, Color color, float emission,
+            Vector3? localEuler = null)
+        {
+            var go = GameObject.CreatePrimitive(type);
+            go.name = name;
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = localPosition;
+            go.transform.localScale = localScale;
+            go.transform.localRotation = Quaternion.Euler(localEuler ?? Vector3.zero);
+            var collider = go.GetComponent<Collider>();
+            if (collider != null)
+            {
+                collider.enabled = false;
+                Destroy(collider);
+            }
+            go.GetComponent<Renderer>().sharedMaterial = VisualMaterial(color, emission);
+            return go.transform;
+        }
+
+        Material VisualMaterial(Color color, float emission)
+        {
+            var color32 = (Color32)color;
+            int key = color32.r | color32.g << 8 | color32.b << 16 |
+                Mathf.RoundToInt(emission * 100f) << 24;
+            if (_visualMaterialCache.TryGetValue(key, out var cachedMaterial))
+                return cachedMaterial;
+
+            var material = CreateMaterial(color, emission);
+            _visualMaterials.Add(material);
+            _visualMaterialCache.Add(key, material);
+            return material;
+        }
+
         public void ResetCompletionState()
+        {
+            CleanupCompletionState(new HashSet<int>());
+            Debug.Log($"[MoonlightActivityStation] completion-reset kind={Kind} " +
+                "marker=MOONLIGHT_PERSISTENT_ACTIVITY_STATE_RESET");
+        }
+
+        void OnDestroy()
+        {
+            var destroyedMaterialIds = new HashSet<int>();
+            CleanupCompletionState(destroyedMaterialIds);
+            DestroyRuntimeMaterials(_visualMaterials, destroyedMaterialIds);
+            _visualMaterialCache.Clear();
+            _visualMaterialIds.Clear();
+            VisualRoot = null;
+            _magicFlowerPrefab = null;
+        }
+
+        void CleanupCompletionState(HashSet<int> destroyedMaterialIds)
         {
             if (_completionRoot != null)
             {
                 _completionRoot.SetActive(false);
                 Destroy(_completionRoot);
             }
-            for (int i = 0; i < _completionMaterials.Count; i++)
-                if (_completionMaterials[i] != null) Destroy(_completionMaterials[i]);
-            _completionMaterials.Clear();
+            DestroyRuntimeMaterials(_completionMaterials, destroyedMaterialIds);
             _completionMaterialCache.Clear();
             _animatedCompletionDetails.Clear();
             _animatedBasePositions.Clear();
@@ -126,6 +283,7 @@ namespace MoonlightMagicHouse
             CompletionUniqueMaterialCount = 0;
             CompletionEnabledColliderCount = 0;
             CompletionEnabledLightCount = 0;
+            CompletionUsesSeparateMaterials = true;
             CompletionMagicFlowerInstanceCount = 0;
             CompletionMagicFlowerRendererCount = 0;
             CompletionMagicFlowerColliderCount = 0;
@@ -133,8 +291,17 @@ namespace MoonlightMagicHouse
             CompletionMagicFlowerEnabledColliderCount = 0;
             CompletionMagicFlowerEnabledLightCount = 0;
             CompletionMagicFlowerUsesSharedMaterials = true;
-            Debug.Log($"[MoonlightActivityStation] completion-reset kind={Kind} " +
-                "marker=MOONLIGHT_PERSISTENT_ACTIVITY_STATE_RESET");
+        }
+
+        static void DestroyRuntimeMaterials(List<Material> materials, HashSet<int> destroyedMaterialIds)
+        {
+            for (int i = 0; i < materials.Count; i++)
+            {
+                var material = materials[i];
+                if (material == null) continue;
+                if (destroyedMaterialIds.Add(material.GetInstanceID())) Destroy(material);
+            }
+            materials.Clear();
         }
 
         public void ApplyCompletionState()
@@ -157,6 +324,9 @@ namespace MoonlightMagicHouse
                 case MoonlightSpatialActionKind.Read:
                     BuildReadCompletion();
                     break;
+                case MoonlightSpatialActionKind.Care:
+                    BuildCareCompletion();
+                    break;
             }
 
             var renderers = _completionRoot.GetComponentsInChildren<Renderer>(true);
@@ -170,10 +340,13 @@ namespace MoonlightMagicHouse
             }
             CompletionRendererCount = renderers.Length;
             CompletionUniqueMaterialCount = materialIds.Count;
+            foreach (int materialId in materialIds)
+                if (_visualMaterialIds.Contains(materialId)) CompletionUsesSeparateMaterials = false;
             CompletionEnabledColliderCount = CountEnabled(_completionRoot.GetComponentsInChildren<Collider>(true));
             CompletionEnabledLightCount = CountEnabled(_completionRoot.GetComponentsInChildren<Light>(true));
             Debug.Log($"[MoonlightActivityStation] completion-applied kind={Kind} " +
                 $"renderers={CompletionRendererCount} materials={CompletionUniqueMaterialCount} " +
+                $"separateMaterials={CompletionUsesSeparateMaterials} " +
                 $"colliders={CompletionEnabledColliderCount} lights={CompletionEnabledLightCount} " +
                 "marker=MOONLIGHT_PERSISTENT_ACTIVITY_STATE_APPLIED");
         }
@@ -338,6 +511,35 @@ namespace MoonlightMagicHouse
             }
         }
 
+        void BuildCareCompletion()
+        {
+            CompletionPrimitive(PrimitiveType.Cylinder, "CareTray", new Vector3(0f, 0.80f, -0.04f),
+                new Vector3(0.54f, 0.025f, 0.34f), new Color(0.72f, 0.78f, 0.78f), 0.04f);
+            CompletionPrimitive(PrimitiveType.Cube, "TealTowel", new Vector3(-0.18f, 0.86f, 0.02f),
+                new Vector3(0.42f, 0.055f, 0.30f), new Color(0.32f, 0.74f, 0.70f), 0.04f);
+            CompletionPrimitive(PrimitiveType.Cube, "IvoryTowel", new Vector3(-0.16f, 0.93f, 0.02f),
+                new Vector3(0.38f, 0.050f, 0.27f), new Color(0.96f, 0.92f, 0.82f), 0.04f);
+            CompletionPrimitive(PrimitiveType.Cube, "RoseTowel", new Vector3(-0.14f, 0.995f, 0.02f),
+                new Vector3(0.34f, 0.045f, 0.24f), new Color(0.88f, 0.56f, 0.68f), 0.04f);
+            CompletionPrimitive(PrimitiveType.Cylinder, "FinishedCareBottle", new Vector3(0.28f, 0.94f, -0.02f),
+                new Vector3(0.095f, 0.15f, 0.095f), new Color(0.32f, 0.74f, 0.70f), 0.04f);
+            CompletionPrimitive(PrimitiveType.Cylinder, "FinishedCareBottleCap", new Vector3(0.28f, 1.10f, -0.02f),
+                new Vector3(0.060f, 0.025f, 0.060f), new Color(1f, 0.82f, 0.38f), 0.14f);
+            var brush = CompletionPrimitive(PrimitiveType.Cylinder, "FinishedCareBrush",
+                new Vector3(0.36f, 0.91f, 0.15f), new Vector3(0.035f, 0.18f, 0.035f),
+                new Color(0.88f, 0.56f, 0.68f), 0.04f);
+            brush.localRotation = Quaternion.Euler(0f, 0f, 58f);
+            CompletionPrimitive(PrimitiveType.Sphere, "FinishedCareBrushHead", new Vector3(0.22f, 1.02f, 0.15f),
+                new Vector3(0.10f, 0.07f, 0.08f), new Color(0.96f, 0.92f, 0.82f), 0.04f);
+            for (int i = 0; i < 2; i++)
+            {
+                var sparkle = CompletionPrimitive(PrimitiveType.Sphere, $"CareSparkle-{i + 1}",
+                    new Vector3(-0.34f + i * 0.70f, 1.15f + i * 0.08f, -0.02f),
+                    Vector3.one * 0.055f, new Color(1f, 0.82f, 0.38f), 0.14f);
+                AddAnimated(sparkle);
+            }
+        }
+
         Transform CompletionPrimitive(PrimitiveType type, string name, Vector3 localPosition,
             Vector3 localScale, Color color, float emission)
         {
@@ -365,6 +567,14 @@ namespace MoonlightMagicHouse
             if (_completionMaterialCache.TryGetValue(key, out var cachedMaterial))
                 return cachedMaterial;
 
+            var material = CreateMaterial(color, emission);
+            _completionMaterials.Add(material);
+            _completionMaterialCache.Add(key, material);
+            return material;
+        }
+
+        static Material CreateMaterial(Color color, float emission)
+        {
             var shader = Shader.Find("Universal Render Pipeline/Lit")
                 ?? Shader.Find("Standard")
                 ?? Shader.Find("Sprites/Default");
@@ -376,8 +586,6 @@ namespace MoonlightMagicHouse
                 material.EnableKeyword("_EMISSION");
                 material.SetColor("_EmissionColor", color * emission);
             }
-            _completionMaterials.Add(material);
-            _completionMaterialCache.Add(key, material);
             return material;
         }
 

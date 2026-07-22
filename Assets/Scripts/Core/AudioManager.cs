@@ -84,6 +84,10 @@ namespace MoonlightMagicHouse
             RegisterTone("read-turn", 622.25f, 0.19f, 0.16f);
             RegisterTone("read-trace", 739.99f, 0.24f, 0.20f);
             RegisterTone("read-finish", 932.33f, 0.28f, 0.22f);
+            RegisterTone("care-prep", 493.88f, 0.14f, 0.12f);
+            RegisterTone("care-wash", 587.33f, 0.22f, 0.24f);
+            RegisterTone("care-brush", 698.46f, 0.18f, 0.18f);
+            RegisterTone("care-glow", 880.00f, 0.30f, 0.26f);
             RegisterTone("activity-complete", 1046.50f, 0.36f, 0.26f);
             RegisterTone("activity-try-again", 293.66f, 0.16f, 0.08f);
             RegisterTone("sleep", 392.00f, 0.34f, 0.10f);

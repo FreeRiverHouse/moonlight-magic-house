@@ -528,6 +528,25 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] activity-reward-receipt " +
                 $"{rewardReceiptDetail} " +
                 "marker=MOONLIGHT_ACTIVITY_REWARD_RECEIPT_CONTRACT_VERIFIED");
+            if (!MoonlightSpatialActionZone.ValidateCareSequenceContract(
+                    out string careSequenceDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] care-sequence " +
+                    careSequenceDetail);
+                Application.Quit(94);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] care-sequence {careSequenceDetail} " +
+                "marker=MOONLIGHT_CARE_SEQUENCE_CONTRACT_VERIFIED");
+            if (!MoonlightCharacter.ValidateCareRewardContract(out string careRewardDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] care-reward " +
+                    careRewardDetail);
+                Application.Quit(95);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] care-reward {careRewardDetail} " +
+                "marker=MOONLIGHT_CARE_REWARD_CONTRACT_VERIFIED");
             if (!MoonlightActionFeedback.ValidateMasteryCelebrationContract(out string celebrationDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] mastery-celebration {celebrationDetail}");
@@ -909,16 +928,23 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Cook,
                 MoonlightSpatialActionKind.Play,
                 MoonlightSpatialActionKind.Garden,
-                MoonlightSpatialActionKind.Read
+                MoonlightSpatialActionKind.Read,
+                MoonlightSpatialActionKind.Care
             };
             var activityRooms = new[]
             {
                 RoomType.Kitchen,
                 RoomType.LivingRoom,
                 RoomType.Garden,
-                RoomType.Library
+                RoomType.Library,
+                RoomType.Bedroom
             };
+            bool forceCareFallback = args.Any(argument =>
+                string.Equals(argument, "-moonlightForceCareFallback",
+                    System.StringComparison.OrdinalIgnoreCase));
             int completedActivities = 0;
+            int verifiedPersistentStations = 0;
+            var verifiedVisualSignatures = new System.Collections.Generic.HashSet<string>();
 
             for (int activityIndex = 0; activityIndex < activityKinds.Length; activityIndex++)
             {
@@ -939,7 +965,8 @@ namespace MoonlightMagicHouse
                 MoonlightActivityStation persistentStation = null;
                 Vector3 persistentAnchor = Vector3.zero;
                 if (expectedKind is MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
-                    MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read)
+                    MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
+                    MoonlightSpatialActionKind.Care)
                 {
                     persistentStation = MoonlightActivityStation.FindNearestActive(expectedKind, zone.transform.position);
                     if (persistentStation == null || persistentStation.VisualRoot == null ||
@@ -956,6 +983,7 @@ namespace MoonlightMagicHouse
                         MoonlightSpatialActionKind.Play => "03",
                         MoonlightSpatialActionKind.Garden => "04",
                         MoonlightSpatialActionKind.Read => "05",
+                        MoonlightSpatialActionKind.Care => "06",
                         _ => "99"
                     };
                     string persistentShot = Path.Combine(output,
@@ -964,6 +992,47 @@ namespace MoonlightMagicHouse
                     Debug.Log($"[MoonlightGameplayQA][PASS] persistent-station-before action={expectedKind} " +
                         $"anchor={persistentAnchor:F2} renderers={persistentStation.RendererCount} " +
                         $"materials={persistentStation.UniqueMaterialCount} screenshot={persistentShot}");
+                    if (expectedKind == MoonlightSpatialActionKind.Care)
+                    {
+                        bool usesFallback = persistentStation.UsesProceduralFallback;
+                        string expectedCareSourceMarker = persistentStation.UsesProceduralFallback
+                            ? "MOONLIGHT_CARE_VANITY_PROCEDURAL_FALLBACK_READY"
+                            : "MOONLIGHT_PERSISTENT_STATION_AUTHORED_READY";
+                        int careRendererBudget = usesFallback ? 15 : 24;
+                        int careMaterialBudget = usesFallback ? 8 : 12;
+                        bool careRendererPass = persistentStation.RendererCount > 0 &&
+                            persistentStation.RendererCount <= careRendererBudget &&
+                            (!usesFallback || persistentStation.RendererCount == careRendererBudget);
+                        bool careSourcePass = persistentStation.VisualSourceQAMarker ==
+                                expectedCareSourceMarker &&
+                            (!forceCareFallback || persistentStation.UsesProceduralFallback) &&
+                            careRendererPass &&
+                            persistentStation.UniqueMaterialCount > 0 &&
+                            persistentStation.UniqueMaterialCount <= careMaterialBudget &&
+                            persistentStation.EnabledColliderCount == 0 &&
+                            persistentStation.EnabledLightCount == 0;
+                        if (!careSourcePass)
+                        {
+                            Debug.LogError("[MoonlightGameplayQA][FAIL] care-vanity-source " +
+                                $"forced={forceCareFallback} fallback={persistentStation.UsesProceduralFallback} " +
+                                $"marker={persistentStation.VisualSourceQAMarker}/{expectedCareSourceMarker} " +
+                                $"renderers={persistentStation.RendererCount}/" +
+                                $"{(usesFallback ? "exactly-15" : "1-24")} " +
+                                $"materials={persistentStation.UniqueMaterialCount}/1-{careMaterialBudget} " +
+                                $"colliders={persistentStation.EnabledColliderCount}/" +
+                                $"{persistentStation.ColliderCount} lights={persistentStation.EnabledLightCount}/" +
+                                $"{persistentStation.LightCount}");
+                            Application.Quit(96);
+                            yield break;
+                        }
+                        Debug.Log("[MoonlightGameplayQA][PASS] care-vanity-source " +
+                            $"forced={forceCareFallback} fallback={persistentStation.UsesProceduralFallback} " +
+                            $"renderers={persistentStation.RendererCount}/{careRendererBudget} " +
+                            $"materials={persistentStation.UniqueMaterialCount}/{careMaterialBudget} " +
+                            $"colliders={persistentStation.EnabledColliderCount} " +
+                            $"lights={persistentStation.EnabledLightCount} " +
+                            $"marker={persistentStation.VisualSourceQAMarker}");
+                    }
                 }
                 bool verifyRewards = true;
                 moonlight.stats.wonder = 30f;
@@ -1028,9 +1097,36 @@ namespace MoonlightMagicHouse
                 if (expectIPadHud)
                     touchJoystick.ClearInputForQA();
 
+                var verifiedCareContacts = new System.Collections.Generic.HashSet<string>();
                 for (int step = 0; step < zone.RequiredSteps; step++)
                 {
                     var expected = zone.RequiredGesture;
+                    if (zone.Kind == MoonlightSpatialActionKind.Care)
+                    {
+                        MoonlightGestureKind expectedCareGesture = step switch
+                        {
+                            0 => MoonlightGestureKind.Tap,
+                            1 => MoonlightGestureKind.Circle,
+                            2 => MoonlightGestureKind.Swipe,
+                            _ => MoonlightGestureKind.Hold
+                        };
+                        string expectedCareCue = step switch
+                        {
+                            0 => "care-prep",
+                            1 => "care-wash",
+                            2 => "care-brush",
+                            _ => "care-glow"
+                        };
+                        if (expected != expectedCareGesture ||
+                            MoonlightSpatialActionZone.CareCueForStep(step) != expectedCareCue)
+                        {
+                            Debug.LogError($"[MoonlightGameplayQA][FAIL] care-gesture-cue step={step + 1} " +
+                                $"gesture={expected}/{expectedCareGesture} " +
+                                $"cue={MoonlightSpatialActionZone.CareCueForStep(step)}/{expectedCareCue}");
+                            Application.Quit(97);
+                            yield break;
+                        }
+                    }
                     if (expectIPadHud)
                     {
                         yield return null;
@@ -1073,6 +1169,23 @@ namespace MoonlightMagicHouse
                     bool acceptedActionStarted = pad.SubmitSynthetic(expected, 0.95f);
                     yield return new WaitForSeconds(0.08f);
                     var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
+                    if (zone.Kind == MoonlightSpatialActionKind.Care)
+                    {
+                        string expectedCareCue = MoonlightSpatialActionZone.CareCueForStep(step);
+                        string expectedAudioCue = step == zone.RequiredSteps - 1
+                            ? "activity-complete"
+                            : expectedCareCue;
+                        if (zone.LastCueKey != expectedCareCue || audio.LastCueKey != expectedAudioCue)
+                        {
+                            Debug.LogError($"[MoonlightGameplayQA][FAIL] care-live-cue step={step + 1} " +
+                                $"zone={zone.LastCueKey}/{expectedCareCue} " +
+                                $"audio={audio.LastCueKey}/{expectedAudioCue}");
+                            Application.Quit(102);
+                            yield break;
+                        }
+                        Debug.Log($"[MoonlightGameplayQA][PASS] care-live-cue " +
+                            $"step={step + 1}/4 zone={zone.LastCueKey} audio={audio.LastCueKey}");
+                    }
                     if (expectIPadHud)
                     {
                         bool acceptedMovementNeutralized = acceptedActionStarted &&
@@ -1192,7 +1305,8 @@ namespace MoonlightMagicHouse
                             $"step={step + 1} marker={ui.RoomNavigationQAMarker}");
                     feedback = moonlight.GetComponent<MoonlightActionFeedback>();
                     if (zone.Kind is MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
-                        MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read)
+                        MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
+                        MoonlightSpatialActionKind.Care)
                     {
                         string expectedVisualSignature = MoonlightActionFeedback.ActionVisualSignatureFor(
                             zone.Kind, step, feedback != null ? feedback.StateText : "");
@@ -1223,15 +1337,19 @@ namespace MoonlightMagicHouse
                             {
                                 0 => "seed-bed", 1 => "watering-spout", 2 => "flower-bed", _ => "bloom-center"
                             },
-                            _ => step switch
+                            MoonlightSpatialActionKind.Read => step switch
                             {
                                 0 => "book-cover", 1 => "turning-page", 2 => "bookmark-trace", _ => "memory-motes"
+                            },
+                            _ => step switch
+                            {
+                                0 => "towel-tray", 1 => "bubble-brush", 2 => "moon-comb", _ => "vanity-mirror"
                             }
                         };
 
                         const float contactWeightThreshold = 0.20f;
                         bool requiresCameraReadableFacing = zone.Kind is MoonlightSpatialActionKind.Garden or
-                            MoonlightSpatialActionKind.Read;
+                            MoonlightSpatialActionKind.Read or MoonlightSpatialActionKind.Care;
                         const float cameraFacingMinAngle = 20f;
                         const float cameraFacingMaxAngle = 38f;
                         float contactMaxDistance = zone.Kind is MoonlightSpatialActionKind.Garden or
@@ -1241,7 +1359,8 @@ namespace MoonlightMagicHouse
                             MoonlightSpatialActionKind.Cook => 1.55f,
                             MoonlightSpatialActionKind.Play => 2.0f,
                             MoonlightSpatialActionKind.Garden => 1.75f,
-                            _ => 1.65f
+                            MoonlightSpatialActionKind.Read => 1.65f,
+                            _ => 1.75f
                         };
                         float contactDeadline = Time.time + 1.10f;
                         bool observedContact = false;
@@ -1364,13 +1483,16 @@ namespace MoonlightMagicHouse
                             Application.Quit(44);
                             yield break;
                         }
+                        if (zone.Kind == MoonlightSpatialActionKind.Care)
+                            verifiedCareContacts.Add(peakContactTarget);
 
                         string contactPrefix = zone.Kind switch
                         {
                             MoonlightSpatialActionKind.Cook => "02",
                             MoonlightSpatialActionKind.Play => "03",
                             MoonlightSpatialActionKind.Garden => "04",
-                            _ => "05"
+                            MoonlightSpatialActionKind.Read => "05",
+                            _ => "06"
                         };
                         string contactShot = Path.Combine(output,
                             $"{contactPrefix}_{zone.Kind.ToString().ToLowerInvariant()}_step_{step + 1}_contact.png");
@@ -1432,7 +1554,8 @@ namespace MoonlightMagicHouse
                     }
 
                     if (zone.Kind is MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
-                        MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read)
+                        MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
+                        MoonlightSpatialActionKind.Care)
                     {
                         string expectedMotionProfile = zone.Kind switch
                         {
@@ -1455,6 +1578,11 @@ namespace MoonlightMagicHouse
                             {
                                 0 => "read-open-settle", 1 => "read-turn-swipe",
                                 2 => "read-trace-circle", _ => "read-remember-glow"
+                            },
+                            MoonlightSpatialActionKind.Care => step switch
+                            {
+                                0 => "care-towel-warm-press", 1 => "care-bubble-brush-circle",
+                                2 => "care-moon-comb-sweep", _ => "care-mirror-glow-hold"
                             },
                             _ => string.Empty
                         };
@@ -1490,6 +1618,7 @@ namespace MoonlightMagicHouse
                             MoonlightSpatialActionKind.Play => "play-wide-arena",
                             MoonlightSpatialActionKind.Garden => "garden-close-bloom",
                             MoonlightSpatialActionKind.Read => "read-intimate-nook",
+                            MoonlightSpatialActionKind.Care => "care-intimate-vanity",
                             _ => "activity-standard"
                         };
                         if (activityCamera.ActivityFocusFramingProfile != expectedFramingProfile)
@@ -1688,6 +1817,74 @@ namespace MoonlightMagicHouse
                                 $"bounds={stage.AuthoredReadingNookBoundsSize:F2} " +
                                 "marker=MOONLIGHT_AUTHORED_READING_NOOK_READY");
                         }
+                        else if (zone.Kind == MoonlightSpatialActionKind.Care)
+                        {
+                            bool stageUsesFallback = stage.UsesProceduralCareStationFallback;
+                            string expectedStageSource = stageUsesFallback
+                                ? "persistent-procedural-fallback"
+                                : "authored";
+                            string expectedStageMarker = stageUsesFallback
+                                ? "MOONLIGHT_CARE_VANITY_PROCEDURAL_FALLBACK_READY"
+                                : "MOONLIGHT_AUTHORED_CARE_STATION_READY";
+                            bool rendererCountPass = stage.CareStationRendererCount > 0 &&
+                                stage.CareStationRendererCount <= stage.CareStationRendererBudget &&
+                                (!stageUsesFallback || stage.CareStationRendererCount ==
+                                    stage.CareStationRendererBudget);
+                            bool authoredMetricsPass = stageUsesFallback
+                                ? stage.AuthoredCareStationRendererCount == 0 &&
+                                  stage.AuthoredCareStationMaterialCount == 0 &&
+                                  stage.AuthoredCareStationColliderCount == 0 &&
+                                  stage.AuthoredCareStationLightCount == 0 &&
+                                  stage.AuthoredCareStationBoundsSize == Vector3.zero
+                                : stage.AuthoredCareStationRendererCount == stage.CareStationRendererCount &&
+                                  stage.AuthoredCareStationMaterialCount == stage.CareStationMaterialCount &&
+                                  stage.AuthoredCareStationColliderCount == stage.CareStationColliderCount &&
+                                  stage.AuthoredCareStationLightCount == stage.CareStationLightCount &&
+                                  stage.AuthoredCareStationBoundsSize == stage.CareStationBoundsSize;
+                            string rendererContract = stageUsesFallback
+                                ? $"exactly-{stage.CareStationRendererBudget}"
+                                : $"1-{stage.CareStationRendererBudget}";
+                            bool careStationSourcePass =
+                                stageUsesFallback == persistentStation.UsesProceduralFallback &&
+                                stage.HasAuthoredCareStation == !stageUsesFallback &&
+                                authoredMetricsPass &&
+                                stage.CareStationVisualSource == expectedStageSource &&
+                                stage.CareStationSourceQAMarker == expectedStageMarker &&
+                                rendererCountPass &&
+                                stage.CareStationMaterialCount > 0 &&
+                                stage.CareStationMaterialCount <= stage.CareStationMaterialBudget &&
+                                stage.CareStationColliderCount == 0 &&
+                                stage.CareStationLightCount == 0 &&
+                                stage.CareStationBoundsSize.x >= 1.20f &&
+                                stage.CareStationBoundsSize.y >= 0.60f &&
+                                stage.CareStationBoundsSize.z >= 0.45f;
+                            if (!careStationSourcePass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] care-station-source " +
+                                    $"source={stage.CareStationVisualSource}/{expectedStageSource} " +
+                                    $"fallback={stageUsesFallback}/{persistentStation.UsesProceduralFallback} " +
+                                    $"authored={stage.HasAuthoredCareStation}/{!stageUsesFallback} " +
+                                    $"authoredMetrics={authoredMetricsPass} " +
+                                    $"marker={stage.CareStationSourceQAMarker}/{expectedStageMarker} " +
+                                    $"renderers={stage.CareStationRendererCount}/" +
+                                    $"{rendererContract} " +
+                                    $"materials={stage.CareStationMaterialCount}/1-{stage.CareStationMaterialBudget} " +
+                                    $"colliders={stage.CareStationColliderCount} " +
+                                    $"lights={stage.CareStationLightCount} " +
+                                    $"bounds={stage.CareStationBoundsSize:F2}");
+                                Application.Quit(98);
+                                yield break;
+                            }
+                            Debug.Log("[MoonlightGameplayQA][PASS] care-station-source " +
+                                $"source={stage.CareStationVisualSource} " +
+                                $"fallback={stageUsesFallback} authored={stage.HasAuthoredCareStation} " +
+                                $"renderers={stage.CareStationRendererCount}/{stage.CareStationRendererBudget} " +
+                                $"materials={stage.CareStationMaterialCount}/{stage.CareStationMaterialBudget} " +
+                                $"colliders={stage.CareStationColliderCount} " +
+                                $"lights={stage.CareStationLightCount} " +
+                                $"bounds={stage.CareStationBoundsSize:F2} " +
+                                $"marker={stage.CareStationSourceQAMarker}");
+                        }
 
                         string phase = zone.Kind switch
                         {
@@ -1695,6 +1892,7 @@ namespace MoonlightMagicHouse
                             MoonlightSpatialActionKind.Play => step switch { 0 => "throw", 1 => "chase", 2 => "jump", _ => "catch" },
                             MoonlightSpatialActionKind.Garden => step switch { 0 => "plant", 1 => "water", 2 => "tend", _ => "bloom" },
                             MoonlightSpatialActionKind.Read => step switch { 0 => "open", 1 => "turn", 2 => "trace", _ => "remember" },
+                            MoonlightSpatialActionKind.Care => step switch { 0 => "prep", 1 => "wash", 2 => "brush", _ => "glow" },
                             _ => "step"
                         };
                         string prefix = zone.Kind switch
@@ -1703,6 +1901,7 @@ namespace MoonlightMagicHouse
                             MoonlightSpatialActionKind.Play => "03",
                             MoonlightSpatialActionKind.Garden => "04",
                             MoonlightSpatialActionKind.Read => "05",
+                            MoonlightSpatialActionKind.Care => "06",
                             _ => "99"
                         };
                         string stepShot = Path.Combine(output,
@@ -1712,6 +1911,8 @@ namespace MoonlightMagicHouse
                             $"step={step + 1}/{zone.RequiredSteps} renderers={stage.ActiveRendererCount} " +
                             $"materials={stage.ActiveUniqueMaterialCount} lights={stage.ActiveLightCount} screenshot={stepShot}");
                     }
+                    if (feedback != null && !string.IsNullOrEmpty(feedback.ActionVisualSignature))
+                        verifiedVisualSignatures.Add(feedback.ActionVisualSignature);
 
                     if (step == zone.RequiredSteps - 1)
                     {
@@ -1747,6 +1948,13 @@ namespace MoonlightMagicHouse
                                     Approximately(moonlight.stats.hunger - rewardHunger, 0f) &&
                                     Approximately(moonlight.stats.rest - rewardRest, 6f) &&
                                     moonlight.xp - rewardXp == 12 && moonlight.coins - rewardCoins == 5,
+                                MoonlightSpatialActionKind.Care =>
+                                    Approximately(moonlight.stats.wonder - rewardWonder, 0f) &&
+                                    Approximately(moonlight.stats.warmth - rewardWarmth, 18f) &&
+                                    Approximately(moonlight.stats.magic - rewardMagic, 6f) &&
+                                    Approximately(moonlight.stats.hunger - rewardHunger, 0f) &&
+                                    Approximately(moonlight.stats.rest - rewardRest, 12f) &&
+                                    moonlight.xp - rewardXp == 12 && moonlight.coins - rewardCoins == 5,
                                 _ => false
                             };
                             if (!rewardPassed)
@@ -1775,6 +1983,7 @@ namespace MoonlightMagicHouse
                             MoonlightSpatialActionKind.Play => "03_after_play_gesture.png",
                             MoonlightSpatialActionKind.Garden => "04_after_gardening_gesture.png",
                             MoonlightSpatialActionKind.Read => "05_after_reading_gesture.png",
+                            MoonlightSpatialActionKind.Care => "06_after_care_gesture.png",
                             _ => "activity.png"
                         };
                         string shot = Path.Combine(output, fileName);
@@ -1909,12 +2118,37 @@ namespace MoonlightMagicHouse
                                 $"actionInteractable={ui.ActionButtonQAInteractable} " +
                                 "marker=MOONLIGHT_ACTIVITY_FINAL_HUD_VERIFIED " +
                                 "marker=MOONLIGHT_ACTIVITY_FINAL_CTA_SEMANTICS_LIVE_VERIFIED");
+                        if (zone.Kind == MoonlightSpatialActionKind.Care)
+                        {
+                            string careResult = ui != null && ui.resultLabel != null
+                                ? ui.resultLabel.text
+                                : "";
+                            bool careUiPass = MoonlightUI.CompactNavigationLabel(zone.Kind) == "CARE" &&
+                                careResult.Contains("MOON SPA COMPLETE") &&
+                                careResult.Contains("+18 WARMTH") &&
+                                careResult.Contains("+12 REST") &&
+                                careResult.Contains("+6 MAGIC") &&
+                                careResult.Contains("+12 XP") &&
+                                careResult.Contains("+5 COINS");
+                            if (!careUiPass)
+                            {
+                                Debug.LogError($"[MoonlightGameplayQA][FAIL] care-ui-receipt " +
+                                    $"label={MoonlightUI.CompactNavigationLabel(zone.Kind)} " +
+                                    $"result=\"{careResult.Replace('\n', '/')}\"");
+                                Application.Quit(99);
+                                yield break;
+                            }
+                            Debug.Log($"[MoonlightGameplayQA][PASS] care-ui-receipt " +
+                                $"label=CARE result=\"{careResult.Replace('\n', '/')}\" " +
+                                "marker=MOONLIGHT_CARE_UI_RECEIPT_VERIFIED");
+                        }
                         string presentationPrefix = zone.Kind switch
                         {
                             MoonlightSpatialActionKind.Cook => "02",
                             MoonlightSpatialActionKind.Play => "03",
                             MoonlightSpatialActionKind.Garden => "04",
                             MoonlightSpatialActionKind.Read => "05",
+                            MoonlightSpatialActionKind.Care => "06",
                             _ => "99"
                         };
                         string presentationShot = Path.Combine(output,
@@ -1941,6 +2175,14 @@ namespace MoonlightMagicHouse
                 {
                     Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-loop action={zone.Kind} step={zone.ProgressStep}");
                     Application.Quit(26);
+                    yield break;
+                }
+                if (expectedKind == MoonlightSpatialActionKind.Care && verifiedCareContacts.Count != 4)
+                {
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] care-live-contacts " +
+                        $"count={verifiedCareContacts.Count}/4 " +
+                        $"targets={string.Join(",", verifiedCareContacts.OrderBy(target => target))}");
+                    Application.Quit(100);
                     yield break;
                 }
                 if (persistentStation != null)
@@ -1980,6 +2222,7 @@ namespace MoonlightMagicHouse
                         MoonlightSpatialActionKind.Garden =>
                             5 + persistentStation.CompletionMagicFlowerRendererCount,
                         MoonlightSpatialActionKind.Read => 10,
+                        MoonlightSpatialActionKind.Care => 10,
                         _ => 0
                     };
                     int completionRendererBudget = expectedKind == MoonlightSpatialActionKind.Garden
@@ -2004,7 +2247,9 @@ namespace MoonlightMagicHouse
                         !persistentStation.HasCompletionState ||
                         persistentStation.CompletionRendererCount != expectedCompletionRenderers ||
                         persistentStation.CompletionRendererCount > completionRendererBudget ||
+                        persistentStation.CompletionUniqueMaterialCount <= 0 ||
                         persistentStation.CompletionUniqueMaterialCount > completionMaterialBudget ||
+                        !persistentStation.CompletionUsesSeparateMaterials ||
                         persistentStation.CompletionEnabledColliderCount != 0 ||
                         persistentStation.CompletionEnabledLightCount != 0 ||
                         !completionMagicFlowerPass)
@@ -2014,6 +2259,7 @@ namespace MoonlightMagicHouse
                             $"renderers={persistentStation.CompletionRendererCount}/{expectedCompletionRenderers} " +
                             $"budget={completionRendererBudget} " +
                             $"materials={persistentStation.CompletionUniqueMaterialCount}/<={completionMaterialBudget} " +
+                            $"separateMaterials={persistentStation.CompletionUsesSeparateMaterials} " +
                             $"colliders={persistentStation.CompletionEnabledColliderCount} " +
                             $"lights={persistentStation.CompletionEnabledLightCount} " +
                             $"magicFlower={completionMagicFlowerPass} " +
@@ -2041,6 +2287,7 @@ namespace MoonlightMagicHouse
                         MoonlightSpatialActionKind.Play => "03",
                         MoonlightSpatialActionKind.Garden => "04",
                         MoonlightSpatialActionKind.Read => "05",
+                        MoonlightSpatialActionKind.Care => "06",
                         _ => "99"
                     };
                     string reentryShot = Path.Combine(output,
@@ -2048,16 +2295,33 @@ namespace MoonlightMagicHouse
                     yield return Capture(reentryShot);
                     Debug.Log($"[MoonlightGameplayQA][PASS] persistent-station-reentry action={expectedKind} " +
                         $"anchor={persistentStation.AnchorPosition:F2} renderers={persistentStation.CompletionRendererCount} " +
-                        $"materials={persistentStation.CompletionUniqueMaterialCount} screenshot={reentryShot} " +
+                        $"materials={persistentStation.CompletionUniqueMaterialCount} " +
+                        $"separateMaterials={persistentStation.CompletionUsesSeparateMaterials} screenshot={reentryShot} " +
                         "marker=MOONLIGHT_PERSISTENT_ACTIVITY_STATE_VERIFIED " +
                         "marker=MOONLIGHT_PERSISTENT_ACTIVITY_REENTRY_VERIFIED");
+                    verifiedPersistentStations++;
                 }
                 completedActivities++;
             }
 
-            if (audio.CuePlayCount < 18)
+            if (completedActivities != 5 || verifiedPersistentStations != 5 ||
+                verifiedVisualSignatures.Count != 20)
             {
-                Debug.LogError($"[MoonlightGameplayQA][FAIL] audio cues count={audio.CuePlayCount}");
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] scored-activity-matrix " +
+                    $"completedActivities={completedActivities}/5 " +
+                    $"persistentStations={verifiedPersistentStations}/5 " +
+                    $"signatures={verifiedVisualSignatures.Count}/20");
+                Application.Quit(101);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] scored-activity-matrix " +
+                $"completedActivities={completedActivities}/5 " +
+                $"persistentStations={verifiedPersistentStations}/5 " +
+                $"signatures={verifiedVisualSignatures.Count}/20 " +
+                "marker=MOONLIGHT_FIVE_ACTIVITY_MATRIX_VERIFIED");
+            if (audio.CuePlayCount < 23)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] audio cues count={audio.CuePlayCount}/23");
                 Application.Quit(27);
                 yield break;
             }

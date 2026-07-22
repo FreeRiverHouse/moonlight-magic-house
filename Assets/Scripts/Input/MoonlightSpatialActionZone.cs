@@ -10,7 +10,8 @@ namespace MoonlightMagicHouse
         Play,
         Garden,
         Read,
-        SleepCuddle
+        SleepCuddle,
+        Care
     }
 
     public class MoonlightSpatialActionZone : MonoBehaviour
@@ -56,7 +57,8 @@ namespace MoonlightMagicHouse
         public int RequiredSteps => kind switch
         {
             MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
-                MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read => 4,
+                MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
+                MoonlightSpatialActionKind.Care => 4,
             _ => 1
         };
         public MoonlightGestureKind RequiredGesture => kind switch
@@ -89,6 +91,7 @@ namespace MoonlightMagicHouse
                 2 => MoonlightGestureKind.Circle,
                 _ => MoonlightGestureKind.Hold
             },
+            MoonlightSpatialActionKind.Care => CareGestureForStep(_progressStep),
             _ => MoonlightGestureKind.Tap
         };
         public float LastGestureScore { get; private set; }
@@ -146,6 +149,7 @@ namespace MoonlightMagicHouse
                     _ => "REMEMBER"
                 },
                 MoonlightSpatialActionKind.SleepCuddle => moonlight != null && moonlight.stats.rest < 82f ? "SLEEP" : "CUDDLE",
+                MoonlightSpatialActionKind.Care => CareLabelForStep(_progressStep),
                 _ => "ACTION"
             };
         }
@@ -322,6 +326,26 @@ namespace MoonlightMagicHouse
                     AchievementSystem.Instance?.OnFirstCuddle();
                     return "CUDDLED  /  " +
                         BuildRewardReceipt(cuddleBefore, CaptureRewards(moonlight));
+
+                case MoonlightSpatialActionKind.Care:
+                    if (!TryBeginFeedback(feedback, "Caring")) return feedback.InputBlockReason;
+                    RecordSuccessfulGesture();
+                    LastCueKey = CareCueForStep(_progressStep);
+                    AudioManager.Instance?.Play(LastCueKey);
+                    _progressStep++;
+                    if (_progressStep == 1)
+                        return $"SPA PREPARED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: CIRCLE TO WASH";
+                    if (_progressStep == 2)
+                        return $"MOONLIGHT WASHED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: SWIPE TO BRUSH";
+                    if (_progressStep == 3)
+                        return $"HAIR BRUSHED  /  {StepGrade()}  COMBO x{_currentCombo}  /  NEXT: HOLD TO GLOW";
+                    RewardSnapshot careBefore = CaptureRewards(moonlight);
+                    moonlight.CompleteCare(false);
+                    string careMastery = CompleteActivitySession(moonlight);
+                    _progressStep = 0;
+                    AudioManager.Instance?.Play("activity-complete");
+                    return $"MOON SPA COMPLETE  /  {careMastery}  /  " +
+                        BuildRewardReceipt(careBefore, CaptureRewards(moonlight));
             }
 
             return "Moonlight looks around the room.";
@@ -356,6 +380,57 @@ namespace MoonlightMagicHouse
             MoonlightGestureKind.ZigZag => "DRAW A ZIG-ZAG TO",
             _ => "TAP TO"
         };
+
+        public static MoonlightGestureKind CareGestureForStep(int step) => step switch
+        {
+            0 => MoonlightGestureKind.Tap,
+            1 => MoonlightGestureKind.Circle,
+            2 => MoonlightGestureKind.Swipe,
+            _ => MoonlightGestureKind.Hold
+        };
+
+        public static string CareLabelForStep(int step) => step switch
+        {
+            0 => "PREP",
+            1 => "WASH",
+            2 => "BRUSH",
+            _ => "GLOW"
+        };
+
+        public static string CareCueForStep(int step) => step switch
+        {
+            0 => "care-prep",
+            1 => "care-wash",
+            2 => "care-brush",
+            _ => "care-glow"
+        };
+
+        public static bool ValidateCareSequenceContract(out string detail)
+        {
+            MoonlightGestureKind[] gestures =
+            {
+                MoonlightGestureKind.Tap,
+                MoonlightGestureKind.Circle,
+                MoonlightGestureKind.Swipe,
+                MoonlightGestureKind.Hold
+            };
+            string[] labels = { "PREP", "WASH", "BRUSH", "GLOW" };
+            string[] cues = { "care-prep", "care-wash", "care-brush", "care-glow" };
+            bool enumOrderPass = (int)MoonlightSpatialActionKind.Care ==
+                (int)MoonlightSpatialActionKind.SleepCuddle + 1;
+            bool pass = enumOrderPass;
+            for (int step = 0; step < 4; step++)
+            {
+                pass &= CareGestureForStep(step) == gestures[step];
+                pass &= CareLabelForStep(step) == labels[step];
+                pass &= CareCueForStep(step) == cues[step];
+            }
+
+            detail = $"enumAfterSleepCuddle={enumOrderPass} " +
+                "gestures=Tap,Circle,Swipe,Hold labels=PREP,WASH,BRUSH,GLOW " +
+                "cues=care-prep,care-wash,care-brush,care-glow";
+            return pass;
+        }
 
         void RecordSuccessfulGesture()
         {

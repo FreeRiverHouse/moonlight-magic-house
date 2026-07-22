@@ -27,6 +27,9 @@ namespace MoonlightMagicHouse
         [SerializeField] Vector3 gardenFocusOffset = new Vector3(3.35f, 2.82f, -4.05f);
         [SerializeField, Range(0.85f, 1.10f)] float readDistanceScale = 0.88f;
         [SerializeField] Vector3 readFocusOffset = new Vector3(3.05f, 2.55f, -3.65f);
+        [SerializeField, Range(0.80f, 1.05f)] float careDistanceScale = 0.84f;
+        [SerializeField] Vector3 careFocusOffset = new Vector3(2.72f, 2.32f, -3.18f);
+        [SerializeField, Range(0f, 1f)] float careAnchorWeight = 0.78f;
         [SerializeField, Min(0.05f)] float activityFocusInTime = 0.28f;
         [SerializeField, Min(0.05f)] float activityFocusOutTime = 0.42f;
         [SerializeField] float activityLookHeight = 0.78f;
@@ -34,6 +37,7 @@ namespace MoonlightMagicHouse
         [SerializeField] float playLookHeight = 0.82f;
         [SerializeField] float gardenLookHeight = 0.70f;
         [SerializeField] float readLookHeight = 0.66f;
+        [SerializeField] float careLookHeight = 0.74f;
 
         float   _orbitX;
         Vector3 _activeOffset;
@@ -63,6 +67,7 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Play => "play-wide-arena",
             MoonlightSpatialActionKind.Garden => "garden-close-bloom",
             MoonlightSpatialActionKind.Read => "read-intimate-nook",
+            MoonlightSpatialActionKind.Care => "care-intimate-vanity",
             _ => "activity-standard"
         };
 
@@ -170,6 +175,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Play => playDistanceScale,
                 MoonlightSpatialActionKind.Garden => gardenDistanceScale,
                 MoonlightSpatialActionKind.Read => readDistanceScale,
+                MoonlightSpatialActionKind.Care => careDistanceScale,
                 _ => activityDistanceScale
             };
             var focusOffset = _activityFocusKind switch
@@ -178,6 +184,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Play => playFocusOffset * focusDistanceScale,
                 MoonlightSpatialActionKind.Garden => gardenFocusOffset * focusDistanceScale,
                 MoonlightSpatialActionKind.Read => readFocusOffset * focusDistanceScale,
+                MoonlightSpatialActionKind.Care => careFocusOffset * focusDistanceScale,
                 _ => _activeOffset * focusDistanceScale
             };
             var blendedOffset = Vector3.Lerp(_activeOffset, focusOffset, focusBlend);
@@ -189,6 +196,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Play => playLookHeight,
                 MoonlightSpatialActionKind.Garden => gardenLookHeight,
                 MoonlightSpatialActionKind.Read => readLookHeight,
+                MoonlightSpatialActionKind.Care => careLookHeight,
                 _ => activityLookHeight
             };
             var activityLookPoint = _activityFocusCenter + Vector3.up * focusLookHeight;
@@ -213,6 +221,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Play => 0.72f,
                 MoonlightSpatialActionKind.Garden => 0.68f,
                 MoonlightSpatialActionKind.Read => 0.66f,
+                MoonlightSpatialActionKind.Care => careAnchorWeight,
                 _ => 0.5f
             };
             _activityFocusCenter = Vector3.Lerp(moonlightPosition, activityAnchor, anchorWeight);

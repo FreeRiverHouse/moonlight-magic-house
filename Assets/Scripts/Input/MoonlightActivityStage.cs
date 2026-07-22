@@ -12,6 +12,7 @@ namespace MoonlightMagicHouse
         const float ActivityLightSpotAngle = 72f;
         const float ActivityLightBaseIntensity = 0.32f;
         const float ActivityLightPulseIntensity = 0.53f;
+        const float CareFinalLingerSeconds = 4.6f;
 
         enum ActivitySurfaceProfile
         {
@@ -66,6 +67,16 @@ namespace MoonlightMagicHouse
         Transform[] _readMotes;
         Transform _bookmark;
         Transform _authoredReadingNook;
+        Transform[] _careProps;
+        Transform[] _careBubbles;
+        Transform[] _careMotes;
+        Transform _careTowelTray;
+        Transform _careTowel;
+        Transform _careBrush;
+        Transform _careComb;
+        Transform _careMirror;
+        Transform _careMirrorAura;
+        Transform _authoredCareStation;
         TrailRenderer _ballTrail;
         Light _activityLight;
         MoonlightActivityStation _persistentStation;
@@ -157,6 +168,34 @@ namespace MoonlightMagicHouse
         public int AuthoredReadingNookColliderCount { get; private set; }
         public int AuthoredReadingNookLightCount { get; private set; }
         public Vector3 AuthoredReadingNookBoundsSize { get; private set; }
+        public bool HasAuthoredCareStation => _authoredCareStation != null &&
+            !UsesProceduralCareStationFallback;
+        public bool UsesProceduralCareStationFallback { get; private set; }
+        public string CareStationVisualSource { get; private set; } = "missing";
+        public string CareStationSourceQAMarker { get; private set; } =
+            "MOONLIGHT_CARE_STATION_SOURCE_MISSING";
+        public int CareStationRendererCount { get; private set; }
+        public int CareStationMaterialCount { get; private set; }
+        public int CareStationColliderCount { get; private set; }
+        public int CareStationLightCount { get; private set; }
+        public Vector3 CareStationBoundsSize { get; private set; }
+        public int CareStationRendererBudget => CareStationVisualSource switch
+        {
+            "persistent-procedural-fallback" => 15,
+            "stage-procedural-fallback" => 4,
+            _ => 24
+        };
+        public int CareStationMaterialBudget => CareStationVisualSource switch
+        {
+            "persistent-procedural-fallback" => 8,
+            "stage-procedural-fallback" => 4,
+            _ => 12
+        };
+        public int AuthoredCareStationRendererCount { get; private set; }
+        public int AuthoredCareStationMaterialCount { get; private set; }
+        public int AuthoredCareStationColliderCount { get; private set; }
+        public int AuthoredCareStationLightCount { get; private set; }
+        public Vector3 AuthoredCareStationBoundsSize { get; private set; }
 
         public void Begin(MoonlightSpatialActionKind kind)
         {
@@ -168,7 +207,8 @@ namespace MoonlightMagicHouse
             End();
             CurrentKind = kind;
             _requiredSteps = kind is MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
-                MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read
+                MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
+                MoonlightSpatialActionKind.Care
                 ? Mathf.Max(4, requiredSteps)
                 : Mathf.Max(1, requiredSteps);
             CurrentStep = Mathf.Clamp(stepIndex, 0, _requiredSteps - 1);
@@ -185,6 +225,8 @@ namespace MoonlightMagicHouse
                         ? new Vector3(1.10f, 0.04f, 0.30f)
                     : kind == MoonlightSpatialActionKind.Read
                         ? new Vector3(1.08f, 0.05f, 0.30f)
+                    : kind == MoonlightSpatialActionKind.Care
+                        ? new Vector3(0.92f, 0.05f, 0.24f)
                     : new Vector3(-0.58f, 0f, -0.10f));
             _root.transform.position = _center;
             _root.transform.localScale = _persistentStation != null
@@ -195,6 +237,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Play => Vector3.one * 1.10f,
                 MoonlightSpatialActionKind.Garden => Vector3.one * 1.08f,
                 MoonlightSpatialActionKind.Read => Vector3.one * 1.08f,
+                MoonlightSpatialActionKind.Care => Vector3.one * 1.06f,
                 _ => Vector3.one
             };
 
@@ -206,6 +249,7 @@ namespace MoonlightMagicHouse
             else if (kind == MoonlightSpatialActionKind.Play) BuildPlayStage();
             else if (kind == MoonlightSpatialActionKind.Garden) BuildGardenStage();
             else if (kind == MoonlightSpatialActionKind.Read) BuildReadStage();
+            else if (kind == MoonlightSpatialActionKind.Care) BuildCareStage();
 
             UpdateStage(kind, 0f);
         }
@@ -214,6 +258,9 @@ namespace MoonlightMagicHouse
         {
             if (_root == null || _requiredSteps <= 1 || CurrentStep != _requiredSteps - 1)
                 return false;
+
+            if (CurrentKind == MoonlightSpatialActionKind.Care)
+                seconds = CareFinalLingerSeconds;
 
             if (_lingerRoutine != null)
                 StopCoroutine(_lingerRoutine);
@@ -246,6 +293,7 @@ namespace MoonlightMagicHouse
             else if (CurrentKind == MoonlightSpatialActionKind.Play) UpdatePlay(t);
             else if (CurrentKind == MoonlightSpatialActionKind.Garden) UpdateGarden(t);
             else if (CurrentKind == MoonlightSpatialActionKind.Read) UpdateRead(t);
+            else if (CurrentKind == MoonlightSpatialActionKind.Care) UpdateCare(t);
 
             if (_activityLight != null)
                 _activityLight.intensity = ActivityLightBaseIntensity +
@@ -343,8 +391,29 @@ namespace MoonlightMagicHouse
                 }
             }
 
+            if (kind == MoonlightSpatialActionKind.Care)
+            {
+                Transform contact = step switch
+                {
+                    0 => _careTowelTray,
+                    1 => _careBrush,
+                    2 => _careComb,
+                    _ => _careMirror
+                };
+                if (contact != null && contact.gameObject.activeInHierarchy)
+                {
+                    point = contact.position;
+                    return IsFinite(point);
+                }
+            }
+
             return false;
         }
+
+        static bool IsFinite(Vector3 point) =>
+            !float.IsNaN(point.x) && !float.IsInfinity(point.x) &&
+            !float.IsNaN(point.y) && !float.IsInfinity(point.y) &&
+            !float.IsNaN(point.z) && !float.IsInfinity(point.z);
 
         static bool TryGetWorldPoint(Transform[] candidates, int index, out Vector3 point)
         {
@@ -459,6 +528,29 @@ namespace MoonlightMagicHouse
             AuthoredReadingNookColliderCount = 0;
             AuthoredReadingNookLightCount = 0;
             AuthoredReadingNookBoundsSize = Vector3.zero;
+            _careProps = null;
+            _careBubbles = null;
+            _careMotes = null;
+            _careTowelTray = null;
+            _careTowel = null;
+            _careBrush = null;
+            _careComb = null;
+            _careMirror = null;
+            _careMirrorAura = null;
+            _authoredCareStation = null;
+            UsesProceduralCareStationFallback = false;
+            CareStationVisualSource = "missing";
+            CareStationSourceQAMarker = "MOONLIGHT_CARE_STATION_SOURCE_MISSING";
+            CareStationRendererCount = 0;
+            CareStationMaterialCount = 0;
+            CareStationColliderCount = 0;
+            CareStationLightCount = 0;
+            CareStationBoundsSize = Vector3.zero;
+            AuthoredCareStationRendererCount = 0;
+            AuthoredCareStationMaterialCount = 0;
+            AuthoredCareStationColliderCount = 0;
+            AuthoredCareStationLightCount = 0;
+            AuthoredCareStationBoundsSize = Vector3.zero;
             _ballTrail = null;
             _activityLight = null;
             _persistentStation = null;
@@ -1345,12 +1437,19 @@ namespace MoonlightMagicHouse
             for (int i = 0; i < stationRenderers.Length; i++) _renderers.Add(stationRenderers[i]);
             rendererCount = _persistentStation.RendererCount;
             materialCount = _persistentStation.UniqueMaterialCount;
-            colliderCount = _persistentStation.ColliderCount;
-            lightCount = _persistentStation.LightCount;
+            colliderCount = _persistentStation.EnabledColliderCount;
+            lightCount = _persistentStation.EnabledLightCount;
             boundsSize = _persistentStation.BoundsSize;
-            Debug.Log($"[MoonlightActivityStage] authored-activity-set kind={kind} persistent=true " +
-                $"renderers={rendererCount} materials={materialCount} colliders={colliderCount} " +
-                $"lights={lightCount} bounds={boundsSize:F2} marker={marker}");
+            string visualSource = _persistentStation.UsesProceduralFallback
+                ? "procedural-fallback"
+                : "authored";
+            string sourceMarker = _persistentStation.UsesProceduralFallback
+                ? _persistentStation.VisualSourceQAMarker
+                : marker;
+            Debug.Log($"[MoonlightActivityStage] activity-set kind={kind} persistent=true " +
+                $"source={visualSource} " +
+                $"renderers={rendererCount} materials={materialCount} enabledColliders={colliderCount} " +
+                $"enabledLights={lightCount} bounds={boundsSize:F2} marker={sourceMarker}");
             return true;
         }
 
@@ -1550,6 +1649,237 @@ namespace MoonlightMagicHouse
             }
         }
 
+        void BuildCareStage()
+        {
+            bool hasPersistentSet = BindPersistentActivitySet(MoonlightSpatialActionKind.Care,
+                "MOONLIGHT_AUTHORED_CARE_STATION_READY", out Transform careStationRoot,
+                out int rendererCount, out int materialCount, out int colliderCount,
+                out int lightCount, out Vector3 boundsSize);
+            UsesProceduralCareStationFallback = !hasPersistentSet ||
+                _persistentStation.UsesProceduralFallback;
+            if (hasPersistentSet)
+            {
+                foreach (var collider in careStationRoot.GetComponentsInChildren<Collider>(true))
+                    collider.enabled = false;
+                foreach (var light in careStationRoot.GetComponentsInChildren<Light>(true))
+                    light.enabled = false;
+                if (UsesProceduralCareStationFallback)
+                {
+                    CareStationVisualSource = "persistent-procedural-fallback";
+                    CareStationSourceQAMarker = _persistentStation.VisualSourceQAMarker;
+                }
+                else
+                {
+                    _authoredCareStation = careStationRoot;
+                    CareStationVisualSource = "authored";
+                    CareStationSourceQAMarker = "MOONLIGHT_AUTHORED_CARE_STATION_READY";
+                }
+            }
+            if (!hasPersistentSet)
+            {
+                Primitive(PrimitiveType.Cube, "CareStationBase", new Vector3(0f, 0.08f, 0f),
+                    new Vector3(1.62f, 0.16f, 0.82f), new Color(0.34f, 0.25f, 0.22f), 0.02f);
+                Primitive(PrimitiveType.Cube, "CareStationWoodTop", new Vector3(0f, 0.18f, 0f),
+                    new Vector3(1.52f, 0.055f, 0.74f), new Color(0.58f, 0.42f, 0.34f), 0.03f);
+                Primitive(PrimitiveType.Cube, "CareTowelMat", new Vector3(0f, 0.225f, 0f),
+                    new Vector3(1.42f, 0.025f, 0.64f), new Color(0.56f, 0.76f, 0.72f), 0.02f);
+                Primitive(PrimitiveType.Cube, "CareStationBackRail", new Vector3(0f, 0.39f, 0.34f),
+                    new Vector3(1.42f, 0.30f, 0.035f), new Color(0.72f, 0.76f, 0.78f), 0.04f);
+                rendererCount = 4;
+                materialCount = 4;
+                colliderCount = 0;
+                lightCount = 0;
+                boundsSize = new Vector3(1.62f, 0.54f, 0.82f);
+                CareStationVisualSource = "stage-procedural-fallback";
+                CareStationSourceQAMarker = "MOONLIGHT_CARE_STAGE_PROCEDURAL_FALLBACK_READY";
+            }
+            CareStationRendererCount = rendererCount;
+            CareStationMaterialCount = materialCount;
+            CareStationColliderCount = colliderCount;
+            CareStationLightCount = lightCount;
+            CareStationBoundsSize = boundsSize;
+            if (HasAuthoredCareStation)
+            {
+                AuthoredCareStationRendererCount = rendererCount;
+                AuthoredCareStationMaterialCount = materialCount;
+                AuthoredCareStationColliderCount = colliderCount;
+                AuthoredCareStationLightCount = lightCount;
+                AuthoredCareStationBoundsSize = boundsSize;
+            }
+
+            _careTowelTray = Primitive(PrimitiveType.Cylinder, "care-towel-tray",
+                new Vector3(-0.58f, 0.285f, 0.02f), new Vector3(0.31f, 0.025f, 0.24f),
+                new Color(0.72f, 0.78f, 0.80f), 0.05f);
+            _careTowel = Primitive(PrimitiveType.Cube, "CareTowel",
+                new Vector3(-0.58f, 0.335f, 0.02f), new Vector3(0.46f, 0.065f, 0.31f),
+                new Color(0.82f, 0.94f, 0.90f), 0.02f);
+
+            _careProps = new[]
+            {
+                Primitive(PrimitiveType.Sphere, "CareBasin", new Vector3(0f, 0.36f, 0.02f),
+                    new Vector3(0.47f, 0.17f, 0.39f), new Color(0.88f, 0.90f, 0.92f), 0.04f),
+                Primitive(PrimitiveType.Cylinder, "CareBasinRim", new Vector3(0f, 0.48f, 0.02f),
+                    new Vector3(0.48f, 0.025f, 0.40f), new Color(0.76f, 0.84f, 0.86f), 0.05f),
+                Primitive(PrimitiveType.Cylinder, "CareBasinWater", new Vector3(0f, 0.505f, 0.02f),
+                    new Vector3(0.38f, 0.012f, 0.30f), new Color(0.46f, 0.84f, 0.92f, 0.72f),
+                    0.20f, true),
+            };
+
+            _careBrush = Primitive(PrimitiveType.Capsule, "care-brush",
+                new Vector3(0.52f, 0.42f, -0.13f), new Vector3(0.055f, 0.28f, 0.055f),
+                new Color(0.62f, 0.35f, 0.27f), 0.03f);
+            _careBrush.localRotation = Quaternion.Euler(0f, 0f, 68f);
+            var brushPad = Primitive(PrimitiveType.Cube, "CareBrushPad", Vector3.zero,
+                new Vector3(0.17f, 0.055f, 0.12f), new Color(0.94f, 0.72f, 0.64f), 0.02f);
+            brushPad.SetParent(_careBrush, false);
+            brushPad.localPosition = new Vector3(0f, 0.48f, 0f);
+            brushPad.localRotation = Quaternion.identity;
+
+            _careComb = Primitive(PrimitiveType.Cube, "care-comb",
+                new Vector3(0.55f, 0.30f, 0.17f), new Vector3(0.34f, 0.045f, 0.08f),
+                new Color(0.82f, 0.58f, 0.36f), 0.04f);
+            _careComb.localRotation = Quaternion.Euler(0f, 18f, -8f);
+            for (int i = 0; i < 4; i++)
+            {
+                var tooth = Primitive(PrimitiveType.Cube, $"CareCombTooth-{i + 1}", Vector3.zero,
+                    new Vector3(0.025f, 0.16f, 0.045f), new Color(0.82f, 0.58f, 0.36f), 0.04f);
+                tooth.SetParent(_careComb, false);
+                tooth.localPosition = new Vector3(-0.34f + i * 0.23f, -1.15f, 0f);
+                tooth.localRotation = Quaternion.identity;
+            }
+
+            _careMirror = Primitive(PrimitiveType.Cylinder, "care-mirror",
+                new Vector3(0.59f, 0.76f, 0.23f), new Vector3(0.27f, 0.025f, 0.34f),
+                new Color(0.64f, 0.84f, 0.90f), 0.12f);
+            _careMirror.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            var mirrorFrame = Primitive(PrimitiveType.Cylinder, "CareMirrorFrame",
+                new Vector3(0.59f, 0.76f, 0.255f), new Vector3(0.32f, 0.035f, 0.39f),
+                new Color(0.82f, 0.72f, 0.48f), 0.06f);
+            mirrorFrame.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            var mirrorStand = Primitive(PrimitiveType.Capsule, "CareMirrorStand",
+                new Vector3(0.59f, 0.47f, 0.27f), new Vector3(0.035f, 0.24f, 0.035f),
+                new Color(0.82f, 0.72f, 0.48f), 0.05f);
+            mirrorStand.localRotation = Quaternion.Euler(0f, 0f, -4f);
+            _careMirrorAura = Primitive(PrimitiveType.Cylinder, "CareMirrorAura",
+                new Vector3(0.59f, 0.76f, 0.285f), new Vector3(0.38f, 0.018f, 0.46f),
+                new Color(0.72f, 0.90f, 1f, 0.48f), 0.34f, true);
+            _careMirrorAura.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            _careMirrorAura.gameObject.SetActive(false);
+
+            _careBubbles = new Transform[5];
+            for (int i = 0; i < _careBubbles.Length; i++)
+            {
+                _careBubbles[i] = Primitive(PrimitiveType.Sphere, $"CareBubble-{i + 1}",
+                    Vector3.zero, Vector3.one * 0.07f,
+                    i % 2 == 0 ? new Color(0.76f, 0.94f, 1f, 0.62f) : new Color(1f, 0.84f, 0.92f, 0.58f),
+                    0.24f, true);
+                _careBubbles[i].gameObject.SetActive(false);
+            }
+
+            _careMotes = new Transform[6];
+            for (int i = 0; i < _careMotes.Length; i++)
+            {
+                _careMotes[i] = Primitive(PrimitiveType.Sphere, $"CareMirrorMote-{i + 1}",
+                    Vector3.zero, Vector3.one * 0.045f,
+                    i % 2 == 0 ? new Color(1f, 0.88f, 0.48f, 0.82f) : new Color(0.66f, 0.88f, 1f, 0.76f),
+                    0.36f, true);
+                _careMotes[i].gameObject.SetActive(false);
+            }
+
+            AddActivityLight(new Color(0.80f, 0.91f, 0.94f));
+            _activityLight.gameObject.name = "CareSpotlight";
+            Debug.Log($"[MoonlightActivityStage] care-stage persistent={hasPersistentSet} " +
+                $"source={CareStationVisualSource} authored={HasAuthoredCareStation} " +
+                $"renderers={CareStationRendererCount}/{CareStationRendererBudget} " +
+                $"materials={CareStationMaterialCount}/{CareStationMaterialBudget} " +
+                $"contacts={_careTowelTray.name},{_careBrush.name},{_careComb.name},{_careMirror.name} " +
+                $"steps=4 linger=4.6s sourceMarker={CareStationSourceQAMarker} " +
+                "marker=MOONLIGHT_CARE_STAGE_READY");
+        }
+
+        void UpdateCare(float t)
+        {
+            if (_careTowelTray == null || _careTowel == null || _careBrush == null ||
+                _careComb == null || _careMirror == null || _careBubbles == null || _careMotes == null)
+                return;
+
+            int step = Mathf.Clamp(CurrentStep, 0, 3);
+            float eased = Mathf.SmoothStep(0f, 1f, t);
+
+            _careTowelTray.localScale = new Vector3(0.31f, 0.025f, 0.24f) *
+                (step == 0 ? 1f + Mathf.Sin(t * Mathf.PI) * 0.08f : 1f);
+            _careTowel.localPosition = step == 0
+                ? Vector3.Lerp(new Vector3(-0.78f, 0.72f, -0.10f),
+                    new Vector3(-0.58f, 0.335f, 0.02f), eased)
+                : new Vector3(-0.58f, 0.335f, 0.02f);
+            _careTowel.localRotation = Quaternion.Euler(0f, step == 0 ? Mathf.Lerp(-18f, 0f, eased) : 0f,
+                step == 0 ? Mathf.Sin(t * Mathf.PI * 3f) * 4f : 0f);
+
+            if (step == 1)
+            {
+                float angle = t * Mathf.PI * 4f;
+                _careBrush.localPosition = new Vector3(Mathf.Cos(angle) * 0.24f,
+                    0.62f + Mathf.Sin(t * Mathf.PI) * 0.07f, 0.02f + Mathf.Sin(angle) * 0.18f);
+                _careBrush.localRotation = Quaternion.Euler(18f, t * 540f, 64f);
+            }
+            else
+            {
+                _careBrush.localPosition = new Vector3(0.52f, 0.42f, -0.13f);
+                _careBrush.localRotation = Quaternion.Euler(0f, 0f, 68f);
+            }
+
+            if (step == 2)
+            {
+                _careComb.localPosition = new Vector3(Mathf.Lerp(0.46f, -0.30f, eased),
+                    0.62f + Mathf.Sin(t * Mathf.PI * 3f) * 0.06f, 0.12f);
+                _careComb.localRotation = Quaternion.Euler(0f, 18f, Mathf.Lerp(-22f, 18f, t));
+            }
+            else
+            {
+                _careComb.localPosition = new Vector3(0.55f, 0.30f, 0.17f);
+                _careComb.localRotation = Quaternion.Euler(0f, 18f, -8f);
+            }
+
+            for (int i = 0; i < _careBubbles.Length; i++)
+            {
+                bool showBubble = step == 1;
+                _careBubbles[i].gameObject.SetActive(showBubble);
+                if (!showBubble) continue;
+                float phase = Mathf.Repeat(t * 1.45f + i * 0.19f, 1f);
+                float angle = i * Mathf.PI * 2f / _careBubbles.Length + t * Mathf.PI;
+                _careBubbles[i].localPosition = new Vector3(Mathf.Cos(angle) * (0.12f + i * 0.035f),
+                    0.53f + phase * 0.30f, 0.02f + Mathf.Sin(angle) * 0.18f);
+                _careBubbles[i].localScale = Vector3.one *
+                    Mathf.Max(0.015f, Mathf.Sin(phase * Mathf.PI) * (0.055f + i * 0.006f));
+            }
+
+            bool glow = step == 3;
+            _careMirrorAura.gameObject.SetActive(glow);
+            if (glow)
+            {
+                float auraPulse = 1f + Mathf.Sin(t * Mathf.PI * 4f) * 0.10f;
+                _careMirrorAura.localScale = new Vector3(0.38f, 0.018f, 0.46f) * auraPulse;
+                _careMirror.localScale = new Vector3(0.27f, 0.025f, 0.34f) *
+                    (1f + Mathf.Sin(t * Mathf.PI * 3f) * 0.04f);
+            }
+            else
+            {
+                _careMirror.localScale = new Vector3(0.27f, 0.025f, 0.34f);
+            }
+
+            for (int i = 0; i < _careMotes.Length; i++)
+            {
+                _careMotes[i].gameObject.SetActive(glow);
+                if (!glow) continue;
+                float phase = Mathf.Repeat(t * 0.85f + i * 0.16f, 1f);
+                float angle = i * Mathf.PI * 2f / _careMotes.Length + t * Mathf.PI * 0.8f;
+                _careMotes[i].localPosition = new Vector3(0.59f + Mathf.Cos(angle) * 0.42f,
+                    0.55f + phase * 0.62f, 0.20f + Mathf.Sin(angle) * 0.13f);
+                _careMotes[i].localScale = Vector3.one *
+                    (0.025f + Mathf.Sin(phase * Mathf.PI) * 0.045f);
+            }
+        }
+
         Transform Primitive(PrimitiveType type, string name, Vector3 localPosition,
             Vector3 localScale, Color color, float emission, bool transparent = false)
         {
@@ -1559,7 +1889,11 @@ namespace MoonlightMagicHouse
             go.transform.localPosition = localPosition;
             go.transform.localScale = localScale;
             var collider = go.GetComponent<Collider>();
-            if (collider != null) Destroy(collider);
+            if (collider != null)
+            {
+                collider.enabled = false;
+                Destroy(collider);
+            }
             var renderer = go.GetComponent<Renderer>();
             ActivitySurfaceProfile surface = ResolveSurfaceProfile(name, emission, transparent);
             renderer.sharedMaterial = NewMaterial(color, emission, transparent, surface);
@@ -1607,10 +1941,11 @@ namespace MoonlightMagicHouse
             if (transparent || emission >= 0.18f || normalized.Contains("spark") ||
                 normalized.Contains("mote") || normalized.Contains("magic"))
                 return ActivitySurfaceProfile.Magic;
-            if (normalized.Contains("window")) return ActivitySurfaceProfile.Glass;
+            if (normalized.Contains("window") || normalized.Contains("mirror"))
+                return ActivitySurfaceProfile.Glass;
             if (normalized.Contains("cloth") || normalized.Contains("ribbon") ||
                 normalized.Contains("flag") || normalized.Contains("bookmark") ||
-                normalized.Contains("cover"))
+                normalized.Contains("cover") || normalized.Contains("towel"))
                 return ActivitySurfaceProfile.Fabric;
             if (normalized.Contains("whisk") || normalized.Contains("tray") ||
                 normalized.Contains("platter") || normalized.Contains("handle") ||
@@ -1620,11 +1955,12 @@ namespace MoonlightMagicHouse
                 return ActivitySurfaceProfile.Metal;
             if (normalized.Contains("bowl") || normalized.Contains("cup") ||
                 normalized.Contains("pot") || normalized.Contains("pedestal") ||
-                normalized.Contains("ball"))
+                normalized.Contains("ball") || normalized.Contains("basin"))
                 return ActivitySurfaceProfile.Ceramic;
             if (normalized.Contains("counter") || normalized.Contains("rolling") ||
                 normalized.Contains("bench") || normalized.Contains("planter") ||
-                normalized.Contains("block") || normalized.Contains("spine"))
+                normalized.Contains("block") || normalized.Contains("spine") ||
+                normalized.Contains("brush") || normalized.Contains("comb"))
                 return ActivitySurfaceProfile.Wood;
             return ActivitySurfaceProfile.Matte;
         }

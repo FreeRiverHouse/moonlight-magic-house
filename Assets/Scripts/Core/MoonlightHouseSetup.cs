@@ -1528,6 +1528,19 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.SleepCuddle, "dream bed",
                 bd.transform.position + new Vector3(0f, 0.04f, 0.80f),
                 new Color(0.54f, 0.64f, 0.92f), 1.35f);
+            AddSpatialActionZone(bd.transform, "BedroomCareAction",
+                MoonlightSpatialActionKind.Care, "moon spa",
+                bd.transform.position + new Vector3(1.35f, 0.04f, -1.15f),
+                new Color(0.28f, 0.72f, 0.68f), 1.35f);
+            Vector3 careStationPosition = bd.transform.position + new Vector3(2.25f, 0.08f, -0.30f);
+            AddPersistentActivityStation(bd.transform, "PersistentCareVanity",
+                MoonlightSpatialActionKind.Care, "Models/Hero/MoonCareAtelier",
+                careStationPosition, Vector3.one * 1.08f,
+                new Vector3(-0.10f, 0.01f, 0.06f), new Vector3(-90f, 0f, 0f),
+                Vector3.one * 0.86f);
+            AddCollisionProxy(bd.transform, "CareVanityCollision",
+                careStationPosition + new Vector3(0f, 0.45f, 0f),
+                new Vector3(1.55f, 0.90f, 0.75f));
 
             var gd = BuildRoom("Garden", new Vector3(0f, 0f, 14f),
                 new Color(0.04f, 0.10f, 0.04f), false,
@@ -4451,6 +4464,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Garden => new Color(0.42f, 1f, 0.62f),
                 MoonlightSpatialActionKind.Read => new Color(0.76f, 0.58f, 1f),
                 MoonlightSpatialActionKind.SleepCuddle => new Color(1f, 0.56f, 0.72f),
+                MoonlightSpatialActionKind.Care => new Color(0.16f, 0.74f, 0.66f),
                 _ => new Color(1f, 0.98f, 0.91f)
             };
         }
@@ -4465,6 +4479,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Garden => "garden-mint-calm",
                 MoonlightSpatialActionKind.Read => "read-lilac-focus",
                 MoonlightSpatialActionKind.SleepCuddle => "cuddle-rose-soft",
+                MoonlightSpatialActionKind.Care => "care-teal-soft",
                 _ => "magic-ivory"
             };
         }
@@ -4477,7 +4492,8 @@ namespace MoonlightMagicHouse
                 ExpressionColorFor(MoonlightSpatialActionKind.Play, true),
                 ExpressionColorFor(MoonlightSpatialActionKind.Garden, true),
                 ExpressionColorFor(MoonlightSpatialActionKind.Read, true),
-                ExpressionColorFor(MoonlightSpatialActionKind.SleepCuddle, true)
+                ExpressionColorFor(MoonlightSpatialActionKind.SleepCuddle, true),
+                ExpressionColorFor(MoonlightSpatialActionKind.Care, true)
             };
             float minimumDistance = float.PositiveInfinity;
             for (int i = 0; i < colors.Length; i++)
@@ -4487,9 +4503,11 @@ namespace MoonlightMagicHouse
                         new Vector3(colors[j].r, colors[j].g, colors[j].b)));
             float emissionLift = MoonlightHouseSetup.HeroEyeActionEmission -
                 MoonlightHouseSetup.HeroEyeIdleEmission;
+            string careExpression = ExpressionNameFor(MoonlightSpatialActionKind.Care, true);
             detail = $"expressions={colors.Length} minColorDistance={minimumDistance:0.00} " +
-                $"emissionLift={emissionLift:0.00}";
-            return colors.Length == 5 && minimumDistance >= 0.32f && emissionLift >= 0.08f;
+                $"emissionLift={emissionLift:0.00} care={careExpression}";
+            return colors.Length == 6 && minimumDistance >= 0.32f && emissionLift >= 0.08f &&
+                careExpression == "care-teal-soft";
         }
     }
 }

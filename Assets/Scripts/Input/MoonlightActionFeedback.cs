@@ -116,6 +116,7 @@ namespace MoonlightMagicHouse
                     "Playing" => "PLAYING",
                     "Gardening" => "GARDENING",
                     "Reading" => "READING",
+                    "Caring" => "CARING",
                     "Resting" => "DREAMING",
                     "Cuddled" => "CUDDLING",
                     _ => "MAGIC IN PROGRESS"
@@ -263,6 +264,13 @@ namespace MoonlightMagicHouse
                     1 => "TURN",
                     2 => "TRACE",
                     _ => "REMEMBER"
+                },
+                MoonlightSpatialActionKind.Care => _activityStep switch
+                {
+                    0 => "PREP",
+                    1 => "WASH",
+                    2 => "BRUSH",
+                    _ => "GLOW"
                 },
                 _ => "MAGIC"
             };
@@ -462,6 +470,7 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Play => 4.8f,
             MoonlightSpatialActionKind.Garden => 4.6f,
             MoonlightSpatialActionKind.Read => 4.4f,
+            MoonlightSpatialActionKind.Care => 4.6f,
             _ => 0f
         };
 
@@ -478,6 +487,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Play => 1f + Mathf.Sin(t * Mathf.PI * 7f) * 0.075f,
                 MoonlightSpatialActionKind.Garden => 1f + Mathf.Sin(t * Mathf.PI * 6f) * 0.052f,
                 MoonlightSpatialActionKind.Read => 1f + Mathf.Sin(t * Mathf.PI * 4f) * 0.025f,
+                MoonlightSpatialActionKind.Care => 1f + Mathf.Sin(t * Mathf.PI * 5f) * 0.035f,
                 MoonlightSpatialActionKind.SleepCuddle when resting => Mathf.Lerp(1f, 0.92f, Mathf.SmoothStep(0f, 1f, t)),
                 MoonlightSpatialActionKind.SleepCuddle when cuddled => 1f + Mathf.Sin(t * Mathf.PI * 4f) * 0.055f,
                 _ => 1f
@@ -489,6 +499,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Play => Vector3.one * pulse,
                 MoonlightSpatialActionKind.Garden => new Vector3(1.02f, pulse, 1.02f),
                 MoonlightSpatialActionKind.Read => new Vector3(1.01f, pulse, 1.01f),
+                MoonlightSpatialActionKind.Care => new Vector3(1.02f, pulse, 1.02f),
                 MoonlightSpatialActionKind.SleepCuddle when resting => new Vector3(1.08f, pulse, 1.08f),
                 MoonlightSpatialActionKind.SleepCuddle when cuddled => new Vector3(1.03f, pulse, 1.03f),
                 _ => Vector3.one
@@ -515,6 +526,12 @@ namespace MoonlightMagicHouse
             if (kind == MoonlightSpatialActionKind.Read)
             {
                 ApplyReadStepPose(t, envelope, pulse);
+                return;
+            }
+
+            if (kind == MoonlightSpatialActionKind.Care)
+            {
+                ApplyCareStepPose(t, envelope, pulse);
                 return;
             }
 
@@ -647,7 +664,8 @@ namespace MoonlightMagicHouse
         }
 
         void ApplyFacingPose(Vector3 axisScale, Vector3 motion, Vector3 localEuler, Vector3 targetWorld,
-            float maxApproachDistance = 0f, bool cameraReadableFacing = false)
+            float maxApproachDistance = 0f, bool cameraReadableFacing = false,
+            float minimumPresentationAngle = 24f, float maximumPresentationAngle = 34f)
         {
             var frame = _visual.parent != null ? _visual.parent : transform;
             Vector3 targetDirection = targetWorld - frame.position;
@@ -670,7 +688,8 @@ namespace MoonlightMagicHouse
                     cameraDirection.Normalize();
                     float targetDelta = Vector3.SignedAngle(cameraDirection, targetDirection, Vector3.up);
                     float side = Mathf.Abs(targetDelta) > 1f ? Mathf.Sign(targetDelta) : 1f;
-                    float presentationAngle = Mathf.Clamp(Mathf.Abs(targetDelta), 24f, 34f);
+                    float presentationAngle = Mathf.Clamp(Mathf.Abs(targetDelta),
+                        minimumPresentationAngle, maximumPresentationAngle);
                     presentationDirection = Quaternion.AngleAxis(side * presentationAngle, Vector3.up) *
                         cameraDirection;
                     presentationDirection.Normalize();
@@ -793,6 +812,57 @@ namespace MoonlightMagicHouse
             ApplyFacingPose(axisScale, motion, localEuler, _actionContactPoint, 0.52f, true);
         }
 
+        void ApplyCareStepPose(float t, float envelope, float pulse)
+        {
+            Vector3 axisScale;
+            Vector3 motion;
+            Vector3 localEuler;
+
+            switch (Mathf.Clamp(_activityStep, 0, 3))
+            {
+                case 0:
+                    float warmPress = Ease(t, 0.10f, 0.42f) * (1f - Ease(t, 0.76f, 0.94f));
+                    axisScale = new Vector3(1.03f + warmPress * 0.03f,
+                        pulse - warmPress * 0.025f, 1.03f + warmPress * 0.03f);
+                    motion = new Vector3(-0.10f * envelope, -0.04f * warmPress,
+                        (0.10f + warmPress * 0.20f) * envelope);
+                    localEuler = new Vector3((10f + warmPress * 11f) * envelope,
+                        -8f * envelope, -10f * warmPress);
+                    break;
+                case 1:
+                    float brushAngle = t * Mathf.PI * 8f;
+                    float brushStroke = Mathf.Sin(brushAngle);
+                    axisScale = new Vector3(1.02f / pulse, pulse, 1.02f / pulse);
+                    motion = new Vector3(Mathf.Cos(brushAngle) * 0.14f * envelope,
+                        (0.06f + Mathf.Abs(brushStroke) * 0.05f) * envelope,
+                        (0.15f + brushStroke * 0.05f) * envelope);
+                    localEuler = new Vector3(13f * envelope,
+                        brushStroke * 16f * envelope, Mathf.Cos(brushAngle) * 13f * envelope);
+                    break;
+                case 2:
+                    float combSweep = Ease(t, 0.10f, 0.82f);
+                    float combRepeat = Mathf.Sin(t * Mathf.PI * 5f);
+                    axisScale = new Vector3(1.02f, 0.99f + Mathf.Abs(combRepeat) * 0.025f, 1.02f);
+                    motion = new Vector3(Mathf.Lerp(0.18f, -0.18f, combSweep) * envelope,
+                        (0.08f + Mathf.Abs(combRepeat) * 0.05f) * envelope, 0.16f * envelope);
+                    localEuler = new Vector3(10f * envelope,
+                        Mathf.Lerp(18f, -16f, combSweep) * envelope, -combRepeat * 12f * envelope);
+                    break;
+                default:
+                    float mirrorLift = Ease(t, 0.16f, 0.58f);
+                    float glow = Mathf.Sin(t * Mathf.PI * 4f) * 0.025f;
+                    axisScale = new Vector3(1f - glow, 1f + mirrorLift * 0.07f + glow, 1f - glow);
+                    motion = new Vector3(0.08f * envelope, mirrorLift * 0.16f,
+                        (0.10f + mirrorLift * 0.10f) * envelope);
+                    localEuler = new Vector3(Mathf.Lerp(9f, -3f, mirrorLift) * envelope,
+                        7f * envelope, glow * 220f);
+                    break;
+            }
+
+            axisScale = Vector3.Lerp(Vector3.one, axisScale, envelope);
+            ApplyFacingPose(axisScale, motion, localEuler, _actionContactPoint, 0.70f, true, 20f, 38f);
+        }
+
         static string MotionProfileFor(MoonlightSpatialActionKind kind, int activityStep)
         {
             return kind switch
@@ -824,6 +894,13 @@ namespace MoonlightMagicHouse
                     1 => "read-turn-swipe",
                     2 => "read-trace-circle",
                     _ => "read-remember-glow"
+                },
+                MoonlightSpatialActionKind.Care => Mathf.Clamp(activityStep, 0, 3) switch
+                {
+                    0 => "care-towel-warm-press",
+                    1 => "care-bubble-brush-circle",
+                    2 => "care-moon-comb-sweep",
+                    _ => "care-mirror-glow-hold"
                 },
                 _ => ""
             };
@@ -919,6 +996,13 @@ namespace MoonlightMagicHouse
                     2 => "bookmark-trace",
                     _ => "memory-motes"
                 },
+                MoonlightSpatialActionKind.Care => step switch
+                {
+                    0 => "towel-tray",
+                    1 => "bubble-brush",
+                    2 => "moon-comb",
+                    _ => "vanity-mirror"
+                },
                 _ => ""
             };
         }
@@ -953,6 +1037,13 @@ namespace MoonlightMagicHouse
                 contactStart = step switch { 0 => 0.12f, 1 => 0.18f, _ => 0.24f };
                 contactEnd = step switch { 0 => 0.30f, 1 => 0.80f, _ => 0.68f };
                 recoveryStart = step == 0 ? 0.78f : 0.90f;
+            }
+            else if (kind == MoonlightSpatialActionKind.Care)
+            {
+                approachStart = 0.05f;
+                contactStart = step switch { 0 => 0.18f, 1 => 0.14f, 2 => 0.16f, _ => 0.22f };
+                contactEnd = step switch { 0 => 0.74f, 1 => 0.82f, 2 => 0.78f, _ => 0.86f };
+                recoveryStart = step switch { 0 => 0.90f, 1 => 0.94f, 2 => 0.92f, _ => 0.95f };
             }
             else
             {
@@ -995,6 +1086,19 @@ namespace MoonlightMagicHouse
                     2 => Mathf.Max(ContactPulse(t, 0.06f, 0.16f, 0.25f),
                         ContactPulse(t, 0.67f, 0.78f, 0.88f)),
                     _ => ContactPulse(t, 0.16f, 0.42f, 0.72f)
+                };
+            }
+
+            if (kind == MoonlightSpatialActionKind.Care)
+            {
+                return step switch
+                {
+                    0 => ContactPulse(t, 0.08f, 0.38f, 0.80f),
+                    1 => Ease(t, 0.08f, 0.20f) * (1f - Ease(t, 0.82f, 0.94f)) *
+                        (0.74f + Mathf.Abs(Mathf.Sin(t * Mathf.PI * 8f)) * 0.26f),
+                    2 => Ease(t, 0.10f, 0.24f) * (1f - Ease(t, 0.78f, 0.92f)) *
+                        (0.78f + Mathf.Abs(Mathf.Sin(t * Mathf.PI * 5f)) * 0.22f),
+                    _ => Ease(t, 0.14f, 0.38f) * (1f - Ease(t, 0.86f, 0.96f))
                 };
             }
 
@@ -1086,6 +1190,23 @@ namespace MoonlightMagicHouse
                 };
             }
 
+            if (kind == MoonlightSpatialActionKind.Care)
+            {
+                if (step == 0)
+                    return StagePoint(new Vector3(-0.58f, 0.285f, 0.02f));
+                if (step == 1)
+                {
+                    float brushAngle = t * Mathf.PI * 4f;
+                    return StagePoint(new Vector3(Mathf.Cos(brushAngle) * 0.24f,
+                        0.62f + Mathf.Sin(t * Mathf.PI) * 0.07f,
+                        0.02f + Mathf.Sin(brushAngle) * 0.18f));
+                }
+                if (step == 2)
+                    return StagePoint(new Vector3(Mathf.Lerp(0.46f, -0.30f, Mathf.SmoothStep(0f, 1f, t)),
+                        0.62f + Mathf.Sin(t * Mathf.PI * 3f) * 0.06f, 0.12f));
+                return StagePoint(new Vector3(0.59f, 0.76f, 0.23f));
+            }
+
             return _cameraFocusAnchor;
         }
 
@@ -1130,6 +1251,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Play => "star-ball",
                 MoonlightSpatialActionKind.Garden => "moon-garden",
                 MoonlightSpatialActionKind.Read => "story-pages",
+                MoonlightSpatialActionKind.Care => "moon-spa-vanity",
                 MoonlightSpatialActionKind.SleepCuddle when state == "Resting" => "dream-orbit",
                 MoonlightSpatialActionKind.SleepCuddle => "cuddle-orbit",
                 _ => "magic-orbit"
@@ -1143,6 +1265,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Play => 0.15f,
                 MoonlightSpatialActionKind.Garden => 0.11f,
                 MoonlightSpatialActionKind.Read => 0.09f,
+                MoonlightSpatialActionKind.Care => 0.12f,
                 MoonlightSpatialActionKind.SleepCuddle when state == "Cuddled" => 0.16f,
                 _ => 0.10f
             };
@@ -1216,6 +1339,19 @@ namespace MoonlightMagicHouse
                     _actionOrb.transform.position = Vector3.Lerp(center + new Vector3(-0.24f, 0.10f, 0f),
                         _actionContactPoint, Ease(t, 0.04f, 0.40f)) + Vector3.up * pageArc * 0.20f;
                     _actionOrb.transform.localScale = Vector3.one * (0.07f + ActionContactWeight * 0.05f);
+                    break;
+                case MoonlightSpatialActionKind.Care:
+                    Vector3 careOrbOffset = Mathf.Clamp(_activityStep, 0, 3) switch
+                    {
+                        0 => new Vector3(0f, 0.06f, 0f),
+                        1 => new Vector3(0f, 0.04f, 0.02f),
+                        2 => new Vector3(0f, 0.05f, 0f),
+                        _ => new Vector3(0f, 0.02f, 0.03f)
+                    };
+                    _actionOrb.transform.position = _actionContactPoint + careOrbOffset;
+                    float carePulse = 1f + Mathf.Sin(t * Mathf.PI * 6f) * 0.10f;
+                    _actionOrb.transform.localScale = Vector3.one *
+                        (0.075f + ActionContactWeight * 0.055f) * carePulse;
                     break;
                 case MoonlightSpatialActionKind.SleepCuddle:
                     float orbit = eased * Mathf.PI * (state == "Resting" ? 2.2f : 3.2f);
@@ -1326,6 +1462,10 @@ namespace MoonlightMagicHouse
             (MoonlightSpatialActionKind.Read, 1) => "read-page-fan",
             (MoonlightSpatialActionKind.Read, 2) => "read-bookmark",
             (MoonlightSpatialActionKind.Read, _) => "read-memory-motes",
+            (MoonlightSpatialActionKind.Care, 0) => "care-warm-towel",
+            (MoonlightSpatialActionKind.Care, 1) => "care-bubble-brush",
+            (MoonlightSpatialActionKind.Care, 2) => "care-moon-comb",
+            (MoonlightSpatialActionKind.Care, _) => "care-mirror-glow",
             (MoonlightSpatialActionKind.SleepCuddle, _) when state == "Resting" => "dream-moon-pair",
             (MoonlightSpatialActionKind.SleepCuddle, _) => "cuddle-heart-pair",
             _ => "magic-accent"
@@ -1452,6 +1592,37 @@ namespace MoonlightMagicHouse
                     Part(PrimitiveType.Sphere, new Vector3(-0.05f, 0.08f, 0f), Vector3.one * 0.075f, 0f, 2),
                     Part(PrimitiveType.Sphere, new Vector3(0.07f, -0.01f, 0f), Vector3.one * 0.055f, 0f, 0),
                     Part(PrimitiveType.Sphere, new Vector3(0.17f, 0.10f, 0f), Vector3.one * 0.065f, 0f, 1)
+                },
+                (MoonlightSpatialActionKind.Care, 0) => new[]
+                {
+                    Part(PrimitiveType.Cube, Vector3.zero, new Vector3(0.38f, 0.055f, 0.24f), -6f, 0),
+                    Part(PrimitiveType.Cube, new Vector3(-0.03f, 0.045f, -0.01f), new Vector3(0.31f, 0.040f, 0.20f), 5f, 1),
+                    Part(PrimitiveType.Capsule, new Vector3(-0.16f, 0.075f, 0f), new Vector3(0.025f, 0.065f, 0.025f), 74f, 2),
+                    Part(PrimitiveType.Capsule, new Vector3(0.15f, 0.070f, 0f), new Vector3(0.025f, 0.060f, 0.025f), -74f, 2)
+                },
+                (MoonlightSpatialActionKind.Care, 1) => new[]
+                {
+                    Part(PrimitiveType.Capsule, new Vector3(-0.08f, -0.01f, 0f), new Vector3(0.045f, 0.16f, 0.045f), -34f, 1),
+                    Part(PrimitiveType.Cube, new Vector3(0.03f, 0.11f, 0f), new Vector3(0.16f, 0.065f, 0.11f), -34f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(-0.15f, 0.13f, -0.01f), Vector3.one * 0.075f, 0f, 2),
+                    Part(PrimitiveType.Sphere, new Vector3(0.14f, 0.18f, -0.02f), Vector3.one * 0.060f, 0f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(0.19f, 0.05f, -0.01f), Vector3.one * 0.050f, 0f, 2)
+                },
+                (MoonlightSpatialActionKind.Care, 2) => new[]
+                {
+                    Part(PrimitiveType.Cube, new Vector3(0f, 0.08f, 0f), new Vector3(0.36f, 0.055f, 0.075f), -5f, 1),
+                    Part(PrimitiveType.Cube, new Vector3(-0.12f, -0.015f, 0f), new Vector3(0.025f, 0.17f, 0.045f), 2f, 0),
+                    Part(PrimitiveType.Cube, new Vector3(0f, -0.020f, 0f), new Vector3(0.025f, 0.18f, 0.045f), -3f, 0),
+                    Part(PrimitiveType.Cube, new Vector3(0.12f, -0.010f, 0f), new Vector3(0.025f, 0.16f, 0.045f), -8f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(-0.16f, 0.10f, -0.02f), new Vector3(0.10f, 0.075f, 0.035f), 0f, 2)
+                },
+                (MoonlightSpatialActionKind.Care, _) => new[]
+                {
+                    Part(PrimitiveType.Cylinder, Vector3.zero, new Vector3(0.25f, 0.025f, 0.31f), 90f, 1),
+                    Part(PrimitiveType.Cylinder, Vector3.zero, new Vector3(0.31f, 0.018f, 0.37f), 90f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(-0.23f, 0.15f, -0.02f), Vector3.one * 0.055f, 0f, 2),
+                    Part(PrimitiveType.Sphere, new Vector3(0.22f, 0.12f, -0.02f), Vector3.one * 0.050f, 0f, 2),
+                    Part(PrimitiveType.Sphere, new Vector3(0f, 0.25f, -0.02f), Vector3.one * 0.045f, 0f, 0)
                 },
                 _ => new[]
                 {
@@ -1595,7 +1766,8 @@ namespace MoonlightMagicHouse
 
         static bool IsStepSpecificActivity(MoonlightSpatialActionKind kind) =>
             kind is MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
-                MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read;
+                MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
+                MoonlightSpatialActionKind.Care;
 
         static Quaternion CameraFacingRotation(Vector3 position)
         {
@@ -1634,6 +1806,10 @@ namespace MoonlightMagicHouse
                 (MoonlightSpatialActionKind.Garden, _) => Quaternion.Euler(0f, 0f, wave * 10f),
                 (MoonlightSpatialActionKind.Read, 1) => Quaternion.Euler(0f, wave * 7f, wave * 14f),
                 (MoonlightSpatialActionKind.Read, _) => Quaternion.Euler(0f, wave * 5f, wave * 7f),
+                (MoonlightSpatialActionKind.Care, 0) => Quaternion.Euler(0f, wave * 4f, -6f + wave * 5f),
+                (MoonlightSpatialActionKind.Care, 1) => Quaternion.Euler(0f, 0f, t * 240f),
+                (MoonlightSpatialActionKind.Care, 2) => Quaternion.Euler(0f, wave * 8f, -12f + wave * 16f),
+                (MoonlightSpatialActionKind.Care, _) => Quaternion.Euler(0f, wave * 5f, wave * 6f),
                 (MoonlightSpatialActionKind.SleepCuddle, _) => Quaternion.Euler(0f, 0f, wave * 18f),
                 _ => Quaternion.identity
             };
@@ -1646,7 +1822,8 @@ namespace MoonlightMagicHouse
                 "cook-scoop", "cook-whisk", "cook-cookie-tray", "cook-icing",
                 "play-star-ball", "play-orbit", "play-impact", "play-catch-star",
                 "garden-seed", "garden-watering", "garden-droplets", "garden-bloom",
-                "read-open-book", "read-page-fan", "read-bookmark", "read-memory-motes"
+                "read-open-book", "read-page-fan", "read-bookmark", "read-memory-motes",
+                "care-warm-towel", "care-bubble-brush", "care-moon-comb", "care-mirror-glow"
             };
             var signatures = new HashSet<string>();
             var markers = new HashSet<string>();
@@ -1664,7 +1841,8 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Cook,
                 MoonlightSpatialActionKind.Play,
                 MoonlightSpatialActionKind.Garden,
-                MoonlightSpatialActionKind.Read
+                MoonlightSpatialActionKind.Read,
+                MoonlightSpatialActionKind.Care
             };
             foreach (MoonlightSpatialActionKind activity in activities)
             for (int step = 0; step < 4; step++)
@@ -1691,12 +1869,12 @@ namespace MoonlightMagicHouse
                     materialSlots.Count <= 5 && extent >= MinimumActionAccentExtent &&
                     extent <= MaximumActionAccentExtent;
             }
-            detail = $"signatures={signatures.Count}/16 markers={markers.Count}/16 " +
+            detail = $"activities={activities.Length}/5 signatures={signatures.Count}/20 markers={markers.Count}/20 " +
                 $"correct={correctSignatures} renderers={minimumRenderers}-{maximumRenderers}/3-5 " +
                 $"colliders=0 materials<={maximumMaterials}/5 primitives={primitives.Count} " +
                 $"extent={minimumExtent:0.000}-{maximumExtent:0.000}/" +
                 $"{MinimumActionAccentExtent:0.00}-{MaximumActionAccentExtent:0.00}";
-            return correctSignatures && signatures.Count == 16 && markers.Count == 16 &&
+            return correctSignatures && activities.Length == 5 && signatures.Count == 20 && markers.Count == 20 &&
                 validLayouts && primitives.Count >= 3;
         }
 
@@ -1766,6 +1944,7 @@ namespace MoonlightMagicHouse
                     MoonlightSpatialActionKind.Play => Vector3.one * 1.10f,
                     MoonlightSpatialActionKind.Garden => Vector3.one * 1.08f,
                     MoonlightSpatialActionKind.Read => Vector3.one * 1.08f,
+                    MoonlightSpatialActionKind.Care => Vector3.one * 1.06f,
                     _ => Vector3.one
                 };
 
@@ -1801,6 +1980,7 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Play => new Vector3(-0.58f, 0f, -0.10f),
                 MoonlightSpatialActionKind.Garden => new Vector3(1.10f, 0.04f, 0.30f),
                 MoonlightSpatialActionKind.Read => new Vector3(1.08f, 0.05f, 0.30f),
+                MoonlightSpatialActionKind.Care => new Vector3(0.92f, 0.05f, 0.24f),
                 _ => Vector3.zero
             };
         }
@@ -1903,6 +2083,7 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Play => new Color(0.42f, 0.9f, 1f),
             MoonlightSpatialActionKind.Garden => new Color(0.48f, 0.92f, 0.54f),
             MoonlightSpatialActionKind.Read => new Color(1f, 0.78f, 0.42f),
+            MoonlightSpatialActionKind.Care => new Color(0.38f, 0.88f, 0.82f),
             MoonlightSpatialActionKind.SleepCuddle when state == "Resting" => new Color(0.50f, 0.66f, 1f),
             MoonlightSpatialActionKind.SleepCuddle when state == "Cuddled" => new Color(1f, 0.58f, 0.82f),
             _ => Color.white
@@ -1914,6 +2095,7 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Play => 1.85f,
             MoonlightSpatialActionKind.Garden => 2.05f,
             MoonlightSpatialActionKind.Read => 1.75f,
+            MoonlightSpatialActionKind.Care => 2.15f,
             MoonlightSpatialActionKind.SleepCuddle when state == "Resting" => 1.65f,
             MoonlightSpatialActionKind.SleepCuddle when state == "Cuddled" => 1.05f,
             _ => 1f
@@ -1943,7 +2125,8 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.Cook,
                 MoonlightSpatialActionKind.Play,
                 MoonlightSpatialActionKind.Garden,
-                MoonlightSpatialActionKind.Read
+                MoonlightSpatialActionKind.Read,
+                MoonlightSpatialActionKind.Care
             };
             foreach (MoonlightSpatialActionKind activity in activities)
             {
@@ -1969,14 +2152,14 @@ namespace MoonlightMagicHouse
             bounded &= goodFlash >= 0.65f && perfectFlash <= 1.10f &&
                 goodEnergy >= 0.90f && perfectEnergy <= 1.12f &&
                 goodHaptic >= 0 && perfectHaptic <= 2;
-            detail = $"thresholds={thresholds} split={GreatActionQualityScore:0.00}/{PerfectActionQualityScore:0.00} " +
+            detail = $"activities={activities.Length}/5 thresholds={thresholds} split={GreatActionQualityScore:0.00}/{PerfectActionQualityScore:0.00} " +
                 $"burst={ActionQualityBurstCountFor(MoonlightSpatialActionKind.Read, MoonlightActionQualityTier.Good)}-" +
                 $"{ActionQualityBurstCountFor(MoonlightSpatialActionKind.Play, MoonlightActionQualityTier.Perfect)}/64 " +
                 $"flash={goodFlash:0.00}/{greatFlash:0.00}/{perfectFlash:0.00} " +
                 $"energy={goodEnergy:0.00}/{greatEnergy:0.00}/{perfectEnergy:0.00} " +
                 $"haptic={goodHaptic}/{greatHaptic}/{perfectHaptic} " +
                 $"monotonic={monotonic} bounded={bounded}";
-            return thresholds && monotonic && bounded;
+            return activities.Length == 5 && thresholds && monotonic && bounded;
         }
 
         static string ActionQualityQAMarkerFor(MoonlightActionQualityTier tier) =>
@@ -2021,6 +2204,7 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Play => 34,
             MoonlightSpatialActionKind.Garden => 30,
             MoonlightSpatialActionKind.Read => 22,
+            MoonlightSpatialActionKind.Care => 28,
             MoonlightSpatialActionKind.SleepCuddle => 20,
             _ => 12
         };
