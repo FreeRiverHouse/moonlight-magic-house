@@ -55,6 +55,8 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_PLAY_CONTINUITY_TRANSACTION_VERIFIED";
         public const string PlayContinuityOrderModeMarker =
             "MOONLIGHT_PLAY_CONTINUITY_ORDER_MODE";
+        public const string PlayPhaseLandmarkTransactionMarker =
+            "MOONLIGHT_PLAY_PHASE_LANDMARK_TRANSACTION_VERIFIED";
 
         static readonly string[] IntermediateActivityResults =
         {
@@ -230,6 +232,9 @@ namespace MoonlightMagicHouse
             public readonly PlayRewardSnapshot[] AcceptedRewards =
                 new PlayRewardSnapshot[4];
             public readonly int[] MaterialCounts = new int[4];
+            public readonly int[] PhaseLandmarkVisibilityMasks = new int[4];
+            public readonly int[] PhaseLandmarkMaterialCounts = new int[4];
+            public readonly int[] PhaseLandmarkLightCounts = new int[4];
             public PlayRewardSnapshot BaselineRewards;
             public MoonlightActivityStage Stage;
             public int RootId;
@@ -254,6 +259,10 @@ namespace MoonlightMagicHouse
             public float MaximumContinuationClockDelta;
             public bool ContinuationClockAdvanced;
             public bool ContinuationClockSourceIsUnscaled = true;
+            public int PhaseLandmarkObservedMask;
+            public bool PhaseLandmarkContractPassed = true;
+            public string ArenaSource = "";
+            public bool ArenaSourceContractPassed = true;
             public string OrderMode = "middle";
         }
 
@@ -1020,6 +1029,17 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] gesture-play-contract " +
                 $"sample=({gestureSampleDetail}) trajectory=({responsivePlayDetail}) " +
                 "marker=MOONLIGHT_GESTURE_PLAY_STATIC_CONTRACT_VERIFIED");
+            if (!MoonlightActivityStage.ValidatePlayPhaseLandmarkContract(
+                    out string playPhaseLandmarkDetail))
+            {
+                Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                    $"play-phase-landmark-static {playPhaseLandmarkDetail}");
+                Application.Quit(164);
+                yield break;
+            }
+            Debug.Log("[MoonlightGameplayQA][PASS] " +
+                $"play-phase-landmark-static {playPhaseLandmarkDetail} " +
+                $"marker={MoonlightActivityStage.PlayPhaseLandmarkStaticQAMarker}");
             if (!MoonlightActivityStage.ValidatePlayContinuationClockContract(
                     out string playContinuationClockDetail))
             {
@@ -3591,36 +3611,56 @@ namespace MoonlightMagicHouse
                                 $"catchHeld={stage.PlayCatchIsHeld} " +
                                 "marker=MOONLIGHT_GESTURE_PLAY_RUNTIME_VERIFIED");
 
-                            bool authoredArenaPass = stage.HasAuthoredPlayArena &&
-                                stage.AuthoredPlayArenaRendererCount >= 7 &&
-                                stage.AuthoredPlayArenaRendererCount <= 10 &&
-                                stage.AuthoredPlayArenaMaterialCount >= 7 &&
-                                stage.AuthoredPlayArenaMaterialCount <= 9 &&
-                                stage.AuthoredPlayArenaColliderCount == 0 &&
-                                stage.AuthoredPlayArenaLightCount == 0 &&
-                                stage.AuthoredPlayArenaBoundsSize.x >= 2.70f &&
-                                stage.AuthoredPlayArenaBoundsSize.y >= 0.55f &&
-                                stage.AuthoredPlayArenaBoundsSize.y <= 1.25f &&
-                                stage.AuthoredPlayArenaBoundsSize.z >= 1.10f;
-                            if (!authoredArenaPass)
+                            bool phaseLandmarkPass =
+                                stage.ValidatePlayPhaseLandmarkRuntimeContract(
+                                    out string phaseLandmarkDetail);
+                            if (playContinuity != null)
                             {
-                                Debug.LogError("[MoonlightGameplayQA][FAIL] authored-play-arena " +
-                                    $"present={stage.HasAuthoredPlayArena} " +
-                                    $"renderers={stage.AuthoredPlayArenaRendererCount}/7-10 " +
-                                    $"materials={stage.AuthoredPlayArenaMaterialCount}/7-9 " +
-                                    $"colliders={stage.AuthoredPlayArenaColliderCount} " +
-                                    $"lights={stage.AuthoredPlayArenaLightCount} " +
-                                    $"bounds={stage.AuthoredPlayArenaBoundsSize:F2}");
+                                playContinuity.PhaseLandmarkObservedMask |= 1 << step;
+                                playContinuity.PhaseLandmarkVisibilityMasks[step] =
+                                    stage.PlayPhaseLandmarkVisibleMaskForQA;
+                                playContinuity.PhaseLandmarkMaterialCounts[step] =
+                                    stage.ActiveUniqueMaterialCount;
+                                playContinuity.PhaseLandmarkLightCounts[step] =
+                                    stage.ActiveLightCount;
+                                playContinuity.PhaseLandmarkContractPassed &=
+                                    phaseLandmarkPass;
+                            }
+                            if (!phaseLandmarkPass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                    $"play-phase-landmark-runtime {phaseLandmarkDetail}");
+                                Application.Quit(165);
+                                yield break;
+                            }
+                            Debug.Log("[MoonlightGameplayQA][PASS] " +
+                                $"play-phase-landmark-runtime {phaseLandmarkDetail} " +
+                                $"marker={MoonlightActivityStage.PlayPhaseLandmarkRuntimeQAMarker}");
+
+                            bool arenaSourcePass =
+                                stage.ValidatePlayArenaSourceRuntimeContract(
+                                    out string arenaSourceDetail);
+                            if (playContinuity != null)
+                            {
+                                if (string.IsNullOrEmpty(playContinuity.ArenaSource))
+                                    playContinuity.ArenaSource =
+                                        stage.PlayArenaVisualSourceForQA;
+                                else
+                                    playContinuity.ArenaSourceContractPassed &=
+                                        playContinuity.ArenaSource ==
+                                            stage.PlayArenaVisualSourceForQA;
+                                playContinuity.ArenaSourceContractPassed &= arenaSourcePass;
+                            }
+                            if (!arenaSourcePass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                    $"play-arena-source {arenaSourceDetail}");
                                 Application.Quit(33);
                                 yield break;
                             }
-                            Debug.Log("[MoonlightGameplayQA][PASS] authored-play-arena " +
-                                $"renderers={stage.AuthoredPlayArenaRendererCount} " +
-                                $"materials={stage.AuthoredPlayArenaMaterialCount} " +
-                                $"colliders={stage.AuthoredPlayArenaColliderCount} " +
-                                $"lights={stage.AuthoredPlayArenaLightCount} " +
-                                $"bounds={stage.AuthoredPlayArenaBoundsSize:F2} " +
-                                "marker=MOONLIGHT_AUTHORED_PLAY_ARENA_READY");
+                            Debug.Log("[MoonlightGameplayQA][PASS] " +
+                                $"play-arena-source {arenaSourceDetail} " +
+                                $"marker={stage.PlayArenaSourceQAMarkerForQA}");
                         }
                         else if (zone.Kind == MoonlightSpatialActionKind.Garden)
                         {
@@ -4623,6 +4663,25 @@ namespace MoonlightMagicHouse
                             ? playContinuity.Stage.PlayContinuationCountForQA -
                                 playContinuity.ContinuationBaseline
                             : -1;
+                        bool phaseLandmarkVisibilityPass = true;
+                        for (int phase = 0;
+                             phase < MoonlightActivityStage.PlayPhaseCount; phase++)
+                            phaseLandmarkVisibilityPass &=
+                                playContinuity.PhaseLandmarkVisibilityMasks[phase] ==
+                                MoonlightActivityStage.PlayPhaseExpectedVisibilityMask(phase);
+                        bool phaseLandmarkTransactionPass =
+                            playContinuity.PhaseLandmarkContractPassed &&
+                            playContinuity.ArenaSourceContractPassed &&
+                            (playContinuity.ArenaSource == "authored" ||
+                             playContinuity.ArenaSource == "fallback") &&
+                            playContinuity.PhaseLandmarkObservedMask ==
+                                (1 << MoonlightActivityStage.PlayPhaseCount) - 1 &&
+                            phaseLandmarkVisibilityPass &&
+                            playContinuity.PhaseLandmarkMaterialCounts[0] > 0 &&
+                            playContinuity.PhaseLandmarkMaterialCounts.All(count =>
+                                count == playContinuity.PhaseLandmarkMaterialCounts[0]) &&
+                            playContinuity.PhaseLandmarkLightCounts.All(count =>
+                                count == MoonlightActivityStage.PlayLightBudget);
                         bool transactionPass = progressionPass &&
                             playContinuity.IdentityPreserved &&
                             playContinuity.MaximumImmediateDiscontinuity <= 0.001f &&
@@ -4644,7 +4703,7 @@ namespace MoonlightMagicHouse
                             zone.LastCompletedPerfectSteps == 4 &&
                             zone.LastMasteryBonusCoins == 3 &&
                             completionDelta == 1 && continuationDelta == 3 &&
-                            cleanupPass;
+                            phaseLandmarkTransactionPass && cleanupPass;
                         if (!transactionPass)
                         {
                             Debug.LogError("[MoonlightGameplayQA][FAIL] " +
@@ -4668,6 +4727,16 @@ namespace MoonlightMagicHouse
                                 $"clock={MoonlightActivityStage.PlayContinuationClockSourceForQA}/" +
                                 $"{playContinuity.MaximumContinuationClockDelta:0.000000}/" +
                                 $"{playContinuity.ContinuationClockAdvanced} " +
+                                $"landmarks={playContinuity.PhaseLandmarkObservedMask:X}/F " +
+                                $"arenaSource={playContinuity.ArenaSource}/" +
+                                $"{playContinuity.ArenaSourceContractPassed} " +
+                                $"visibility=" +
+                                $"{string.Join(",", playContinuity.PhaseLandmarkVisibilityMasks.Select(mask => $"0x{mask:X3}"))} " +
+                                $"phaseMaterials=" +
+                                $"{string.Join(",", playContinuity.PhaseLandmarkMaterialCounts)} " +
+                                $"phaseLights=" +
+                                $"{string.Join(",", playContinuity.PhaseLandmarkLightCounts)} " +
+                                $"landmarkTransaction={phaseLandmarkTransactionPass} " +
                                 $"rejections={playContinuity.RejectedPreservationCount}/9 " +
                                 $"firstThreeRewards={firstThreeRewardsUnchanged} " +
                                 $"finalRewards={finalRewardPass} mastery=" +
@@ -4695,10 +4764,18 @@ namespace MoonlightMagicHouse
                             $"trajectorySamples={playContinuity.TrajectorySampleCount} " +
                             $"clock={MoonlightActivityStage.PlayContinuationClockSourceForQA}/" +
                             $"{playContinuity.MaximumContinuationClockDelta:0.000000} " +
+                            $"landmarkVisibility=" +
+                            $"{string.Join(",", playContinuity.PhaseLandmarkVisibilityMasks.Select(mask => $"0x{mask:X3}"))} " +
+                            $"arenaSource={playContinuity.ArenaSource} " +
+                            $"phaseMaterials=" +
+                            $"{string.Join(",", playContinuity.PhaseLandmarkMaterialCounts)} " +
+                            $"phaseLights=" +
+                            $"{string.Join(",", playContinuity.PhaseLandmarkLightCounts)} " +
                             "runtimePauseExecuted=False " +
                             $"rejections={playContinuity.RejectedPreservationCount} " +
                             "rewards=+25W/+13M/+32XP/+5C completion=1 cleanup=True " +
                             $"marker={PlayContinuityRuntimeMarker} " +
+                            $"marker={PlayPhaseLandmarkTransactionMarker} " +
                             $"marker={PlayContinuityOrderModeMarker}_" +
                             $"{playContinuity.OrderMode.ToUpperInvariant()}");
                     }

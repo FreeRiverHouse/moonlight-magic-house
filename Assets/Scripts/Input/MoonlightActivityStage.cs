@@ -74,7 +74,82 @@ namespace MoonlightMagicHouse
         public const float PlayMaximumJumpHeight = 1.18f;
         public const float PlayCatchContactProgress = 0.38f;
         public const int RequiredAuthoritativePlayBallCount = 1;
+        public const int PlayPhaseCount = 4;
+        public const int RequiredPlayPhaseLandmarkCount = 11;
+        public const int PlayPhaseLandmarkMaterialBudget = 8;
+        public const int RequiredPlayFallbackBaseObjectCount = 3;
+        public const int PlayAuthoredGeneratedMaterialBudget = 18;
+        public const int PlayFallbackGeneratedMaterialBudget = 20;
+        public const int PlayAuthoredArenaMaterialBudget = 9;
+        public const int PlayRendererBudget = 48;
+        public const int PlayMaterialBudget = 28;
+        public const int PlayLightBudget = 1;
+        public const int RequiredAuthoritativePlayTrailCount = 1;
+        public const float PlayBallMaximumHorizontalRadius = 0.165f;
+        public const float PlayBallMaximumVerticalRadius = 0.135f;
+        public const float PlayCatchArchMinimumVisualClearance = 0.095f;
+        public const string PlayPhaseLandmarkStaticQAMarker =
+            "MOONLIGHT_PLAY_PHASE_LANDMARK_STATIC_CONTRACT_VERIFIED";
+        public const string PlayPhaseLandmarkRuntimeQAMarker =
+            "MOONLIGHT_PLAY_PHASE_LANDMARK_RUNTIME_VERIFIED";
         public static readonly Vector3 PlayCatchPoint = new(0.94f, 0.54f, -0.46f);
+        static readonly string[] PlayPhaseLandmarkNames =
+        {
+            "ToyWand", "ToyWandStar", "ToyHoop", "FinishFlagPole", "FinishFlag",
+            "JumpArchLeftPost", "JumpArchRightPost", "JumpArchTop",
+            "CatchArchLeftPost", "CatchArchRightPost", "CatchArchTop"
+        };
+        static readonly Vector3[] PlayPhaseLandmarkPositions =
+        {
+            new(-0.45f, 0.16f, -0.48f),
+            new(-0.60f, 0.33f, -0.57f),
+            new(-0.82f, 0.13f, -0.08f),
+            new(1.04f, 0.33f, -0.32f),
+            new(0.92f, 0.50f, -0.32f),
+            new(-0.48f, 0.33f, 0.38f),
+            new(0.48f, 0.33f, 0.38f),
+            new(0f, 0.62f, 0.34f),
+            new(0.65f, 0.32f, -0.46f),
+            new(1.23f, 0.32f, -0.46f),
+            new(0.94f, 0.82f, -0.46f)
+        };
+        static readonly Vector3[] PlayPhaseLandmarkScales =
+        {
+            new(0.035f, 0.36f, 0.035f),
+            Vector3.one * 0.11f,
+            new(0.20f, 0.018f, 0.20f),
+            new(0.035f, 0.48f, 0.035f),
+            new(0.24f, 0.12f, 0.025f),
+            new(0.055f, 0.50f, 0.055f),
+            new(0.055f, 0.50f, 0.055f),
+            new(1.02f, 0.055f, 0.055f),
+            new(0.050f, 0.46f, 0.050f),
+            new(0.050f, 0.46f, 0.050f),
+            new(0.66f, 0.050f, 0.050f)
+        };
+        static readonly int[] PlayPhaseLandmarkVisibilityMasks =
+        {
+            (1 << 0) | (1 << 1),
+            1 << 2,
+            (1 << 5) | (1 << 6) | (1 << 7),
+            (1 << 3) | (1 << 4) | (1 << 8) | (1 << 9) | (1 << 10)
+        };
+        static readonly string[] PlayFallbackBaseNames =
+        {
+            "PlayMatFallback", "TargetOuterRingFallback", "TargetInnerDotFallback"
+        };
+        static readonly Vector3[] PlayFallbackBasePositions =
+        {
+            new(0f, 0.035f, 0f),
+            new(0.86f, 0.07f, -0.18f),
+            new(0.86f, 0.085f, -0.18f)
+        };
+        static readonly Vector3[] PlayFallbackBaseScales =
+        {
+            new(2.15f, 0.025f, 1.24f),
+            new(0.46f, 0.012f, 0.46f),
+            new(0.20f, 0.012f, 0.20f)
+        };
         public const int CookPhaseCount = 4;
         public const int CookRequiredPhaseMask = (1 << CookPhaseCount) - 1;
         public const int CookRendererBudget = 36;
@@ -156,6 +231,7 @@ namespace MoonlightMagicHouse
         Transform[] _playArches;
         Transform[] _podiumProps;
         Transform _authoredPlayArena;
+        Transform[] _playFallbackBase;
         Transform[] _gardenProps;
         Transform[] _seeds;
         Transform[] _sprouts;
@@ -269,6 +345,29 @@ namespace MoonlightMagicHouse
         public int AuthoritativePlayBallCount => CountPlayObjectsNamed("StarBall");
         public int AuthoritativePlayTrailCount => CurrentKind == MoonlightSpatialActionKind.Play &&
             _root != null ? _root.GetComponentsInChildren<TrailRenderer>(true).Length : 0;
+        public int PlayPhaseLandmarkObjectCountForQA => CountPlayPhaseLandmarks();
+        public int PlayPhaseLandmarkNamedObjectCountForQA =>
+            CountNamedPlayPhaseLandmarks();
+        public int PlayPhaseLandmarkRendererCountForQA =>
+            CountPlayPhaseLandmarkComponents<Renderer>(false);
+        public int PlayPhaseLandmarkMaterialCountForQA =>
+            CountPlayPhaseLandmarkMaterials();
+        public int PlayPhaseLandmarkColliderCountForQA =>
+            CountPlayPhaseLandmarkComponents<Collider>(false);
+        public int PlayPhaseLandmarkEnabledColliderCountForQA =>
+            CountPlayPhaseLandmarkComponents<Collider>(true);
+        public int PlayPhaseLandmarkLightCountForQA =>
+            CountPlayPhaseLandmarkComponents<Light>(false);
+        public int PlayPhaseLandmarkScriptCountForQA =>
+            CountPlayPhaseLandmarkComponents<MonoBehaviour>(false);
+        public int PlayPhaseLandmarkVisibleMaskForQA =>
+            CurrentPlayPhaseLandmarkVisibleMask();
+        public int PlayPhaseLandmarkExpectedVisibleMaskForQA =>
+            PlayPhaseExpectedVisibilityMask(CurrentStep);
+        public bool PlayBallRootAndTrailIdentityReadyForQA =>
+            CurrentKind == MoonlightSpatialActionKind.Play && _root != null &&
+            _ball != null && _ball.parent == _root.transform && _ball.name == "StarBall" &&
+            _ballTrail != null && _ballTrail.transform == _ball;
         public bool PlayCatchIsHeld => CurrentKind == MoonlightSpatialActionKind.Play &&
             CurrentStep == 3 && _playProgress >= PlayCatchContactProgress && _ball != null &&
             Vector3.Distance(_ball.localPosition, PlayCatchPoint) <= 0.0001f;
@@ -289,6 +388,271 @@ namespace MoonlightMagicHouse
             foreach (Transform candidate in _root.GetComponentsInChildren<Transform>(true))
                 if (candidate != null && candidate.name == objectName) count++;
             return count;
+        }
+
+        int CountNamedPlayObjects(string[] objectNames)
+        {
+            int count = 0;
+            if (objectNames == null) return count;
+            for (int i = 0; i < objectNames.Length; i++)
+                count += CountPlayObjectsNamed(objectNames[i]);
+            return count;
+        }
+
+        public static string PlayPhaseLandmarkName(int index) =>
+            index >= 0 && index < PlayPhaseLandmarkNames.Length
+                ? PlayPhaseLandmarkNames[index]
+                : "invalid";
+
+        public static int PlayPhaseExpectedVisibilityMask(int phaseIndex) =>
+            phaseIndex >= 0 && phaseIndex < PlayPhaseLandmarkVisibilityMasks.Length
+                ? PlayPhaseLandmarkVisibilityMasks[phaseIndex]
+                : 0;
+
+        public static int PlayPhaseExpectedVisibleLandmarkCount(int phaseIndex)
+        {
+            int mask = PlayPhaseExpectedVisibilityMask(phaseIndex);
+            int count = 0;
+            while (mask != 0)
+            {
+                count += mask & 1;
+                mask >>= 1;
+            }
+            return count;
+        }
+
+        public bool ValidatePlayPhaseLandmarkRuntimeContract(out string detail)
+        {
+            int objectCount = PlayPhaseLandmarkObjectCountForQA;
+            int namedObjectCount = PlayPhaseLandmarkNamedObjectCountForQA;
+            int rendererCount = PlayPhaseLandmarkRendererCountForQA;
+            int materialCount = PlayPhaseLandmarkMaterialCountForQA;
+            int colliderCount = PlayPhaseLandmarkColliderCountForQA;
+            int enabledColliderCount = PlayPhaseLandmarkEnabledColliderCountForQA;
+            int lightCount = PlayPhaseLandmarkLightCountForQA;
+            int scriptCount = PlayPhaseLandmarkScriptCountForQA;
+            int visibleMask = PlayPhaseLandmarkVisibleMaskForQA;
+            int expectedMask = PlayPhaseLandmarkExpectedVisibleMaskForQA;
+            bool transformsPass = PlayPhaseLandmarkTransformsMatchContract();
+            bool identityPass = PlayBallRootAndTrailIdentityReadyForQA &&
+                AuthoritativePlayBallCount == RequiredAuthoritativePlayBallCount &&
+                AuthoritativePlayTrailCount == RequiredAuthoritativePlayTrailCount;
+            bool budgetPass = PlaySourceBudgetReadyForQA();
+            bool pass = CurrentKind == MoonlightSpatialActionKind.Play &&
+                objectCount == RequiredPlayPhaseLandmarkCount &&
+                namedObjectCount == RequiredPlayPhaseLandmarkCount &&
+                rendererCount == RequiredPlayPhaseLandmarkCount &&
+                materialCount > 0 && materialCount <= PlayPhaseLandmarkMaterialBudget &&
+                colliderCount == 0 && enabledColliderCount == 0 &&
+                lightCount == 0 && scriptCount == 0 && transformsPass &&
+                visibleMask == expectedMask && identityPass && budgetPass;
+            detail = $"source={(HasAuthoredPlayArena ? "authored-base" : "fallback-base")} " +
+                $"phase={Mathf.Clamp(CurrentStep, 0, PlayPhaseCount - 1) + 1}/" +
+                $"{PlayPhaseCount} objects={objectCount}/{RequiredPlayPhaseLandmarkCount} " +
+                $"named={namedObjectCount}/{RequiredPlayPhaseLandmarkCount} " +
+                $"visible=0x{visibleMask:X3}/0x{expectedMask:X3} " +
+                $"renderers={rendererCount} materials={materialCount} " +
+                $"colliders={colliderCount}/{enabledColliderCount} lights={lightCount} " +
+                $"scripts={scriptCount} transforms={transformsPass} identity={identityPass} " +
+                $"budget={ActiveRendererCount}/{PlayRendererBudget}r," +
+                $"{ActiveUniqueMaterialCount}/{PlayArenaMaterialCeilingForQA}/" +
+                $"{PlayMaterialBudget}m generated={PlayGeneratedMaterialCountForQA}," +
+                $"{ActiveLightCount}/{PlayLightBudget}l";
+            return pass;
+        }
+
+        public bool ValidatePlayArenaSourceRuntimeContract(out string detail)
+        {
+            bool authored = HasAuthoredPlayArena;
+            bool authoredPass = authored && _playFallbackBase == null &&
+                AuthoredPlayArenaRendererCount >= 7 &&
+                AuthoredPlayArenaRendererCount <= 10 &&
+                AuthoredPlayArenaMaterialCount >= 7 &&
+                AuthoredPlayArenaMaterialCount <= PlayAuthoredArenaMaterialBudget &&
+                AuthoredPlayArenaColliderCount == 0 &&
+                AuthoredPlayArenaLightCount == 0 &&
+                AuthoredPlayArenaBoundsSize.x >= 2.70f &&
+                AuthoredPlayArenaBoundsSize.y >= 0.55f &&
+                AuthoredPlayArenaBoundsSize.y <= 1.25f &&
+                AuthoredPlayArenaBoundsSize.z >= 1.10f;
+            bool fallbackTransformsPass = PlayFallbackBaseTransformsMatchContract();
+            bool fallbackPass = !authored && UsesProceduralPlayArenaFallback &&
+                PlayFallbackBaseObjectCountForQA == RequiredPlayFallbackBaseObjectCount &&
+                PlayFallbackBaseNamedObjectCountForQA == RequiredPlayFallbackBaseObjectCount &&
+                PlayFallbackBaseRendererCountForQA == RequiredPlayFallbackBaseObjectCount &&
+                PlayFallbackBaseMaterialCountForQA == RequiredPlayFallbackBaseObjectCount &&
+                PlayFallbackBaseColliderCountForQA == 0 &&
+                PlayFallbackBaseEnabledColliderCountForQA == 0 &&
+                PlayFallbackBaseLightCountForQA == 0 &&
+                PlayFallbackBaseScriptCountForQA == 0 && fallbackTransformsPass;
+            bool sourcePass = authored ? authoredPass : fallbackPass;
+            bool budgetPass = PlaySourceBudgetReadyForQA();
+            detail = $"source={PlayArenaVisualSourceForQA} valid={sourcePass} " +
+                $"authored={AuthoredPlayArenaRendererCount}r/" +
+                $"{AuthoredPlayArenaMaterialCount}m/" +
+                $"{AuthoredPlayArenaColliderCount}c/{AuthoredPlayArenaLightCount}l " +
+                $"bounds={AuthoredPlayArenaBoundsSize:F2} fallback=" +
+                $"{PlayFallbackBaseObjectCountForQA}o/" +
+                $"{PlayFallbackBaseNamedObjectCountForQA}n/" +
+                $"{PlayFallbackBaseRendererCountForQA}r/" +
+                $"{PlayFallbackBaseMaterialCountForQA}m/" +
+                $"{PlayFallbackBaseColliderCountForQA}c/" +
+                $"{PlayFallbackBaseLightCountForQA}l/" +
+                $"{PlayFallbackBaseScriptCountForQA}s transforms={fallbackTransformsPass} " +
+                $"materials={ActiveUniqueMaterialCount}/" +
+                $"{PlayArenaMaterialCeilingForQA}/{PlayMaterialBudget} " +
+                $"generated={PlayGeneratedMaterialCountForQA}/" +
+                $"{(authored ? PlayAuthoredGeneratedMaterialBudget : PlayFallbackGeneratedMaterialBudget)} " +
+                $"budget={budgetPass}";
+            return CurrentKind == MoonlightSpatialActionKind.Play && sourcePass && budgetPass;
+        }
+
+        bool PlaySourceBudgetReadyForQA()
+        {
+            int generatedBudget = HasAuthoredPlayArena
+                ? PlayAuthoredGeneratedMaterialBudget
+                : PlayFallbackGeneratedMaterialBudget;
+            return CurrentKind == MoonlightSpatialActionKind.Play &&
+                ActiveRendererCount > 0 && ActiveRendererCount <= PlayRendererBudget &&
+                PlayGeneratedMaterialCountForQA > 0 &&
+                PlayGeneratedMaterialCountForQA <= generatedBudget &&
+                ActiveUniqueMaterialCount > 0 &&
+                ActiveUniqueMaterialCount <= PlayArenaMaterialCeilingForQA &&
+                PlayArenaMaterialCeilingForQA <= PlayMaterialBudget &&
+                ActiveLightCount == PlayLightBudget;
+        }
+
+        int CountPlayPhaseLandmarks()
+            => CountTransforms(_playProps) + CountTransforms(_playArches);
+
+        int CountNamedPlayPhaseLandmarks()
+            => CountNamedPlayObjects(PlayPhaseLandmarkNames);
+
+        int CountPlayPhaseLandmarkComponents<T>(bool enabledOnly) where T : Component
+            => CountTransformComponents<T>(_playProps, enabledOnly) +
+                CountTransformComponents<T>(_playArches, enabledOnly);
+
+        int CountPlayPhaseLandmarkMaterials()
+        {
+            var materialIds = new HashSet<int>();
+            AddTransformMaterialIds(_playProps, materialIds);
+            AddTransformMaterialIds(_playArches, materialIds);
+            return materialIds.Count;
+        }
+
+        static int CountTransforms(Transform[] transforms)
+        {
+            int count = 0;
+            if (transforms == null) return count;
+            for (int i = 0; i < transforms.Length; i++)
+                if (transforms[i] != null) count++;
+            return count;
+        }
+
+        int CountTransformComponents<T>(Transform[] transforms, bool enabledOnly)
+            where T : Component
+        {
+            int count = 0;
+            if (transforms == null) return count;
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                if (transforms[i] == null) continue;
+                T[] components = transforms[i].GetComponents<T>();
+                for (int componentIndex = 0; componentIndex < components.Length;
+                     componentIndex++)
+                {
+                    bool enabled = components[componentIndex] switch
+                    {
+                        Behaviour behaviour => behaviour.enabled,
+                        Collider collider => collider.enabled,
+                        _ => false
+                    };
+                    if (!enabledOnly || enabled) count++;
+                }
+            }
+            return count;
+        }
+
+        int CountTransformMaterials(Transform[] transforms)
+        {
+            var materialIds = new HashSet<int>();
+            AddTransformMaterialIds(transforms, materialIds);
+            return materialIds.Count;
+        }
+
+        void AddTransformMaterialIds(Transform[] transforms, HashSet<int> materialIds)
+        {
+            if (transforms == null) return;
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                Renderer renderer = transforms[i] != null
+                    ? transforms[i].GetComponent<Renderer>()
+                    : null;
+                if (renderer == null) continue;
+                _sharedMaterialBuffer.Clear();
+                renderer.GetSharedMaterials(_sharedMaterialBuffer);
+                for (int materialIndex = 0; materialIndex < _sharedMaterialBuffer.Count;
+                     materialIndex++)
+                    if (_sharedMaterialBuffer[materialIndex] != null)
+                        materialIds.Add(_sharedMaterialBuffer[materialIndex].GetInstanceID());
+            }
+        }
+
+        int CurrentPlayPhaseLandmarkVisibleMask()
+        {
+            int mask = 0;
+            for (int i = 0; i < RequiredPlayPhaseLandmarkCount; i++)
+            {
+                Transform landmark = PlayPhaseLandmarkAt(i);
+                Renderer renderer = landmark != null ? landmark.GetComponent<Renderer>() : null;
+                if (renderer != null && renderer.enabled && !renderer.forceRenderingOff &&
+                    renderer.gameObject.activeInHierarchy)
+                    mask |= 1 << i;
+            }
+            return mask;
+        }
+
+        bool PlayPhaseLandmarkTransformsMatchContract()
+        {
+            for (int i = 0; i < RequiredPlayPhaseLandmarkCount; i++)
+            {
+                Transform landmark = PlayPhaseLandmarkAt(i);
+                if (landmark == null || landmark.name != PlayPhaseLandmarkNames[i] ||
+                    landmark.parent != _root.transform ||
+                    Vector3.Distance(landmark.localPosition,
+                        PlayPhaseLandmarkPositions[i]) > 0.0001f)
+                    return false;
+            }
+            return true;
+        }
+
+        bool PlayFallbackBaseTransformsMatchContract()
+        {
+            if (_playFallbackBase == null ||
+                _playFallbackBase.Length != RequiredPlayFallbackBaseObjectCount)
+                return false;
+            for (int i = 0; i < _playFallbackBase.Length; i++)
+            {
+                Transform candidate = _playFallbackBase[i];
+                if (candidate == null || candidate.parent != _root.transform ||
+                    candidate.name != PlayFallbackBaseNames[i] ||
+                    Vector3.Distance(candidate.localPosition,
+                        PlayFallbackBasePositions[i]) > 0.0001f ||
+                    Vector3.Distance(candidate.localScale,
+                        PlayFallbackBaseScales[i]) > 0.0001f)
+                    return false;
+            }
+            return true;
+        }
+
+        Transform PlayPhaseLandmarkAt(int index)
+        {
+            if (index < 0 || index >= RequiredPlayPhaseLandmarkCount) return null;
+            return index < 5
+                ? _playProps != null && index < _playProps.Length ? _playProps[index] : null
+                : _playArches != null && index - 5 < _playArches.Length
+                    ? _playArches[index - 5]
+                    : null;
         }
         public int ConfiguredSurfaceProfileCount => _configuredSurfaceProfiles.Count;
         public bool HasDepthLighting => _activityLight != null &&
@@ -498,6 +862,40 @@ namespace MoonlightMagicHouse
             return pass;
         }
         public bool HasAuthoredPlayArena => _authoredPlayArena != null;
+        public bool UsesProceduralPlayArenaFallback =>
+            CurrentKind == MoonlightSpatialActionKind.Play && !HasAuthoredPlayArena &&
+            PlayFallbackBaseObjectCountForQA == RequiredPlayFallbackBaseObjectCount;
+        public string PlayArenaVisualSourceForQA => HasAuthoredPlayArena
+            ? "authored"
+            : UsesProceduralPlayArenaFallback ? "fallback" : "missing";
+        public string PlayArenaSourceQAMarkerForQA => HasAuthoredPlayArena
+            ? "MOONLIGHT_AUTHORED_PLAY_ARENA_READY"
+            : UsesProceduralPlayArenaFallback
+                ? "MOONLIGHT_PLAY_ARENA_FALLBACK_READY"
+                : "MOONLIGHT_PLAY_ARENA_SOURCE_MISSING";
+        public int PlayGeneratedMaterialCountForQA =>
+            CurrentKind == MoonlightSpatialActionKind.Play ? _materials.Count : 0;
+        public int PlayArenaMaterialCeilingForQA =>
+            CurrentKind != MoonlightSpatialActionKind.Play
+                ? 0
+                : _materials.Count + (HasAuthoredPlayArena
+                    ? AuthoredPlayArenaMaterialCount
+                    : 0);
+        public int PlayFallbackBaseObjectCountForQA => CountTransforms(_playFallbackBase);
+        public int PlayFallbackBaseNamedObjectCountForQA =>
+            CountNamedPlayObjects(PlayFallbackBaseNames);
+        public int PlayFallbackBaseRendererCountForQA =>
+            CountTransformComponents<Renderer>(_playFallbackBase, false);
+        public int PlayFallbackBaseMaterialCountForQA =>
+            CountTransformMaterials(_playFallbackBase);
+        public int PlayFallbackBaseColliderCountForQA =>
+            CountTransformComponents<Collider>(_playFallbackBase, false);
+        public int PlayFallbackBaseEnabledColliderCountForQA =>
+            CountTransformComponents<Collider>(_playFallbackBase, true);
+        public int PlayFallbackBaseLightCountForQA =>
+            CountTransformComponents<Light>(_playFallbackBase, false);
+        public int PlayFallbackBaseScriptCountForQA =>
+            CountTransformComponents<MonoBehaviour>(_playFallbackBase, false);
         public int AuthoredPlayArenaRendererCount { get; private set; }
         public int AuthoredPlayArenaMaterialCount { get; private set; }
         public int AuthoredPlayArenaColliderCount { get; private set; }
@@ -1265,6 +1663,7 @@ namespace MoonlightMagicHouse
             _playArches = null;
             _podiumProps = null;
             _authoredPlayArena = null;
+            _playFallbackBase = null;
             AuthoredPlayArenaRendererCount = 0;
             AuthoredPlayArenaMaterialCount = 0;
             AuthoredPlayArenaColliderCount = 0;
@@ -3201,6 +3600,133 @@ namespace MoonlightMagicHouse
                 authoritativeBallContract;
         }
 
+        public static bool ValidatePlayPhaseLandmarkContract(out string detail)
+        {
+            bool namesPass = PlayPhaseLandmarkNames.Length ==
+                    RequiredPlayPhaseLandmarkCount &&
+                new HashSet<string>(PlayPhaseLandmarkNames).Count ==
+                    RequiredPlayPhaseLandmarkCount &&
+                string.Join("|", PlayPhaseLandmarkNames) ==
+                    "ToyWand|ToyWandStar|ToyHoop|FinishFlagPole|FinishFlag|" +
+                    "JumpArchLeftPost|JumpArchRightPost|JumpArchTop|" +
+                    "CatchArchLeftPost|CatchArchRightPost|CatchArchTop";
+            bool geometryPass = PlayPhaseLandmarkPositions.Length ==
+                    RequiredPlayPhaseLandmarkCount &&
+                PlayPhaseLandmarkScales.Length == RequiredPlayPhaseLandmarkCount;
+            bool fallbackDefinitionPass = PlayFallbackBaseNames.Length ==
+                    RequiredPlayFallbackBaseObjectCount &&
+                PlayFallbackBasePositions.Length == RequiredPlayFallbackBaseObjectCount &&
+                PlayFallbackBaseScales.Length == RequiredPlayFallbackBaseObjectCount &&
+                string.Join("|", PlayFallbackBaseNames) ==
+                    "PlayMatFallback|TargetOuterRingFallback|TargetInnerDotFallback";
+            int configuredMask = 0;
+            int[] expectedVisibleCounts = { 2, 1, 3, 5 };
+            bool visibilityPass = PlayPhaseLandmarkVisibilityMasks.Length == PlayPhaseCount;
+            for (int phase = 0; phase < PlayPhaseCount; phase++)
+            {
+                int mask = PlayPhaseExpectedVisibilityMask(phase);
+                configuredMask |= mask;
+                visibilityPass &= PlayPhaseExpectedVisibleLandmarkCount(phase) ==
+                    expectedVisibleCounts[phase];
+                for (int other = phase + 1; other < PlayPhaseCount; other++)
+                    visibilityPass &= (mask &
+                        PlayPhaseExpectedVisibilityMask(other)) == 0;
+            }
+            int requiredMask = (1 << RequiredPlayPhaseLandmarkCount) - 1;
+            visibilityPass &= configuredMask == requiredMask &&
+                PlayPhaseExpectedVisibilityMask(0) == 0x003 &&
+                PlayPhaseExpectedVisibilityMask(1) == 0x004 &&
+                PlayPhaseExpectedVisibilityMask(2) == 0x0E0 &&
+                PlayPhaseExpectedVisibilityMask(3) == 0x718;
+            bool jumpCenterlineClear = PlayJumpCenterlineClearsArchParts();
+            float catchArchClearance = PlayCatchArchVisualClearanceForQA();
+            bool catchArchClear = catchArchClearance >=
+                PlayCatchArchMinimumVisualClearance;
+            bool identityPass = RequiredAuthoritativePlayBallCount == 1 &&
+                RequiredAuthoritativePlayTrailCount == 1 &&
+                !MoonlightActionFeedback.ShouldCreateOpaqueActionOrb(
+                    MoonlightSpatialActionKind.Play);
+            bool budgetsPass = PlayRendererBudget == 48 && PlayMaterialBudget == 28 &&
+                PlayLightBudget == 1 && PlayPhaseLandmarkMaterialBudget == 8 &&
+                PlayAuthoredGeneratedMaterialBudget +
+                    PlayAuthoredArenaMaterialBudget < PlayMaterialBudget &&
+                PlayFallbackGeneratedMaterialBudget < PlayMaterialBudget &&
+                identityPass;
+            detail = $"phases={PlayPhaseCount} landmarks=" +
+                $"{RequiredPlayPhaseLandmarkCount} names={namesPass} " +
+                $"visibleMasks=0x{PlayPhaseExpectedVisibilityMask(0):X3}," +
+                $"0x{PlayPhaseExpectedVisibilityMask(1):X3}," +
+                $"0x{PlayPhaseExpectedVisibilityMask(2):X3}," +
+                $"0x{PlayPhaseExpectedVisibilityMask(3):X3} " +
+                $"visibleCounts={string.Join(",", expectedVisibleCounts)} " +
+                $"geometry={geometryPass} jumpCenterlineClear={jumpCenterlineClear} " +
+                $"catchClearance={catchArchClearance:0.000}/" +
+                $">={PlayCatchArchMinimumVisualClearance:0.000} " +
+                $"fallbackDefinition={fallbackDefinitionPass} " +
+                $"budgets={PlayRendererBudget}r/" +
+                $"{PlayMaterialBudget}m/{PlayLightBudget}l " +
+                $"materialCeilings=authored:" +
+                $"{PlayAuthoredGeneratedMaterialBudget}+" +
+                $"{PlayAuthoredArenaMaterialBudget},fallback:" +
+                $"{PlayFallbackGeneratedMaterialBudget} " +
+                $"landmarkMaterialBudget=<={PlayPhaseLandmarkMaterialBudget} " +
+                $"authoritative={RequiredAuthoritativePlayBallCount}ball/" +
+                $"{RequiredAuthoritativePlayTrailCount}trail " +
+                $"feedbackOrb={MoonlightActionFeedback.ShouldCreateOpaqueActionOrb(MoonlightSpatialActionKind.Play)}";
+            return namesPass && geometryPass && fallbackDefinitionPass && visibilityPass &&
+                jumpCenterlineClear && catchArchClear && identityPass && budgetsPass;
+        }
+
+        public static float PlayCatchArchVisualClearanceForQA()
+        {
+            Vector3[] halfExtents =
+            {
+                new(0.025f, 0.46f, 0.025f),
+                new(0.025f, 0.46f, 0.025f),
+                new(0.363f, 0.0275f, 0.0275f)
+            };
+            float minimum = float.PositiveInfinity;
+            for (int archIndex = 0; archIndex < halfExtents.Length; archIndex++)
+            {
+                Vector3 delta = PlayCatchPoint -
+                    PlayPhaseLandmarkPositions[archIndex + 8];
+                float x = Mathf.Max(0f, Mathf.Abs(delta.x) - halfExtents[archIndex].x);
+                float y = Mathf.Max(0f, Mathf.Abs(delta.y) - halfExtents[archIndex].y);
+                float z = Mathf.Max(0f, Mathf.Abs(delta.z) - halfExtents[archIndex].z);
+                float ballRadius = archIndex < 2
+                    ? PlayBallMaximumHorizontalRadius
+                    : PlayBallMaximumVerticalRadius;
+                float clearance = new Vector3(x, y, z).magnitude - ballRadius;
+                minimum = Mathf.Min(minimum, clearance);
+            }
+            return minimum;
+        }
+
+        static bool PlayJumpCenterlineClearsArchParts()
+        {
+            MoonlightGestureSample sample = DirectionalSample(Vector2.right, 1.10f);
+            Vector3[] halfExtents =
+            {
+                new(0.09f, 0.51f, 0.09f),
+                new(0.09f, 0.51f, 0.09f),
+                new(0.51f, 0.028f, 0.028f)
+            };
+            for (int pointIndex = 0; pointIndex <= 80; pointIndex++)
+            {
+                Vector3 point = EvaluatePlayTrajectory(2, pointIndex / 80f, sample);
+                for (int archIndex = 0; archIndex < halfExtents.Length; archIndex++)
+                {
+                    Vector3 center = PlayPhaseLandmarkPositions[archIndex + 5];
+                    Vector3 delta = point - center;
+                    if (Mathf.Abs(delta.x) <= halfExtents[archIndex].x &&
+                        Mathf.Abs(delta.y) <= halfExtents[archIndex].y &&
+                        Mathf.Abs(delta.z) <= halfExtents[archIndex].z)
+                        return false;
+                }
+            }
+            return true;
+        }
+
         static MoonlightGestureSample DirectionalSample(Vector2 direction, float displacement)
         {
             direction = direction.sqrMagnitude > 0.0001f ? direction.normalized : Vector2.right;
@@ -3261,12 +3787,18 @@ namespace MoonlightMagicHouse
             bool authoredArena = BuildAuthoredPlayArena();
             if (!authoredArena)
             {
-                Primitive(PrimitiveType.Cylinder, "PlayMatFallback", new Vector3(0f, 0.035f, 0f),
-                    new Vector3(2.15f, 0.025f, 1.24f), new Color(0.22f, 0.32f, 0.43f), 0.03f);
-                Primitive(PrimitiveType.Cylinder, "TargetOuterRingFallback", new Vector3(0.86f, 0.07f, -0.18f),
-                    new Vector3(0.46f, 0.012f, 0.46f), new Color(0.98f, 0.82f, 0.38f), 0.14f);
-                Primitive(PrimitiveType.Cylinder, "TargetInnerDotFallback", new Vector3(0.86f, 0.085f, -0.18f),
-                    new Vector3(0.20f, 0.012f, 0.20f), new Color(0.39f, 0.78f, 0.96f), 0.18f);
+                _playFallbackBase = new[]
+                {
+                    Primitive(PrimitiveType.Cylinder, PlayFallbackBaseNames[0],
+                        PlayFallbackBasePositions[0], PlayFallbackBaseScales[0],
+                        new Color(0.22f, 0.32f, 0.43f), 0.03f),
+                    Primitive(PrimitiveType.Cylinder, PlayFallbackBaseNames[1],
+                        PlayFallbackBasePositions[1], PlayFallbackBaseScales[1],
+                        new Color(0.98f, 0.82f, 0.38f), 0.14f),
+                    Primitive(PrimitiveType.Cylinder, PlayFallbackBaseNames[2],
+                        PlayFallbackBasePositions[2], PlayFallbackBaseScales[2],
+                        new Color(0.39f, 0.78f, 0.96f), 0.18f)
+                };
             }
 
             _ball = Primitive(PrimitiveType.Sphere, "StarBall", new Vector3(0f, 0.30f, 0f),
@@ -3318,24 +3850,26 @@ namespace MoonlightMagicHouse
                 SetPlayRendererVisible(_pathMarkers[i], false);
             }
 
-            _playProps = authoredArena ? null : new[]
+            _playProps = new[]
             {
-                Primitive(PrimitiveType.Capsule, "ToyWand", new Vector3(-0.45f, 0.16f, -0.48f),
-                    new Vector3(0.035f, 0.36f, 0.035f), new Color(0.82f, 0.58f, 0.98f), 0.12f),
-                Primitive(PrimitiveType.Sphere, "ToyWandStar", new Vector3(-0.60f, 0.33f, -0.57f),
-                    Vector3.one * 0.11f, new Color(1f, 0.88f, 0.38f), 0.22f),
-                Primitive(PrimitiveType.Cylinder, "ToyHoop", new Vector3(-0.82f, 0.13f, -0.08f),
-                    new Vector3(0.20f, 0.018f, 0.20f), new Color(0.95f, 0.55f, 0.68f), 0.12f),
-                Primitive(PrimitiveType.Cube, "FinishFlagPole", new Vector3(1.04f, 0.33f, -0.32f),
-                    new Vector3(0.035f, 0.48f, 0.035f), new Color(0.74f, 0.79f, 0.84f), 0.06f),
-                Primitive(PrimitiveType.Cube, "FinishFlag", new Vector3(0.92f, 0.50f, -0.32f),
-                    new Vector3(0.24f, 0.12f, 0.025f), new Color(0.98f, 0.82f, 0.38f), 0.16f),
+                Primitive(PrimitiveType.Capsule, PlayPhaseLandmarkNames[0],
+                    PlayPhaseLandmarkPositions[0], PlayPhaseLandmarkScales[0],
+                    new Color(0.82f, 0.58f, 0.98f), 0.12f),
+                Primitive(PrimitiveType.Sphere, PlayPhaseLandmarkNames[1],
+                    PlayPhaseLandmarkPositions[1], PlayPhaseLandmarkScales[1],
+                    new Color(1f, 0.88f, 0.38f), 0.22f),
+                Primitive(PrimitiveType.Cylinder, PlayPhaseLandmarkNames[2],
+                    PlayPhaseLandmarkPositions[2], PlayPhaseLandmarkScales[2],
+                    new Color(0.95f, 0.55f, 0.68f), 0.12f),
+                Primitive(PrimitiveType.Cube, PlayPhaseLandmarkNames[3],
+                    PlayPhaseLandmarkPositions[3], PlayPhaseLandmarkScales[3],
+                    new Color(0.74f, 0.79f, 0.84f), 0.06f),
+                Primitive(PrimitiveType.Cube, PlayPhaseLandmarkNames[4],
+                    PlayPhaseLandmarkPositions[4], PlayPhaseLandmarkScales[4],
+                    new Color(0.98f, 0.82f, 0.38f), 0.16f),
             };
-            if (_playProps != null)
-            {
-                _playProps[0].localRotation = Quaternion.Euler(74f, 0f, -38f);
-                _playProps[2].localRotation = Quaternion.Euler(0f, 0f, 12f);
-            }
+            _playProps[0].localRotation = Quaternion.Euler(74f, 0f, -38f);
+            _playProps[2].localRotation = Quaternion.Euler(0f, 0f, 12f);
 
             _celebrationStars = new Transform[6];
             for (int i = 0; i < _celebrationStars.Length; i++)
@@ -3347,27 +3881,30 @@ namespace MoonlightMagicHouse
                 SetPlayRendererVisible(_celebrationStars[i], false);
             }
 
-            _playArches = authoredArena ? null : new[]
+            _playArches = new[]
             {
-                Primitive(PrimitiveType.Capsule, "JumpArchLeftPost", new Vector3(-0.48f, 0.33f, 0.38f),
-                    new Vector3(0.055f, 0.50f, 0.055f), new Color(0.54f, 0.80f, 0.70f), 0.08f),
-                Primitive(PrimitiveType.Capsule, "JumpArchRightPost", new Vector3(0.48f, 0.33f, 0.38f),
-                    new Vector3(0.055f, 0.50f, 0.055f), new Color(0.54f, 0.80f, 0.70f), 0.08f),
-                Primitive(PrimitiveType.Cube, "JumpArchTop", new Vector3(0f, 0.62f, 0.34f),
-                    new Vector3(1.02f, 0.055f, 0.055f), new Color(0.98f, 0.78f, 0.36f), 0.12f),
-                Primitive(PrimitiveType.Capsule, "CatchArchLeftPost", new Vector3(0.65f, 0.32f, -0.46f),
-                    new Vector3(0.050f, 0.46f, 0.050f), new Color(0.95f, 0.55f, 0.68f), 0.08f),
-                Primitive(PrimitiveType.Capsule, "CatchArchRightPost", new Vector3(1.23f, 0.32f, -0.46f),
-                    new Vector3(0.050f, 0.46f, 0.050f), new Color(0.95f, 0.55f, 0.68f), 0.08f),
-                Primitive(PrimitiveType.Cube, "CatchArchTop", new Vector3(0.94f, 0.59f, -0.46f),
-                    new Vector3(0.66f, 0.050f, 0.050f), new Color(0.42f, 0.86f, 1f), 0.12f),
+                Primitive(PrimitiveType.Capsule, PlayPhaseLandmarkNames[5],
+                    PlayPhaseLandmarkPositions[5], PlayPhaseLandmarkScales[5],
+                    new Color(0.54f, 0.80f, 0.70f), 0.08f),
+                Primitive(PrimitiveType.Capsule, PlayPhaseLandmarkNames[6],
+                    PlayPhaseLandmarkPositions[6], PlayPhaseLandmarkScales[6],
+                    new Color(0.54f, 0.80f, 0.70f), 0.08f),
+                Primitive(PrimitiveType.Cube, PlayPhaseLandmarkNames[7],
+                    PlayPhaseLandmarkPositions[7], PlayPhaseLandmarkScales[7],
+                    new Color(0.98f, 0.82f, 0.38f), 0.14f),
+                Primitive(PrimitiveType.Capsule, PlayPhaseLandmarkNames[8],
+                    PlayPhaseLandmarkPositions[8], PlayPhaseLandmarkScales[8],
+                    new Color(0.95f, 0.55f, 0.68f), 0.12f),
+                Primitive(PrimitiveType.Capsule, PlayPhaseLandmarkNames[9],
+                    PlayPhaseLandmarkPositions[9], PlayPhaseLandmarkScales[9],
+                    new Color(0.95f, 0.55f, 0.68f), 0.12f),
+                Primitive(PrimitiveType.Cube, PlayPhaseLandmarkNames[10],
+                    PlayPhaseLandmarkPositions[10], PlayPhaseLandmarkScales[10],
+                    new Color(0.42f, 0.86f, 1f), 0.12f),
             };
-            if (_playArches != null)
-            {
-                _playArches[0].localRotation = Quaternion.Euler(0f, 0f, -4f);
-                _playArches[1].localRotation = Quaternion.Euler(0f, 0f, 4f);
-                SetPlayRenderersVisible(_playArches, false);
-            }
+            _playArches[0].localRotation = Quaternion.Euler(0f, 0f, -4f);
+            _playArches[1].localRotation = Quaternion.Euler(0f, 0f, 4f);
+            SetPlayRenderersVisible(_playArches, false);
 
             _podiumProps = new[]
             {
@@ -3468,7 +4005,7 @@ namespace MoonlightMagicHouse
             {
                 SetPlayRendererVisible(_playProps[0], step == 0);
                 SetPlayRendererVisible(_playProps[1], step == 0);
-                SetPlayRendererVisible(_playProps[2], step == 1 || step == 2);
+                SetPlayRendererVisible(_playProps[2], step == 1);
                 SetPlayRendererVisible(_playProps[3], step == 3);
                 SetPlayRendererVisible(_playProps[4], step == 3);
             }
