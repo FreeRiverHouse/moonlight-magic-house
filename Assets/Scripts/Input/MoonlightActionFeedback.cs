@@ -58,6 +58,7 @@ namespace MoonlightMagicHouse
         MoonlightSpatialActionKind _activityKind;
         int _activityStep;
         int _activityRequiredSteps = 1;
+        MoonlightGestureSample _gestureSample;
         bool _masteryCelebrationQueued;
         int _queuedMasteryTier;
         int _queuedMasteryCombo;
@@ -79,6 +80,13 @@ namespace MoonlightMagicHouse
         public int ActivityStep => _activityStep;
         public int ActivityRequiredSteps => _activityRequiredSteps;
         public MoonlightSpatialActionKind ActiveActivityKind => _activityKind;
+        public MoonlightGestureSample ActiveGestureSample => _gestureSample;
+        public bool HasOpaqueActionOrb => _actionOrb != null;
+        public bool PlayUsesStageBallOnly => _activityKind != MoonlightSpatialActionKind.Play ||
+            (_actionOrb == null && _activityStage != null &&
+             _activityStage.AuthoritativePlayBallCount == 1);
+        public static bool ShouldCreateOpaqueActionOrb(MoonlightSpatialActionKind kind) =>
+            kind != MoonlightSpatialActionKind.Play;
         public int ActiveStageRenderers => _activityStage != null ? _activityStage.ActiveRendererCount : 0;
         public int ActiveStageMaterials => _activityStage != null ? _activityStage.ActiveUniqueMaterialCount : 0;
         public int ActiveStageLights => _activityStage != null ? _activityStage.ActiveLightCount : 0;
@@ -162,6 +170,12 @@ namespace MoonlightMagicHouse
 
         public bool TryBegin(MoonlightSpatialActionKind kind, string label, string shortState,
             int activityStep, int activityRequiredSteps, float acceptedGestureScore)
+            => TryBegin(kind, label, shortState, activityStep, activityRequiredSteps,
+                MoonlightGestureSample.Synthetic(MoonlightGestureKind.Swipe,
+                    acceptedGestureScore));
+
+        public bool TryBegin(MoonlightSpatialActionKind kind, string label, string shortState,
+            int activityStep, int activityRequiredSteps, MoonlightGestureSample gestureSample)
         {
             if (!CanBeginAction)
             {
@@ -189,7 +203,8 @@ namespace MoonlightMagicHouse
             _activityKind = kind;
             _activityStep = Mathf.Max(0, activityStep);
             _activityRequiredSteps = Mathf.Max(1, activityRequiredSteps);
-            ActionQualityTier = ActionQualityTierFor(acceptedGestureScore);
+            _gestureSample = gestureSample;
+            ActionQualityTier = ActionQualityTierFor(gestureSample.Score);
             ActionQualityQAMarker = ActionQualityQAMarkerFor(ActionQualityTier);
             ActionQualityBurstCount = ActionQualityBurstCountFor(kind, ActionQualityTier);
             _cooldownUntil = Time.time + Mathf.Max(
@@ -287,7 +302,7 @@ namespace MoonlightMagicHouse
             float duration = DurationFor(kind, state);
             float flashIntensity = ActionQualityFlashIntensityFor(ActionQualityTier);
             BeginCameraFocus(kind);
-            _activityStage.Begin(kind, _activityStep, _activityRequiredSteps);
+            _activityStage.Begin(kind, _activityStep, _activityRequiredSteps, _gestureSample);
             ActionMotionProfile = MotionProfileFor(kind, _activityStep);
             if (kind == MoonlightSpatialActionKind.SleepCuddle)
                 ResetContactQA();
@@ -1036,7 +1051,13 @@ namespace MoonlightMagicHouse
             else if (kind == MoonlightSpatialActionKind.Play)
             {
                 approachStart = 0.04f;
-                contactStart = step switch { 0 => 0.12f, 1 => 0.18f, _ => 0.24f };
+                contactStart = step switch
+                {
+                    0 => 0.12f,
+                    1 => 0.18f,
+                    3 => MoonlightActivityStage.PlayCatchContactProgress,
+                    _ => 0.24f
+                };
                 contactEnd = step switch { 0 => 0.30f, 1 => 0.80f, _ => 0.68f };
                 recoveryStart = step == 0 ? 0.78f : 0.90f;
             }
@@ -1259,8 +1280,6 @@ namespace MoonlightMagicHouse
                 _ => "magic-orbit"
             };
 
-            _actionOrb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            _actionOrb.name = $"ActionOrb-{ActiveEffectName}";
             float orbSize = kind switch
             {
                 MoonlightSpatialActionKind.Cook => 0.13f,
@@ -1271,21 +1290,27 @@ namespace MoonlightMagicHouse
                 MoonlightSpatialActionKind.SleepCuddle when state == "Cuddled" => 0.16f,
                 _ => 0.10f
             };
-            _actionOrb.transform.localScale = Vector3.one * orbSize;
-            var collider = _actionOrb.GetComponent<Collider>();
-            if (collider != null) Destroy(collider);
 
             var shader = Shader.Find("Standard") ?? Shader.Find("Sprites/Default");
-            _actionMaterial = new Material(shader);
-            _actionMaterial.color = color;
-            if (_actionMaterial.HasProperty("_EmissionColor"))
+            if (ShouldCreateOpaqueActionOrb(kind))
             {
-                _actionMaterial.EnableKeyword("_EMISSION");
-                _actionMaterial.SetColor("_EmissionColor", color * 1.7f);
+                _actionOrb = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                _actionOrb.name = $"ActionOrb-{ActiveEffectName}";
+                _actionOrb.transform.localScale = Vector3.one * orbSize;
+                var collider = _actionOrb.GetComponent<Collider>();
+                if (collider != null) Destroy(collider);
+
+                _actionMaterial = new Material(shader);
+                _actionMaterial.color = color;
+                if (_actionMaterial.HasProperty("_EmissionColor"))
+                {
+                    _actionMaterial.EnableKeyword("_EMISSION");
+                    _actionMaterial.SetColor("_EmissionColor", color * 1.7f);
+                }
+                var renderer = _actionOrb.GetComponent<Renderer>();
+                renderer.sharedMaterial = _actionMaterial;
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             }
-            var renderer = _actionOrb.GetComponent<Renderer>();
-            renderer.sharedMaterial = _actionMaterial;
-            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
             ActionVisualSignature = ActionVisualSignatureFor(kind, _activityStep, state);
             ActionVisualSignatureMarker = ActionVisualSignatureMarkerFor(kind, _activityStep, state);
@@ -1295,20 +1320,28 @@ namespace MoonlightMagicHouse
             CreateActionAccentParts(kind, _activityStep);
             UpdateActionAccent(kind, 0f);
 
-            _actionTrail = _actionOrb.AddComponent<TrailRenderer>();
-            _actionTrail.time = Mathf.Min(0.75f, duration * 0.55f);
-            _actionTrail.minVertexDistance = 0.015f;
-            _actionTrail.startWidth = kind == MoonlightSpatialActionKind.Play ? 0.085f : 0.055f;
-            _actionTrail.endWidth = 0f;
-            _actionTrail.startColor = color;
-            _actionTrail.endColor = new Color(color.r, color.g, color.b, 0f);
-            _trailMaterial = CreateTransparentMaterial(Color.white);
-            _actionTrail.sharedMaterial = _trailMaterial;
+            if (_actionOrb != null)
+            {
+                _actionTrail = _actionOrb.AddComponent<TrailRenderer>();
+                _actionTrail.time = Mathf.Min(0.75f, duration * 0.55f);
+                _actionTrail.minVertexDistance = 0.015f;
+                _actionTrail.startWidth = 0.055f;
+                _actionTrail.endWidth = 0f;
+                _actionTrail.startColor = color;
+                _actionTrail.endColor = new Color(color.r, color.g, color.b, 0f);
+                _trailMaterial = CreateTransparentMaterial(Color.white);
+                _actionTrail.sharedMaterial = _trailMaterial;
+            }
             UpdateActionOrb(kind, state, 0f);
         }
 
         void UpdateActionOrb(MoonlightSpatialActionKind kind, string state, float t)
         {
+            if (kind == MoonlightSpatialActionKind.Play)
+            {
+                UpdateActionAccent(kind, t);
+                return;
+            }
             if (_actionOrb == null) return;
             Vector3 center = transform.position + new Vector3(0f, 1.15f, 0f);
             float eased = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t));
@@ -1322,12 +1355,6 @@ namespace MoonlightMagicHouse
                     _actionOrb.transform.position = cookApproach + Vector3.up * cookLift;
                     _actionOrb.transform.localScale = Vector3.one * (0.09f + ActionContactWeight * 0.075f);
                     _actionOrb.SetActive(t < 0.90f);
-                    break;
-                case MoonlightSpatialActionKind.Play:
-                    _actionOrb.transform.position = _actionContactPoint;
-                    float playSquash = ActionContactWeight * 0.18f;
-                    _actionOrb.transform.localScale = new Vector3(0.15f + playSquash,
-                        0.15f - playSquash * 0.45f, 0.15f + playSquash);
                     break;
                 case MoonlightSpatialActionKind.Garden:
                     Vector3 gardenApproach = Vector3.Lerp(center + Vector3.down * 0.32f,
@@ -1371,8 +1398,9 @@ namespace MoonlightMagicHouse
 
         void UpdateActionAccent(MoonlightSpatialActionKind kind, float t)
         {
-            if (_actionAccent == null || _actionOrb == null) return;
+            if (_actionAccent == null) return;
             bool contactProp = IsStepSpecificActivity(kind);
+            if (!contactProp && _actionOrb == null) return;
             Vector3 anchor = contactProp
                 ? _actionContactPoint
                 : _actionOrb.transform.position + ActionAccentWorldOffsetFor(kind);
@@ -1544,7 +1572,6 @@ namespace MoonlightMagicHouse
                 (MoonlightSpatialActionKind.Play, 0) => StarBallLayout(false),
                 (MoonlightSpatialActionKind.Play, 1) => new[]
                 {
-                    Part(PrimitiveType.Sphere, Vector3.zero, Vector3.one * 0.15f, 0f, 1),
                     Part(PrimitiveType.Cube, Vector3.zero, new Vector3(0.38f, 0.018f, 0.025f), 0f, 0),
                     Part(PrimitiveType.Cube, Vector3.zero, new Vector3(0.34f, 0.018f, 0.025f), 60f, 0),
                     Part(PrimitiveType.Cube, Vector3.zero, new Vector3(0.34f, 0.018f, 0.025f), -60f, 0),
@@ -1640,7 +1667,6 @@ namespace MoonlightMagicHouse
             float squeeze = caught ? 0.82f : 1f;
             return new[]
             {
-                Part(PrimitiveType.Sphere, Vector3.zero, Vector3.one * 0.16f, 0f, 1),
                 Part(PrimitiveType.Cube, new Vector3(0f, 0.14f * squeeze, 0f), new Vector3(0.05f, 0.17f, 0.035f), 0f, 0),
                 Part(PrimitiveType.Cube, new Vector3(0.14f * squeeze, 0f, 0f), new Vector3(0.17f, 0.05f, 0.035f), 0f, 0),
                 Part(PrimitiveType.Cube, new Vector3(0f, -0.14f * squeeze, 0f), new Vector3(0.05f, 0.17f, 0.035f), 0f, 2),
@@ -1650,7 +1676,6 @@ namespace MoonlightMagicHouse
 
         static ActionAccentPartSpec[] ImpactLayout() => new[]
         {
-            Part(PrimitiveType.Sphere, Vector3.zero, Vector3.one * 0.12f, 0f, 1),
             Part(PrimitiveType.Capsule, new Vector3(0f, 0.14f, 0f), new Vector3(0.022f, 0.085f, 0.022f), 0f, 0),
             Part(PrimitiveType.Capsule, new Vector3(0.14f, 0f, 0f), new Vector3(0.022f, 0.085f, 0.022f), -90f, 2),
             Part(PrimitiveType.Capsule, new Vector3(0f, -0.14f, 0f), new Vector3(0.022f, 0.085f, 0.022f), 0f, 0),

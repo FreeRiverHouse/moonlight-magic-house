@@ -100,6 +100,7 @@ namespace MoonlightMagicHouse
         public bool SupportsLiveHoldReadiness =>
             IsLiveHoldReadinessStep(kind, _progressStep, RequiredGesture);
         public float LastGestureScore { get; private set; }
+        public MoonlightGestureSample LastGestureSample { get; private set; }
         public bool LastGesturePassed { get; private set; }
         public string LastCueKey { get; private set; } = "";
         public int ActivitySessionAcceptedSteps => _sessionAcceptedSteps;
@@ -176,12 +177,18 @@ namespace MoonlightMagicHouse
 
         public string ExecuteGesture(MoonlightCharacter moonlight, MoonlightGestureKind gesture,
             float score, bool acceptedHapticAlreadyPlayed = false)
+            => ExecuteGesture(moonlight, gesture,
+                MoonlightGestureSample.Synthetic(gesture, score), acceptedHapticAlreadyPlayed);
+
+        public string ExecuteGesture(MoonlightCharacter moonlight, MoonlightGestureKind gesture,
+            MoonlightGestureSample sample, bool acceptedHapticAlreadyPlayed = false)
         {
             if (moonlight == null) return "Moonlight is not ready yet.";
             var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
             if (feedback == null) feedback = moonlight.gameObject.AddComponent<MoonlightActionFeedback>();
 
-            LastGestureScore = Mathf.Clamp01(score);
+            LastGestureSample = sample;
+            LastGestureScore = Mathf.Clamp01(sample.Score);
             LastGesturePassed = false;
             if (!feedback.CanBeginAction)
             {
@@ -242,7 +249,8 @@ namespace MoonlightMagicHouse
                         BuildRewardReceipt(cookBefore, CaptureRewards(moonlight));
 
                 case MoonlightSpatialActionKind.Play:
-                    if (!TryBeginFeedback(feedback, "Playing")) return feedback.InputBlockReason;
+                    if (!TryBeginFeedback(feedback, "Playing", acceptedHapticAlreadyPlayed))
+                        return feedback.InputBlockReason;
                     RecordSuccessfulGesture();
                     LastCueKey = _progressStep switch
                     {
@@ -377,7 +385,7 @@ namespace MoonlightMagicHouse
             bool isScoredActivity = RequiredSteps > 1;
             bool began = isScoredActivity
                 ? feedback.TryBegin(kind, DisplayName, state, _progressStep, RequiredSteps,
-                    LastGestureScore)
+                    LastGestureSample)
                 : feedback.TryBegin(kind, DisplayName, state, _progressStep, RequiredSteps);
             if (!began)
             {

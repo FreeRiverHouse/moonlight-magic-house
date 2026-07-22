@@ -481,6 +481,24 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] gesture-recognizer {recognizerDetail} " +
                 "marker=MOONLIGHT_GESTURE_RECOGNIZER_VERIFIED");
+            if (!MoonlightGesturePad.ValidateGestureSampleContract(out string gestureSampleDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] gesture-sample-contract " +
+                    gestureSampleDetail);
+                Application.Quit(107);
+                yield break;
+            }
+            if (!MoonlightActivityStage.ValidateGestureResponsivePlayContract(
+                    out string responsivePlayDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] gesture-play-contract " +
+                    responsivePlayDetail);
+                Application.Quit(108);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] gesture-play-contract " +
+                $"sample=({gestureSampleDetail}) trajectory=({responsivePlayDetail}) " +
+                "marker=MOONLIGHT_GESTURE_PLAY_STATIC_CONTRACT_VERIFIED");
             if (!MoonlightGesturePad.ValidateLiveHoldReadinessStaticContract(
                     out string liveHoldReadinessDetail))
             {
@@ -1850,6 +1868,50 @@ namespace MoonlightMagicHouse
                         }
                         else if (zone.Kind == MoonlightSpatialActionKind.Play)
                         {
+                            bool gesturePlayRuntimePass =
+                                zone.LastGestureSample.PointCount == 7 &&
+                                zone.LastGestureSample.HasSevenFiniteNormalizedPoints &&
+                                feedback.ActiveGestureSample.PointCount == 7 &&
+                                feedback.ActiveGestureSample.HasSevenFiniteNormalizedPoints &&
+                                stage.ActiveGestureSample.PointCount == 7 &&
+                                stage.ActiveGestureSample.HasSevenFiniteNormalizedPoints &&
+                                stage.PlayTrajectoryRuntimeReady &&
+                                stage.AuthoritativePlayBallCount == 1 &&
+                                stage.AuthoritativePlayTrailCount == 1 &&
+                                feedback.PlayUsesStageBallOnly && !feedback.HasOpaqueActionOrb &&
+                                pad.LastSample.ContentEquals(zone.LastGestureSample) &&
+                                zone.LastGestureSample.ContentEquals(
+                                    feedback.ActiveGestureSample) &&
+                                feedback.ActiveGestureSample.ContentEquals(
+                                    stage.ActiveGestureSample) &&
+                                (step != 3 || stage.PlayCatchIsHeld);
+                            if (!gesturePlayRuntimePass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] gesture-play-runtime " +
+                                    $"step={step + 1}/4 zonePoints={zone.LastGestureSample.PointCount} " +
+                                    $"feedbackPoints={feedback.ActiveGestureSample.PointCount} " +
+                                    $"stagePoints={stage.ActiveGestureSample.PointCount} " +
+                                    $"trajectory={stage.PlayTrajectoryQAMarker} " +
+                                    $"balls={stage.AuthoritativePlayBallCount} " +
+                                    $"trails={stage.AuthoritativePlayTrailCount} " +
+                                    $"feedbackOrb={feedback.HasOpaqueActionOrb} " +
+                                    $"stageOnly={feedback.PlayUsesStageBallOnly} " +
+                                    $"catchHeld={stage.PlayCatchIsHeld} " +
+                                    $"position={stage.PlayBallLocalPosition:F3}");
+                                Application.Quit(109);
+                                yield break;
+                            }
+                            Debug.Log("[MoonlightGameplayQA][PASS] gesture-play-runtime " +
+                                $"step={step + 1}/4 points={stage.ActiveGestureSample.PointCount} " +
+                                $"score={stage.ActiveGestureSample.Score:0.00} " +
+                                $"duration={stage.ActiveGestureSample.Duration:0.00} " +
+                                $"displacement={stage.ActiveGestureSample.Displacement:F3}/" +
+                                $"{stage.ActiveGestureSample.DisplacementMagnitude:0.000} " +
+                                $"balls={stage.AuthoritativePlayBallCount} " +
+                                $"trails={stage.AuthoritativePlayTrailCount} " +
+                                $"catchHeld={stage.PlayCatchIsHeld} " +
+                                "marker=MOONLIGHT_GESTURE_PLAY_RUNTIME_VERIFIED");
+
                             bool authoredArenaPass = stage.HasAuthoredPlayArena &&
                                 stage.AuthoredPlayArenaRendererCount >= 7 &&
                                 stage.AuthoredPlayArenaRendererCount <= 10 &&

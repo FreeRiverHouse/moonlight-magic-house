@@ -21,6 +21,15 @@ namespace MoonlightMagicHouse
         const float BakeDoorReopenEnd = 0.66f;
         const float BakeExtractStart = 0.68f;
         const float BakeExtractEnd = 0.92f;
+        public const float PlayMinimumThrowExtent = 1.05f;
+        public const float PlayMaximumThrowExtent = 2.30f;
+        public const float PlayMinimumJumpExtent = 0.80f;
+        public const float PlayMaximumJumpExtent = 1.80f;
+        public const float PlayMinimumJumpHeight = 0.72f;
+        public const float PlayMaximumJumpHeight = 1.18f;
+        public const float PlayCatchContactProgress = 0.38f;
+        public const int RequiredAuthoritativePlayBallCount = 1;
+        public static readonly Vector3 PlayCatchPoint = new(0.94f, 0.54f, -0.46f);
         public const int CookPhaseCount = 4;
         public const int CookRequiredPhaseMask = (1 << CookPhaseCount) - 1;
         public const int CookRendererBudget = 36;
@@ -112,6 +121,8 @@ namespace MoonlightMagicHouse
         bool _applyPersistentCompletionOnEnd;
         Vector3 _center;
         int _requiredSteps = 1;
+        float _playProgress;
+        MoonlightGestureSample _gestureSample;
 
         public bool IsVisible => _root != null;
         public bool IsLingering { get; private set; }
@@ -123,6 +134,34 @@ namespace MoonlightMagicHouse
         public int ActiveRendererCount { get; private set; }
         public int ActiveUniqueMaterialCount { get; private set; }
         public int ActiveLightCount { get; private set; }
+        public MoonlightGestureSample ActiveGestureSample => _gestureSample;
+        public Vector3 PlayBallLocalPosition => _ball != null
+            ? _ball.localPosition
+            : new Vector3(float.NaN, float.NaN, float.NaN);
+        public int AuthoritativePlayBallCount => CountPlayObjectsNamed("StarBall");
+        public int AuthoritativePlayTrailCount => CurrentKind == MoonlightSpatialActionKind.Play &&
+            _root != null ? _root.GetComponentsInChildren<TrailRenderer>(true).Length : 0;
+        public bool PlayCatchIsHeld => CurrentKind == MoonlightSpatialActionKind.Play &&
+            CurrentStep == 3 && _playProgress >= PlayCatchContactProgress && _ball != null &&
+            Vector3.Distance(_ball.localPosition, PlayCatchPoint) <= 0.0001f;
+        public bool PlayTrajectoryRuntimeReady => CurrentKind == MoonlightSpatialActionKind.Play &&
+            AuthoritativePlayBallCount == 1 && _gestureSample.PointCount == 7 &&
+            _gestureSample.HasSevenFiniteNormalizedPoints &&
+            AuthoritativePlayTrailCount == 1 &&
+            PlayPointIsFiniteAndBounded(PlayBallLocalPosition) &&
+            (CurrentStep != 3 || _playProgress < PlayCatchContactProgress || PlayCatchIsHeld);
+        public string PlayTrajectoryQAMarker => PlayTrajectoryRuntimeReady
+            ? "MOONLIGHT_GESTURE_PLAY_TRAJECTORY_READY"
+            : "MOONLIGHT_GESTURE_PLAY_TRAJECTORY_INVALID";
+
+        int CountPlayObjectsNamed(string objectName)
+        {
+            if (CurrentKind != MoonlightSpatialActionKind.Play || _root == null) return 0;
+            int count = 0;
+            foreach (Transform candidate in _root.GetComponentsInChildren<Transform>(true))
+                if (candidate != null && candidate.name == objectName) count++;
+            return count;
+        }
         public int ConfiguredSurfaceProfileCount => _configuredSurfaceProfiles.Count;
         public bool HasDepthLighting => _activityLight != null &&
             _activityLight.type == LightType.Spot &&
@@ -360,9 +399,15 @@ namespace MoonlightMagicHouse
         }
 
         public void Begin(MoonlightSpatialActionKind kind, int stepIndex, int requiredSteps)
+            => Begin(kind, stepIndex, requiredSteps,
+                MoonlightGestureSample.Synthetic(MoonlightGestureKind.Swipe, 1f));
+
+        public void Begin(MoonlightSpatialActionKind kind, int stepIndex, int requiredSteps,
+            MoonlightGestureSample gestureSample)
         {
             End();
             CurrentKind = kind;
+            _gestureSample = gestureSample;
             _requiredSteps = kind is MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
                 MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
                 MoonlightSpatialActionKind.Care
@@ -655,6 +700,8 @@ namespace MoonlightMagicHouse
             CookCurrentPhaseStateReady = false;
             _cookBakeDoorClearancePass = true;
             _ball = null;
+            _gestureSample = default;
+            _playProgress = 0f;
             _blocks = null;
             _playProps = null;
             _starDetails = null;
@@ -1651,6 +1698,182 @@ namespace MoonlightMagicHouse
             return false;
         }
 
+        public static Vector3 EvaluatePlayTrajectory(int stepIndex, float progress,
+            MoonlightGestureSample sample)
+        {
+            int step = Mathf.Clamp(stepIndex, 0, 3);
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            Vector2 direction2 = sample.Direction;
+            Vector3 direction = new(direction2.x, 0f, -direction2.y);
+            if (direction.sqrMagnitude < 0.0001f) direction = Vector3.right;
+            direction.Normalize();
+
+            if (step == 0)
+            {
+                float extent = Mathf.Lerp(PlayMinimumThrowExtent, PlayMaximumThrowExtent,
+                    Mathf.InverseLerp(0.24f, 1.20f, sample.DisplacementMagnitude));
+                Vector3 point = direction * ((t - 0.5f) * extent);
+                point.y = 0.24f + Mathf.Sin(t * Mathf.PI) * (0.78f + extent * 0.15f);
+                return point;
+            }
+
+            if (step == 1)
+            {
+                Vector2 gesturePoint = InterpolateSamplePoint(sample, t);
+                float minimumX = sample[0].x;
+                float maximumX = sample[0].x;
+                for (int i = 1; i < MoonlightGestureSample.ResampledPointCount; i++)
+                {
+                    minimumX = Mathf.Min(minimumX, sample[i].x);
+                    maximumX = Mathf.Max(maximumX, sample[i].x);
+                }
+                float lateralCenter = (minimumX + maximumX) * 0.5f;
+                float maximumLateral = 0.08f;
+                for (int i = 0; i < MoonlightGestureSample.ResampledPointCount; i++)
+                    maximumLateral = Mathf.Max(maximumLateral,
+                        Mathf.Abs(sample[i].x - lateralCenter));
+                float lateral = Mathf.Clamp((gesturePoint.x - lateralCenter) / maximumLateral,
+                    -1f, 1f);
+                return new Vector3(Mathf.Lerp(-1.05f, 1.05f, t),
+                    0.26f + Mathf.Abs(Mathf.Sin(t * Mathf.PI * 4f)) * 0.30f,
+                    -0.18f + lateral * 0.44f);
+            }
+
+            if (step == 2)
+            {
+                float extent = Mathf.Lerp(PlayMinimumJumpExtent, PlayMaximumJumpExtent,
+                    Mathf.InverseLerp(0.24f, 1.05f, sample.DisplacementMagnitude));
+                float height = Mathf.Lerp(PlayMinimumJumpHeight, PlayMaximumJumpHeight,
+                    Mathf.InverseLerp(0.24f, 1.05f, sample.DisplacementMagnitude));
+                Vector3 point = direction * ((t - 0.5f) * extent) +
+                    new Vector3(0f, 0.24f, 0.34f);
+                point.y += Mathf.Sin(t * Mathf.PI) * height;
+                return point;
+            }
+
+            if (t >= PlayCatchContactProgress) return PlayCatchPoint;
+            float catchT = Mathf.SmoothStep(0f, 1f, t / PlayCatchContactProgress);
+            return Vector3.Lerp(new Vector3(0.48f, 1.12f, -0.18f), PlayCatchPoint, catchT);
+        }
+
+        public static bool ValidateGestureResponsivePlayContract(out string detail)
+        {
+            MoonlightGestureSample right = DirectionalSample(Vector2.right, 0.54f);
+            MoonlightGestureSample left = DirectionalSample(Vector2.left, 0.54f);
+            MoonlightGestureSample shortThrow = DirectionalSample(Vector2.right, 0.28f);
+            MoonlightGestureSample longThrow = DirectionalSample(Vector2.right, 1.10f);
+            MoonlightGestureSample zigZag = MoonlightGestureSample.Synthetic(
+                MoonlightGestureKind.ZigZag, 0.95f);
+
+            Vector3 rightEnd = EvaluatePlayTrajectory(0, 1f, right);
+            Vector3 leftEnd = EvaluatePlayTrajectory(0, 1f, left);
+            float mirroredSeparation = Vector3.Distance(rightEnd, leftEnd);
+            bool mirroredGeometry = true;
+            for (int i = 0; i <= 40; i++)
+            {
+                float progress = i / 40f;
+                Vector3 rightPoint = EvaluatePlayTrajectory(0, progress, right);
+                Vector3 leftPoint = EvaluatePlayTrajectory(0, progress, left);
+                mirroredGeometry &= Mathf.Abs(rightPoint.x + leftPoint.x) <= 0.001f &&
+                    Mathf.Abs(rightPoint.y - leftPoint.y) <= 0.001f &&
+                    Mathf.Abs(rightPoint.z + leftPoint.z) <= 0.001f;
+            }
+            float shortExtent = PlanarDistance(EvaluatePlayTrajectory(0, 0f, shortThrow),
+                EvaluatePlayTrajectory(0, 1f, shortThrow));
+            float longExtent = PlanarDistance(EvaluatePlayTrajectory(0, 0f, longThrow),
+                EvaluatePlayTrajectory(0, 1f, longThrow));
+
+            int zigZagTurns = 0;
+            float previousSign = 0f;
+            for (int i = 0; i < MoonlightGestureSample.ResampledPointCount; i++)
+            {
+                float u = i / (float)(MoonlightGestureSample.ResampledPointCount - 1);
+                float sign = Mathf.Sign(EvaluatePlayTrajectory(1, u, zigZag).z + 0.18f);
+                if (previousSign != 0f && sign != 0f && sign != previousSign) zigZagTurns++;
+                if (sign != 0f) previousSign = sign;
+            }
+
+            Vector3 jumpStart = EvaluatePlayTrajectory(2, 0f, longThrow);
+            Vector3 jumpPeak = EvaluatePlayTrajectory(2, 0.5f, longThrow);
+            Vector3 jumpEnd = EvaluatePlayTrajectory(2, 1f, longThrow);
+            float jumpExtent = PlanarDistance(jumpStart, jumpEnd);
+            float jumpHeight = jumpPeak.y - jumpStart.y;
+            Vector3 catchContact = EvaluatePlayTrajectory(3, PlayCatchContactProgress, right);
+            Vector3 catchFinal = EvaluatePlayTrajectory(3, 1f, left);
+
+            bool finiteAndBounded = true;
+            Vector2[] directions =
+            {
+                Vector2.right, Vector2.left, Vector2.up, Vector2.down,
+                new Vector2(1f, 1f), new Vector2(-1f, 1f),
+                new Vector2(1f, -1f), new Vector2(-1f, -1f)
+            };
+            for (int step = 0; step < 4; step++)
+            {
+                foreach (Vector2 testDirection in directions)
+                {
+                    MoonlightGestureSample directional = DirectionalSample(testDirection, 1.10f);
+                    for (int i = 0; i <= 40; i++)
+                        finiteAndBounded &= PlayPointIsFiniteAndBounded(EvaluatePlayTrajectory(
+                            step, i / 40f, step == 1 ? zigZag : directional));
+                }
+            }
+            bool jumpBounds = jumpExtent >= PlayMinimumJumpExtent - 0.001f &&
+                jumpExtent <= PlayMaximumJumpExtent + 0.001f &&
+                jumpHeight >= PlayMinimumJumpHeight - 0.001f &&
+                jumpHeight <= PlayMaximumJumpHeight + 0.001f;
+            bool catchBounds = PlayPointIsFiniteAndBounded(catchContact) &&
+                Vector3.Distance(catchContact, catchFinal) <= 0.0001f &&
+                Vector3.Distance(catchFinal, PlayCatchPoint) <= 0.0001f;
+            detail = $"points={zigZag.PointCount} finiteClamped={finiteAndBounded} " +
+                $"mirrored={mirroredGeometry}/{mirroredSeparation:0.000} " +
+                $"throwExtent={shortExtent:0.000}-" +
+                $"{longExtent:0.000} zigTurns={zigZagTurns} jump={jumpExtent:0.000}/" +
+                $"{jumpHeight:0.000} catchHeld={catchBounds}";
+            bool authoritativeBallContract = RequiredAuthoritativePlayBallCount == 1 &&
+                !MoonlightActionFeedback.ShouldCreateOpaqueActionOrb(
+                    MoonlightSpatialActionKind.Play);
+            detail += $" authoritativeBalls={RequiredAuthoritativePlayBallCount} " +
+                $"feedbackOrb={MoonlightActionFeedback.ShouldCreateOpaqueActionOrb(MoonlightSpatialActionKind.Play)}";
+            return zigZag.PointCount == 7 && zigZag.HasSevenFiniteNormalizedPoints &&
+                finiteAndBounded && mirroredGeometry && mirroredSeparation >= 0.80f &&
+                longExtent > shortExtent + 0.40f && zigZagTurns >= 3 && jumpBounds && catchBounds &&
+                authoritativeBallContract;
+        }
+
+        static MoonlightGestureSample DirectionalSample(Vector2 direction, float displacement)
+        {
+            direction = direction.sqrMagnitude > 0.0001f ? direction.normalized : Vector2.right;
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++)
+                points[i] = direction * Mathf.Lerp(-displacement * 0.5f,
+                    displacement * 0.5f, i / (float)(points.Length - 1));
+            return MoonlightGestureSample.Create(0.95f, 0.35f, points);
+        }
+
+        static Vector2 InterpolateSamplePoint(MoonlightGestureSample sample, float t)
+        {
+            float scaled = Mathf.Clamp01(t) * (MoonlightGestureSample.ResampledPointCount - 1);
+            int from = Mathf.Min(Mathf.FloorToInt(scaled),
+                MoonlightGestureSample.ResampledPointCount - 1);
+            int to = Mathf.Min(from + 1, MoonlightGestureSample.ResampledPointCount - 1);
+            return Vector2.Lerp(sample[from], sample[to], scaled - from);
+        }
+
+        static float PlanarDistance(Vector3 first, Vector3 second)
+        {
+            Vector3 delta = second - first;
+            delta.y = 0f;
+            return delta.magnitude;
+        }
+
+        static bool PlayPointIsFiniteAndBounded(Vector3 point) =>
+            IsFinite(point.x) && IsFinite(point.y) && IsFinite(point.z) &&
+            Mathf.Abs(point.x) <= 1.25f && point.y >= 0.18f && point.y <= 1.65f &&
+            Mathf.Abs(point.z) <= 1.25f;
+
+        static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+
         void BuildPlayStage()
         {
             bool authoredArena = BuildAuthoredPlayArena();
@@ -1849,6 +2072,7 @@ namespace MoonlightMagicHouse
             if (_ball == null || _starDetails == null || _blocks == null) return;
 
             int step = Mathf.Clamp(CurrentStep, 0, 3);
+            _playProgress = Mathf.Clamp01(t);
             SetActive(_podiumProps, step == 3);
             if (_playArches != null)
             {
@@ -1867,41 +2091,8 @@ namespace MoonlightMagicHouse
             if (_ballTrail != null) _ballTrail.enabled = step != 3 || t < 0.58f;
             if (_ball != null)
             {
-                Vector3 launchStart = new Vector3(-1.15f, 0.24f, 0.34f);
-                Vector3 launchEnd = new Vector3(1.12f, 0.30f, -0.30f);
-                Vector3 chaseA = new Vector3(-1.08f, 0.26f, -0.42f);
-                Vector3 chaseB = new Vector3(1.04f, 0.30f, -0.10f);
-                Vector3 jumpStart = new Vector3(-0.90f, 0.24f, 0.38f);
-                Vector3 jumpEnd = new Vector3(0.88f, 0.26f, 0.38f);
-                Vector3 catchSpot = new Vector3(0.94f, 0.54f, -0.46f);
-                float angle = t * Mathf.PI * 2f;
                 float bounce = Mathf.Abs(Mathf.Sin(t * Mathf.PI * 4f));
-
-                if (step == 0)
-                {
-                    Vector3 arc = Vector3.Lerp(launchStart, launchEnd, t);
-                    arc.y += Mathf.Sin(t * Mathf.PI) * 1.12f;
-                    _ball.localPosition = arc;
-                }
-                else if (step == 1)
-                {
-                    _ball.localPosition = Vector3.Lerp(chaseA, chaseB, t)
-                        + new Vector3(Mathf.Sin(angle * 2.5f) * 0.16f, bounce * 0.34f,
-                            Mathf.Sin(t * Mathf.PI * 4f) * 0.34f);
-                }
-                else if (step == 2)
-                {
-                    Vector3 arc = Vector3.Lerp(jumpStart, jumpEnd, t);
-                    arc.y += Mathf.Sin(t * Mathf.PI) * 1.14f;
-                    arc.z += Mathf.Sin(t * Mathf.PI * 2f) * 0.12f;
-                    _ball.localPosition = arc;
-                }
-                else
-                {
-                    float settle = Mathf.Clamp01(t * 2.5f);
-                    _ball.localPosition = Vector3.Lerp(new Vector3(0.48f, 1.12f, -0.18f), catchSpot, settle)
-                        + new Vector3(0f, Mathf.Sin(t * Mathf.PI * 5f) * 0.10f * (1f - settle), 0f);
-                }
+                _ball.localPosition = EvaluatePlayTrajectory(step, t, _gestureSample);
 
                 float squash = 1f - (1f - bounce) * 0.18f;
                 _ball.localScale = new Vector3(0.27f / squash, 0.27f * squash, 0.27f / squash);
@@ -1935,21 +2126,8 @@ namespace MoonlightMagicHouse
                 {
                     _pathMarkers[i].gameObject.SetActive(step <= 2);
                     float u = i / (float)(_pathMarkers.Length - 1);
-                    if (step == 0)
-                    {
-                        _pathMarkers[i].localPosition = new Vector3(Mathf.Lerp(-1.15f, 1.12f, u),
-                            0.20f + Mathf.Sin(u * Mathf.PI) * 1.12f, Mathf.Lerp(0.34f, -0.30f, u));
-                    }
-                    else if (step == 1)
-                    {
-                        _pathMarkers[i].localPosition = new Vector3(Mathf.Lerp(-1.08f, 1.04f, u), 0.075f,
-                            -0.08f + Mathf.Sin(u * Mathf.PI * 3f) * 0.46f);
-                    }
-                    else
-                    {
-                        _pathMarkers[i].localPosition = new Vector3(Mathf.Lerp(-0.90f, 0.88f, u),
-                            0.18f + Mathf.Sin(u * Mathf.PI) * 1.05f, 0.38f);
-                    }
+                    _pathMarkers[i].localPosition = EvaluatePlayTrajectory(step, u, _gestureSample);
+                    _pathMarkers[i].localPosition += Vector3.up * (step == 1 ? -0.18f : -0.04f);
                     float pulse = 1f + Mathf.Sin(t * Mathf.PI * 6f + i) * 0.16f;
                     float markerSize = step == 1 ? 0.14f : 0.11f;
                     _pathMarkers[i].localScale = new Vector3(markerSize, step == 1 ? 0.010f : 0.035f,

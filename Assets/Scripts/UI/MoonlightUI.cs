@@ -629,7 +629,8 @@ namespace MoonlightMagicHouse
                 progressFill = CalculateActivityProgress01(feedback.ActivityStep,
                     feedback.ActionProgress01, requiredSteps);
                 string verb = ProgressVerb(feedback.ProgressText);
-                string phase = ActivityPhaseLabel(feedback.ActionContactPhase);
+                string phase = ActivityPhaseLabel(feedback.ActiveActivityKind,
+                    feedback.ActivityStep, feedback.ActionContactPhase);
                 if (contextLabel != null)
                     contextLabel.text = zone != null
                         ? $"{zone.DisplayName.ToUpperInvariant()}  /  {verb}  /  {phase}"
@@ -995,6 +996,36 @@ namespace MoonlightMagicHouse
             _ => "IN MOTION"
         };
 
+        public static string ActivityPhaseLabel(MoonlightSpatialActionKind kind, int step,
+            string phase)
+        {
+            if (kind != MoonlightSpatialActionKind.Play) return ActivityPhaseLabel(phase);
+            return (Mathf.Clamp(step, 0, 3), phase) switch
+            {
+                (0, "anticipation") => "AIM",
+                (0, "approach") => "WIND UP",
+                (0, "contact") => "RELEASE",
+                (0, "follow-through") => "BALL FLIGHT",
+                (0, "recovery") => "THROW RESET",
+                (1, "anticipation") => "TRACK PATH",
+                (1, "approach") => "PURSUE",
+                (1, "contact") => "ZIG-ZAG",
+                (1, "follow-through") => "DASH THROUGH",
+                (1, "recovery") => "CHASE RESET",
+                (2, "anticipation") => "CROUCH",
+                (2, "approach") => "TAKE OFF",
+                (2, "contact") => "CLEAR ARC",
+                (2, "follow-through") => "LAND",
+                (2, "recovery") => "LANDING SET",
+                (3, "anticipation") => "TRACK BALL",
+                (3, "approach") => "REACH",
+                (3, "contact") => "CATCH",
+                (3, "follow-through") => "HOLD BALL",
+                (3, "recovery") => "PRESENT",
+                _ => "BALL IN MOTION"
+            };
+        }
+
         public static bool ValidateActivityPhaseFeedbackContract(out string detail)
         {
             string[] source =
@@ -1010,9 +1041,33 @@ namespace MoonlightMagicHouse
             bool semanticPass = ActivityPhaseLabel("contact") == "MAKE CONTACT" &&
                 ActivityPhaseLabel("follow-through") == "FOLLOW THROUGH" &&
                 ActivityPhaseLabel("") == "IN MOTION";
+            bool playSpecific = true;
+            int longestPlay = 0;
+            var playLabels = new HashSet<string>();
+            string[,] expectedPlay =
+            {
+                { "AIM", "WIND UP", "RELEASE", "BALL FLIGHT", "THROW RESET" },
+                { "TRACK PATH", "PURSUE", "ZIG-ZAG", "DASH THROUGH", "CHASE RESET" },
+                { "CROUCH", "TAKE OFF", "CLEAR ARC", "LAND", "LANDING SET" },
+                { "TRACK BALL", "REACH", "CATCH", "HOLD BALL", "PRESENT" }
+            };
+            for (int step = 0; step < 4; step++)
+            {
+                for (int phaseIndex = 0; phaseIndex < source.Length; phaseIndex++)
+                {
+                    string phase = source[phaseIndex];
+                    string label = ActivityPhaseLabel(MoonlightSpatialActionKind.Play, step, phase);
+                    longestPlay = Mathf.Max(longestPlay, label.Length);
+                    playLabels.Add(label);
+                    playSpecific &= label == expectedPlay[step, phaseIndex] && label.Length <= 14;
+                }
+            }
+            playSpecific &= playLabels.Count == 20;
             detail = $"phases={source.Length} unique={labels.Count} longest={longest} " +
-                $"semantic={semanticPass}";
-            return source.Length == 5 && labels.Count == 5 && longest <= 14 && semanticPass;
+                $"playUnique={playLabels.Count}/20 playLongest={longestPlay} " +
+                $"playSpecific={playSpecific} semantic={semanticPass}";
+            return source.Length == 5 && labels.Count == 5 && longest <= 14 && semanticPass &&
+                playSpecific;
         }
 
         void RefreshRoomNavigationState(MoonlightSpatialInteractor interactor, bool presenting, bool busy)
@@ -1197,6 +1252,11 @@ namespace MoonlightMagicHouse
 
         public void ExecuteContextGesture(MoonlightGestureKind gesture, float score,
             bool acceptedHapticAlreadyPlayed = false)
+            => ExecuteContextGesture(gesture,
+                MoonlightGestureSample.Synthetic(gesture, score), acceptedHapticAlreadyPlayed);
+
+        public void ExecuteContextGesture(MoonlightGestureKind gesture,
+            MoonlightGestureSample sample, bool acceptedHapticAlreadyPlayed = false)
         {
             var moonlight = MoonlightGameManager.Instance?.moonlight;
             var interactor = moonlight != null
@@ -1205,7 +1265,7 @@ namespace MoonlightMagicHouse
             if (interactor == null || interactor.CurrentZone == null) return;
 
             var zone = interactor.CurrentZone;
-            string result = zone.ExecuteGesture(moonlight, gesture, score,
+            string result = zone.ExecuteGesture(moonlight, gesture, sample,
                 acceptedHapticAlreadyPlayed);
             if (zone.LastGesturePassed && zone.RequiredSteps > 1)
                 SetRoomNavigationLocked(true);

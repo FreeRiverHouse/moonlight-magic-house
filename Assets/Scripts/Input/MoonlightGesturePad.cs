@@ -14,6 +14,169 @@ namespace MoonlightMagicHouse
         ZigZag
     }
 
+    public readonly struct MoonlightGestureSample
+    {
+        public const int ResampledPointCount = 7;
+
+        readonly Vector2 _point0;
+        readonly Vector2 _point1;
+        readonly Vector2 _point2;
+        readonly Vector2 _point3;
+        readonly Vector2 _point4;
+        readonly Vector2 _point5;
+        readonly Vector2 _point6;
+
+        public float Score { get; }
+        public float Duration { get; }
+        public bool IsInitialized { get; }
+        public Vector2 Displacement => _point6 - _point0;
+        public float DisplacementMagnitude => Displacement.magnitude;
+        public int PointCount => IsInitialized ? ResampledPointCount : 0;
+        public Vector2 Start => _point0;
+        public Vector2 End => _point6;
+        public Vector2 Direction => Displacement.sqrMagnitude > 0.000001f
+            ? Displacement.normalized
+            : Vector2.right;
+
+        public Vector2 this[int index] => index switch
+        {
+            0 => _point0,
+            1 => _point1,
+            2 => _point2,
+            3 => _point3,
+            4 => _point4,
+            5 => _point5,
+            6 => _point6,
+            _ => throw new System.IndexOutOfRangeException()
+        };
+
+        MoonlightGestureSample(float score, float duration, Vector2 point0, Vector2 point1,
+            Vector2 point2, Vector2 point3, Vector2 point4, Vector2 point5, Vector2 point6)
+        {
+            IsInitialized = true;
+            Score = Mathf.Clamp01(IsFinite(score) ? score : 0f);
+            Duration = Mathf.Clamp(IsFinite(duration) ? duration : 0f, 0f, 8f);
+            _point0 = Sanitize(point0);
+            _point1 = Sanitize(point1);
+            _point2 = Sanitize(point2);
+            _point3 = Sanitize(point3);
+            _point4 = Sanitize(point4);
+            _point5 = Sanitize(point5);
+            _point6 = Sanitize(point6);
+        }
+
+        public static MoonlightGestureSample Create(float score, float duration,
+            IReadOnlyList<Vector2> normalizedPoints)
+        {
+            var points = new Vector2[ResampledPointCount];
+            if (normalizedPoints == null || normalizedPoints.Count == 0)
+                return new MoonlightGestureSample(score, duration, Vector2.zero, Vector2.zero,
+                    Vector2.zero, Vector2.zero, Vector2.zero, Vector2.zero, Vector2.zero);
+
+            float pathLength = 0f;
+            for (int i = 1; i < normalizedPoints.Count; i++)
+                pathLength += Vector2.Distance(Sanitize(normalizedPoints[i - 1]),
+                    Sanitize(normalizedPoints[i]));
+
+            if (pathLength <= 0.000001f)
+            {
+                Vector2 point = Sanitize(normalizedPoints[0]);
+                for (int i = 0; i < points.Length; i++) points[i] = point;
+            }
+            else
+            {
+                points[0] = Sanitize(normalizedPoints[0]);
+                points[^1] = Sanitize(normalizedPoints[^1]);
+                int segment = 1;
+                float traversed = 0f;
+                for (int sample = 1; sample < ResampledPointCount - 1; sample++)
+                {
+                    float target = pathLength * sample / (ResampledPointCount - 1f);
+                    while (segment < normalizedPoints.Count)
+                    {
+                        Vector2 from = Sanitize(normalizedPoints[segment - 1]);
+                        Vector2 to = Sanitize(normalizedPoints[segment]);
+                        float segmentLength = Vector2.Distance(from, to);
+                        if (traversed + segmentLength >= target ||
+                            segment == normalizedPoints.Count - 1)
+                        {
+                            float segmentT = segmentLength > 0.000001f
+                                ? Mathf.Clamp01((target - traversed) / segmentLength)
+                                : 0f;
+                            points[sample] = Vector2.Lerp(from, to, segmentT);
+                            break;
+                        }
+                        traversed += segmentLength;
+                        segment++;
+                    }
+                }
+            }
+
+            return new MoonlightGestureSample(score, duration, points[0], points[1], points[2],
+                points[3], points[4], points[5], points[6]);
+        }
+
+        public static MoonlightGestureSample Synthetic(MoonlightGestureKind gesture, float score)
+        {
+            var points = new Vector2[ResampledPointCount];
+            for (int i = 0; i < points.Length; i++)
+            {
+                float t = i / (float)(points.Length - 1);
+                points[i] = gesture switch
+                {
+                    MoonlightGestureKind.Swipe => new Vector2(Mathf.Lerp(-0.46f, 0.46f, t), 0f),
+                    MoonlightGestureKind.ZigZag => new Vector2(
+                        i % 2 == 0 ? -0.36f : 0.36f, Mathf.Lerp(-0.42f, 0.42f, t)),
+                    MoonlightGestureKind.Circle => new Vector2(
+                        Mathf.Cos(t * Mathf.PI * 2f), Mathf.Sin(t * Mathf.PI * 2f)) * 0.32f,
+                    _ => Vector2.zero
+                };
+            }
+            float duration = gesture switch
+            {
+                MoonlightGestureKind.Tap => 0.12f,
+                MoonlightGestureKind.Hold => 1f,
+                MoonlightGestureKind.Swipe => 0.35f,
+                _ => 0.8f
+            };
+            return Create(score, duration, points);
+        }
+
+        public bool HasSevenFiniteNormalizedPoints
+        {
+            get
+            {
+                if (!IsInitialized) return false;
+                for (int i = 0; i < ResampledPointCount; i++)
+                {
+                    Vector2 point = this[i];
+                    if (!IsFinite(point.x) || !IsFinite(point.y) ||
+                        Mathf.Abs(point.x) > 1f || Mathf.Abs(point.y) > 1f)
+                        return false;
+                }
+                return IsFinite(Score) && IsFinite(Duration) && IsFinite(Displacement.x) &&
+                    IsFinite(Displacement.y) && IsFinite(DisplacementMagnitude);
+            }
+        }
+
+        public bool ContentEquals(MoonlightGestureSample other, float epsilon = 0.0001f)
+        {
+            if (!IsInitialized || !other.IsInitialized ||
+                Mathf.Abs(Score - other.Score) > epsilon ||
+                Mathf.Abs(Duration - other.Duration) > epsilon)
+                return false;
+            for (int i = 0; i < ResampledPointCount; i++)
+                if (Vector2.Distance(this[i], other[i]) > epsilon) return false;
+            return true;
+        }
+
+        static Vector2 Sanitize(Vector2 point) => new(
+            Mathf.Clamp(IsFinite(point.x) ? point.x : 0f, -1f, 1f),
+            Mathf.Clamp(IsFinite(point.y) ? point.y : 0f, -1f, 1f));
+
+        static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+    }
+
     public sealed class MoonlightGesturePad : MonoBehaviour,
         IPointerDownHandler, IDragHandler, IPointerUpHandler, ICancelHandler
     {
@@ -87,6 +250,7 @@ namespace MoonlightMagicHouse
 
         public MoonlightGestureKind ActiveGesture => _gesture;
         public float LastScore { get; private set; }
+        public MoonlightGestureSample LastSample { get; private set; }
         public string LastRejectionReason { get; private set; } = "";
         public bool IsTrackingGesture => _pointerId != int.MinValue;
         public int TraceDotPoolCount => _traceDots.Length;
@@ -285,8 +449,9 @@ namespace MoonlightMagicHouse
             }
 
             LastScore = ScoreGesture(_gesture, _points, duration);
+            LastSample = MoonlightGestureSample.Create(LastScore, duration, _points);
             Debug.Log($"[MoonlightActivityQA] gesture kind={_gesture} score={LastScore:0.00} points={_points.Count}");
-            _ui?.ExecuteContextGesture(_gesture, LastScore, acceptedHapticAlreadyPlayed);
+            _ui?.ExecuteContextGesture(_gesture, LastSample, acceptedHapticAlreadyPlayed);
             SetResultVisual(startedZone.LastGesturePassed, LastScore);
             _points.Clear();
         }
@@ -302,8 +467,9 @@ namespace MoonlightMagicHouse
 
             _gesture = gesture;
             LastScore = Mathf.Clamp01(score);
+            LastSample = MoonlightGestureSample.Synthetic(gesture, LastScore);
             LastRejectionReason = "";
-            _ui?.ExecuteContextGesture(gesture, LastScore);
+            _ui?.ExecuteContextGesture(gesture, LastSample);
             SetResultVisual(zone.LastGesturePassed, LastScore);
             return true;
         }
@@ -1043,6 +1209,61 @@ namespace MoonlightMagicHouse
             }
 
             return 0f;
+        }
+
+        public static bool ValidateGestureSampleContract(out string detail)
+        {
+            var source = new[]
+            {
+                new Vector2(-0.72f, -0.20f), new Vector2(-0.20f, 0.34f),
+                new Vector2(0.16f, -0.38f), new Vector2(0.72f, 0.22f)
+            };
+            MoonlightGestureSample sample = MoonlightGestureSample.Create(0.84f, 0.62f, source);
+            bool endpointsPreserved = Vector2.Distance(sample.Start, source[0]) <= 0.0001f &&
+                Vector2.Distance(sample.End, source[^1]) <= 0.0001f;
+            bool immutableShape = typeof(MoonlightGestureSample).IsValueType &&
+                typeof(MoonlightGestureSample).IsSealed;
+            MoonlightGestureSample empty = MoonlightGestureSample.Create(0.5f, 0.4f, null);
+            MoonlightGestureSample single = MoonlightGestureSample.Create(0.5f, 0.4f,
+                new[] { new Vector2(0.25f, -0.25f) });
+            MoonlightGestureSample repeated = MoonlightGestureSample.Create(0.5f, 0.4f,
+                new[] { Vector2.zero, Vector2.zero, new Vector2(0.6f, 0f) });
+            MoonlightGestureSample sanitized = MoonlightGestureSample.Create(float.NaN,
+                float.PositiveInfinity, new[]
+                {
+                    new Vector2(float.NaN, float.NegativeInfinity),
+                    new Vector2(2f, -2f)
+                });
+            bool singleExpanded = single.PointCount == MoonlightGestureSample.ResampledPointCount;
+            bool repeatedResampled = repeated.PointCount ==
+                MoonlightGestureSample.ResampledPointCount;
+            for (int i = 0; i < MoonlightGestureSample.ResampledPointCount; i++)
+            {
+                singleExpanded &= Vector2.Distance(single[i], new Vector2(0.25f, -0.25f)) <=
+                    0.0001f;
+                repeatedResampled &= Vector2.Distance(repeated[i],
+                    new Vector2(i * 0.1f, 0f)) <= 0.0001f;
+            }
+            bool edgeCases = empty.IsInitialized && empty.PointCount == 7 &&
+                empty.HasSevenFiniteNormalizedPoints &&
+                singleExpanded && repeatedResampled && repeated.HasSevenFiniteNormalizedPoints &&
+                repeated.DisplacementMagnitude >= 0.599f &&
+                sanitized.HasSevenFiniteNormalizedPoints && sanitized.Score == 0f &&
+                sanitized.Duration == 0f && sanitized.End == new Vector2(1f, -1f) &&
+                !default(MoonlightGestureSample).IsInitialized &&
+                default(MoonlightGestureSample).PointCount == 0;
+            detail = $"points={sample.PointCount}/{MoonlightGestureSample.ResampledPointCount} " +
+                $"initialized={sample.IsInitialized} " +
+                $"finiteNormalized={sample.HasSevenFiniteNormalizedPoints} " +
+                $"score={sample.Score:0.00} duration={sample.Duration:0.00} " +
+                $"displacement={sample.Displacement:F3}/{sample.DisplacementMagnitude:0.000} " +
+                $"endpoints={endpointsPreserved} edges={edgeCases} " +
+                $"valueType={immutableShape}";
+            return sample.IsInitialized && sample.PointCount == 7 &&
+                sample.HasSevenFiniteNormalizedPoints &&
+                Mathf.Approximately(sample.Score, 0.84f) &&
+                Mathf.Approximately(sample.Duration, 0.62f) && endpointsPreserved && edgeCases &&
+                immutableShape;
         }
 
         public static bool ValidateRecognizerContract(out string detail)
