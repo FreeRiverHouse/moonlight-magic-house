@@ -20,6 +20,7 @@ namespace MoonlightMagicHouse
         public const float DefaultPassingScore = 0.58f;
         public const float FeedHungerIncrease = 18f;
         public const float SleepCuddleRestThreshold = 82f;
+        public const int CompactIPadInstructionMaxCharacters = 32;
 
         public readonly struct RewardSnapshot
         {
@@ -137,43 +138,165 @@ namespace MoonlightMagicHouse
 
         public string GetActionLabel(MoonlightCharacter moonlight)
         {
-            return kind switch
+            float rest = moonlight != null
+                ? moonlight.stats.rest
+                : SleepCuddleRestThreshold;
+            return ActionLabelFor(kind, _progressStep, rest);
+        }
+
+        static string ActionLabelFor(MoonlightSpatialActionKind actionKind, int progressStep,
+            float rest)
+        {
+            return actionKind switch
             {
-                MoonlightSpatialActionKind.Cook => _progressStep switch
+                MoonlightSpatialActionKind.Cook => progressStep switch
                 {
                     0 => "ADD",
                     1 => "STIR",
                     2 => "BAKE",
                     _ => "DECORATE"
                 },
-                MoonlightSpatialActionKind.Play => _progressStep switch
+                MoonlightSpatialActionKind.Play => progressStep switch
                 {
                     0 => "THROW",
                     1 => "CHASE",
                     2 => "JUMP",
                     _ => "CATCH"
                 },
-                MoonlightSpatialActionKind.Garden => _progressStep switch
+                MoonlightSpatialActionKind.Garden => progressStep switch
                 {
                     0 => "PLANT",
                     1 => "WATER",
                     2 => "TEND",
                     _ => "BLOOM"
                 },
-                MoonlightSpatialActionKind.Read => _progressStep switch
+                MoonlightSpatialActionKind.Read => progressStep switch
                 {
                     0 => "OPEN",
                     1 => "TURN",
                     2 => "TRACE",
                     _ => "REMEMBER"
                 },
-                MoonlightSpatialActionKind.SleepCuddle => SleepCuddleLabelForRest(
-                    moonlight != null ? moonlight.stats.rest : SleepCuddleRestThreshold),
-                MoonlightSpatialActionKind.Care => CareLabelForStep(_progressStep),
+                MoonlightSpatialActionKind.SleepCuddle => SleepCuddleLabelForRest(rest),
+                MoonlightSpatialActionKind.Care => CareLabelForStep(progressStep),
                 MoonlightSpatialActionKind.Feed => "FEED",
                 _ => "ACTION"
             };
         }
+
+        public string GetCompactIPadInstruction(MoonlightCharacter moonlight) =>
+            BuildCompactIPadInstruction(RequiredGesture, GetActionLabel(moonlight),
+                _progressStep, RequiredSteps);
+
+        public static string BuildCompactIPadInstruction(MoonlightGestureKind gesture,
+            string actionLabel, int progressStep, int requiredSteps)
+        {
+            requiredSteps = Mathf.Max(1, requiredSteps);
+            string step = requiredSteps > 1
+                ? $" {Mathf.Clamp(progressStep + 1, 1, requiredSteps)}/{requiredSteps}"
+                : "";
+            return $"{CompactGestureInstruction(gesture)} -> {actionLabel}{step}";
+        }
+
+        public static string CompactGestureInstruction(MoonlightGestureKind gesture) =>
+            gesture switch
+            {
+                MoonlightGestureKind.Circle => "DRAW CIRCLE",
+                MoonlightGestureKind.Hold => "PRESS + HOLD",
+                MoonlightGestureKind.Swipe => "SWIPE",
+                MoonlightGestureKind.ZigZag => "DRAW ZIG-ZAG",
+                _ => "TAP"
+            };
+
+        public static bool IsValidCompactIPadInstruction(string instruction)
+        {
+            if (string.IsNullOrEmpty(instruction) ||
+                instruction.Length > CompactIPadInstructionMaxCharacters)
+                return false;
+            for (int i = 0; i < instruction.Length; i++)
+                if (instruction[i] < 0x20 || instruction[i] > 0x7e)
+                    return false;
+            return instruction.Contains(" -> ");
+        }
+
+        public static bool ValidateCompactIPadInstructionContract(out string detail)
+        {
+            int checkedSteps = 0;
+            int expectedSteps = 0;
+            int maximumLength = 0;
+            bool mappingPass = true;
+            bool formatPass = true;
+            foreach (MoonlightSpatialActionKind actionKind in
+                     System.Enum.GetValues(typeof(MoonlightSpatialActionKind)))
+            {
+                int requiredSteps = RequiredStepsFor(actionKind);
+                expectedSteps += requiredSteps;
+                for (int step = 0; step < requiredSteps; step++)
+                {
+                    string instruction = BuildCompactIPadInstruction(
+                        RequiredGestureFor(actionKind, step),
+                        ActionLabelFor(actionKind, step, SleepCuddleRestThreshold),
+                        step, requiredSteps);
+                    mappingPass &= instruction ==
+                        ExpectedCompactIPadInstruction(actionKind, step);
+                    formatPass &= IsValidCompactIPadInstruction(instruction);
+                    maximumLength = Mathf.Max(maximumLength, instruction.Length);
+                    checkedSteps++;
+                }
+            }
+
+            string sleep = BuildCompactIPadInstruction(
+                RequiredGestureFor(MoonlightSpatialActionKind.SleepCuddle, 0),
+                ActionLabelFor(MoonlightSpatialActionKind.SleepCuddle, 0,
+                    SleepCuddleRestThreshold - 1f), 0, 1);
+            string cuddle = BuildCompactIPadInstruction(
+                RequiredGestureFor(MoonlightSpatialActionKind.SleepCuddle, 0),
+                ActionLabelFor(MoonlightSpatialActionKind.SleepCuddle, 0,
+                    SleepCuddleRestThreshold), 0, 1);
+            string feed = BuildCompactIPadInstruction(
+                RequiredGestureFor(MoonlightSpatialActionKind.Feed, 0),
+                ActionLabelFor(MoonlightSpatialActionKind.Feed, 0, 0f), 0, 1);
+            bool singleStepPass = sleep == "PRESS + HOLD -> SLEEP" &&
+                cuddle == "PRESS + HOLD -> CUDDLE" && feed == "TAP -> FEED" &&
+                !sleep.Contains("/") && !cuddle.Contains("/") && !feed.Contains("/") &&
+                IsValidCompactIPadInstruction(sleep) &&
+                IsValidCompactIPadInstruction(cuddle) &&
+                IsValidCompactIPadInstruction(feed);
+            bool pass = mappingPass && formatPass && checkedSteps == expectedSteps &&
+                expectedSteps == 22 && singleStepPass;
+            detail = $"kindSteps={checkedSteps}/{expectedSteps} max={maximumLength}/" +
+                $"{CompactIPadInstructionMaxCharacters} mapping={mappingPass} " +
+                $"asciiOneLine={formatPass} singleStep={sleep},{cuddle},{feed}";
+            return pass;
+        }
+
+        static string ExpectedCompactIPadInstruction(MoonlightSpatialActionKind actionKind,
+            int step) => (actionKind, step) switch
+        {
+            (MoonlightSpatialActionKind.Cook, 0) => "TAP -> ADD 1/4",
+            (MoonlightSpatialActionKind.Cook, 1) => "DRAW CIRCLE -> STIR 2/4",
+            (MoonlightSpatialActionKind.Cook, 2) => "PRESS + HOLD -> BAKE 3/4",
+            (MoonlightSpatialActionKind.Cook, 3) => "DRAW ZIG-ZAG -> DECORATE 4/4",
+            (MoonlightSpatialActionKind.Play, 0) => "SWIPE -> THROW 1/4",
+            (MoonlightSpatialActionKind.Play, 1) => "DRAW ZIG-ZAG -> CHASE 2/4",
+            (MoonlightSpatialActionKind.Play, 2) => "SWIPE -> JUMP 3/4",
+            (MoonlightSpatialActionKind.Play, 3) => "TAP -> CATCH 4/4",
+            (MoonlightSpatialActionKind.Garden, 0) => "TAP -> PLANT 1/4",
+            (MoonlightSpatialActionKind.Garden, 1) => "DRAW CIRCLE -> WATER 2/4",
+            (MoonlightSpatialActionKind.Garden, 2) => "DRAW ZIG-ZAG -> TEND 3/4",
+            (MoonlightSpatialActionKind.Garden, 3) => "PRESS + HOLD -> BLOOM 4/4",
+            (MoonlightSpatialActionKind.Read, 0) => "TAP -> OPEN 1/4",
+            (MoonlightSpatialActionKind.Read, 1) => "SWIPE -> TURN 2/4",
+            (MoonlightSpatialActionKind.Read, 2) => "DRAW CIRCLE -> TRACE 3/4",
+            (MoonlightSpatialActionKind.Read, 3) => "PRESS + HOLD -> REMEMBER 4/4",
+            (MoonlightSpatialActionKind.SleepCuddle, 0) => "PRESS + HOLD -> CUDDLE",
+            (MoonlightSpatialActionKind.Care, 0) => "TAP -> PREP 1/4",
+            (MoonlightSpatialActionKind.Care, 1) => "DRAW CIRCLE -> WASH 2/4",
+            (MoonlightSpatialActionKind.Care, 2) => "SWIPE -> BRUSH 3/4",
+            (MoonlightSpatialActionKind.Care, 3) => "PRESS + HOLD -> GLOW 4/4",
+            (MoonlightSpatialActionKind.Feed, 0) => "TAP -> FEED",
+            _ => ""
+        };
 
         public string GetPrompt(MoonlightCharacter moonlight)
         {

@@ -422,6 +422,7 @@ namespace MoonlightMagicHouse
         public string GestureCommandQAMarker => _gestureCommandMarker;
         public string ActivityPhaseQAMarker => _activityPhaseMarker;
         public string ActionButtonQAText => actionBtnLabel != null ? actionBtnLabel.text : "";
+        public string ActivityContextQAText => contextLabel != null ? contextLabel.text : "";
         public string ContextResultQAText => resultLabel != null ? resultLabel.text : "";
         public bool ActionButtonQAInteractable => actionBtn != null && actionBtn.interactable;
         public bool FreeHopAvailable => _freeHopAvailable;
@@ -1346,7 +1347,7 @@ namespace MoonlightMagicHouse
                 string action = zone.GetActionLabel(moonlight);
                 string gesture = CompactGestureCommand(zone.RequiredGesture);
                 if (contextLabel != null)
-                    contextLabel.text = $"{zone.DisplayName.ToUpperInvariant()}  /  {action}";
+                    contextLabel.text = zone.GetCompactIPadInstruction(moonlight);
                 if (_gesturePad != null && _gesturePad.IsLiveHoldReadinessActive)
                 {
                     actionBtnLabel.text = LiveHoldReadinessLabel(
@@ -1799,14 +1800,8 @@ namespace MoonlightMagicHouse
             }
         }
 
-        static string CompactGestureCommand(MoonlightGestureKind gesture) => gesture switch
-        {
-            MoonlightGestureKind.Circle => "DRAW CIRCLE",
-            MoonlightGestureKind.Hold => "PRESS + HOLD",
-            MoonlightGestureKind.Swipe => "SWIPE",
-            MoonlightGestureKind.ZigZag => "DRAW ZIG-ZAG",
-            _ => "TAP"
-        };
+        static string CompactGestureCommand(MoonlightGestureKind gesture) =>
+            MoonlightSpatialActionZone.CompactGestureInstruction(gesture);
 
         static string CompactDiscoveryPrompt(MoonlightSpatialInteractor interactor)
         {

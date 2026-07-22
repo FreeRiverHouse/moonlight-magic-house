@@ -47,6 +47,10 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_IPAD_ACTIVITY_QUALITY_RUNTIME_BINDING_VERIFIED";
         public const string ActivityQualityReadoutZoneExitMarker =
             "MOONLIGHT_IPAD_ACTIVITY_QUALITY_ZONE_EXIT_RESET_VERIFIED";
+        public const string CompactIPadInstructionStaticContractMarker =
+            "MOONLIGHT_IPAD_COMPACT_INSTRUCTION_STATIC_CONTRACT_VERIFIED";
+        public const string CompactIPadInstructionStaticContractFailureMarker =
+            "MOONLIGHT_IPAD_COMPACT_INSTRUCTION_STATIC_CONTRACT_FAILED";
         public const string PlayContinuityRuntimeMarker =
             "MOONLIGHT_PLAY_CONTINUITY_TRANSACTION_VERIFIED";
         public const string PlayContinuityOrderModeMarker =
@@ -917,6 +921,18 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-progress-feedback-contract " +
                 $"{progressFeedbackDetail} marker=MOONLIGHT_IPAD_PROGRESS_FEEDBACK_CONTRACT_VERIFIED");
+            if (!MoonlightSpatialActionZone.ValidateCompactIPadInstructionContract(
+                    out string compactInstructionDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-compact-instruction-contract " +
+                    $"{compactInstructionDetail} " +
+                    $"marker={CompactIPadInstructionStaticContractFailureMarker}");
+                Application.Quit(163);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-compact-instruction-contract " +
+                $"{compactInstructionDetail} " +
+                $"marker={CompactIPadInstructionStaticContractMarker}");
             if (!MoonlightUI.ValidateIPadActivityQualityReadoutContract(
                     out string activityQualityDetail))
             {
@@ -2456,10 +2472,14 @@ namespace MoonlightMagicHouse
                         yield return null;
                         string expectedProgress = $"{step + 1}/{zone.RequiredSteps}";
                         float expectedFill = step / (float)zone.RequiredSteps;
+                        string expectedInstruction = zone.GetCompactIPadInstruction(moonlight);
                         bool stepHudPass = ui.ActivityProgressQAMarker == expectedProgress &&
                             Approximately(ui.ActivityProgressFill01, expectedFill) &&
                             ui.ActivityProgressFillQAMarker ==
                                 "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_READY" &&
+                            ui.ActivityContextQAText == expectedInstruction &&
+                            MoonlightSpatialActionZone.IsValidCompactIPadInstruction(
+                                ui.ActivityContextQAText) &&
                             !string.IsNullOrEmpty(ui.GestureCommandQAMarker) &&
                             pad.GuideIsVisible && pad.GuideGesture == zone.RequiredGesture &&
                             pad.GuidePathQAMarker == "MOONLIGHT_IPAD_GESTURE_GUIDE_READY" &&
@@ -2472,6 +2492,7 @@ namespace MoonlightMagicHouse
                                 $"step={step + 1} progress={ui.ActivityProgressQAMarker} " +
                                 $"fill={ui.ActivityProgressFill01:0.000}/{expectedFill:0.000} " +
                                 $"fillMarker={ui.ActivityProgressFillQAMarker} " +
+                                $"instruction=\"{ui.ActivityContextQAText}\" " +
                                 $"gesture={ui.GestureCommandQAMarker} touch={ui.ActionTouchTargetLayoutSize} " +
                                 $"insideSafe={ui.ActionTouchTargetIsInsideSafeArea} " +
                                 $"panelsSeparated={ui.ActivityHUDPanelsDoNotOverlap}");
@@ -2481,6 +2502,7 @@ namespace MoonlightMagicHouse
                         Debug.Log($"[MoonlightGameplayQA][PASS] ipad-activity-hud action={zone.Kind} " +
                             $"step={step + 1} progress={ui.ActivityProgressQAMarker} " +
                             $"fill={ui.ActivityProgressFill01:0.000} " +
+                            $"instruction=\"{ui.ActivityContextQAText}\" " +
                             $"gesture=\"{ui.GestureCommandQAMarker}\"");
                     }
                     Vector3 acceptedActionPosition = controller.transform.position;
