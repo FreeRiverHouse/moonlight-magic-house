@@ -200,6 +200,106 @@ namespace MoonlightMagicHouse
         const bool ResultOverlayRaycastTarget = false;
         public const float FreeHopTapPassingScore = 0.50f;
 
+        [System.Flags]
+        enum QATransactionCoverage
+        {
+            None = 0,
+            InputSession = 1 << 0,
+            LastSampleAndResult = 1 << 1,
+            ResultPresentation = 1 << 2,
+            TracePresentation = 1 << 3,
+            GuidePresentation = 1 << 4,
+            LiveHoldReadiness = 1 << 5,
+            LiveHoldEvidence = 1 << 6,
+            MovementLock = 1 << 7
+        }
+
+        const QATransactionCoverage RequiredQATransactionCoverage =
+            QATransactionCoverage.InputSession |
+            QATransactionCoverage.LastSampleAndResult |
+            QATransactionCoverage.ResultPresentation |
+            QATransactionCoverage.TracePresentation |
+            QATransactionCoverage.GuidePresentation |
+            QATransactionCoverage.LiveHoldReadiness |
+            QATransactionCoverage.LiveHoldEvidence |
+            QATransactionCoverage.MovementLock;
+        const QATransactionCoverage CapturedQATransactionCoverage =
+            QATransactionCoverage.InputSession |
+            QATransactionCoverage.LastSampleAndResult |
+            QATransactionCoverage.ResultPresentation |
+            QATransactionCoverage.TracePresentation |
+            QATransactionCoverage.GuidePresentation |
+            QATransactionCoverage.LiveHoldReadiness |
+            QATransactionCoverage.LiveHoldEvidence |
+            QATransactionCoverage.MovementLock;
+        const QATransactionCoverage RestoredQATransactionCoverage =
+            QATransactionCoverage.InputSession |
+            QATransactionCoverage.LastSampleAndResult |
+            QATransactionCoverage.ResultPresentation |
+            QATransactionCoverage.TracePresentation |
+            QATransactionCoverage.GuidePresentation |
+            QATransactionCoverage.LiveHoldReadiness |
+            QATransactionCoverage.LiveHoldEvidence |
+            QATransactionCoverage.MovementLock;
+
+        internal struct QAVisualState
+        {
+            public bool Active;
+            public Vector2 AnchoredPosition;
+            public Vector3 Scale;
+            public Color Color;
+        }
+
+        public sealed class QATransactionSnapshot
+        {
+            internal int TransactionId;
+            internal MoonlightGestureKind Gesture;
+            internal float StartedAt;
+            internal Vector2[] Points;
+            internal float LastScore;
+            internal MoonlightGestureSample LastSample;
+            internal string LastRejectionReason;
+            internal int MultitouchRejectionCount;
+            internal bool LastResultPassed;
+            internal float FeedbackRemaining;
+            internal Color FeedbackColor;
+            internal float FeedbackFillScale;
+            internal Color SurfaceColor;
+            internal Vector3 PadScale;
+            internal Color ResultOverlayColor;
+            internal Vector3 ResultOverlayScale;
+            internal int TraceDotCursor;
+            internal int TraceDotCount;
+            internal float TraceFadeRemaining;
+            internal Color TraceResultColor;
+            internal float TraceResultFillScale;
+            internal float[] TraceDrawScales;
+            internal QAVisualState[] TraceVisuals;
+            internal MoonlightGestureKind GuideGesture;
+            internal MoonlightGestureKind AppliedGuideGesture;
+            internal bool GuideRequested;
+            internal bool GuideVisible;
+            internal bool GuidePresentationApplied;
+            internal QAVisualState[] GuideVisuals;
+            internal bool LiveHoldReadinessActive;
+            internal bool LiveHoldReady;
+            internal bool LiveHoldHapticPlayed;
+            internal bool LiveHoldOverlayObserved;
+            internal int LiveHoldHapticCount;
+            internal float LiveHoldScore;
+            internal bool HasLastLiveHoldRuntimeEvidence;
+            internal MoonlightSpatialActionKind LastLiveHoldActionKind;
+            internal int LastLiveHoldStartStep;
+            internal int LastLiveHoldEndStep;
+            internal bool LastLiveHoldOverlayObserved;
+            internal int LastLiveHoldHapticCount;
+            internal bool LastLiveHoldCompletionAccepted;
+            internal bool LastLiveHoldCompletionHapticSuppressed;
+            internal bool LastLiveHoldCleanupObserved;
+            internal bool LastLiveHoldCancellationCleanupObserved;
+            internal string LastLiveHoldCancellationReason;
+        }
+
         readonly struct ResultFeedbackProfile
         {
             public readonly Color Color;
@@ -263,6 +363,8 @@ namespace MoonlightMagicHouse
         string _lastLiveHoldCancellationReason = "";
         bool _trackingFreeHop;
         MoonlightPlayerController _contextMovementController;
+        int _nextQATransactionId;
+        int _activeQATransactionId;
 
         public MoonlightGestureKind ActiveGesture => _gesture;
         public float LastScore { get; private set; }
@@ -415,6 +517,327 @@ namespace MoonlightMagicHouse
         }
 
         public void Bind(MoonlightUI ui) => _ui = ui;
+
+        public bool TryBeginQATransaction(out QATransactionSnapshot snapshot,
+            out string detail)
+        {
+            snapshot = null;
+            bool tracking = _pointerId != int.MinValue;
+            bool movementLockHeld = IsContextGestureMovementLockHeld;
+            if (!CanBeginQATransaction(_activeQATransactionId != 0, tracking,
+                    movementLockHeld))
+            {
+                detail = $"activeTransaction={_activeQATransactionId != 0} " +
+                    $"tracking={tracking} movementLock={movementLockHeld}";
+                return false;
+            }
+
+            _nextQATransactionId = _nextQATransactionId == int.MaxValue
+                ? 1
+                : _nextQATransactionId + 1;
+            _activeQATransactionId = _nextQATransactionId;
+            snapshot = new QATransactionSnapshot
+            {
+                TransactionId = _activeQATransactionId,
+                Gesture = _gesture,
+                StartedAt = _startedAt,
+                Points = _points.ToArray(),
+                LastScore = LastScore,
+                LastSample = LastSample,
+                LastRejectionReason = LastRejectionReason,
+                MultitouchRejectionCount = MultitouchRejectionCount,
+                LastResultPassed = _lastResultPassed,
+                FeedbackRemaining = Mathf.Max(0f, _feedbackUntil - Time.unscaledTime),
+                FeedbackColor = _feedbackColor,
+                FeedbackFillScale = _feedbackFillScale,
+                SurfaceColor = _surface != null ? _surface.color : Color.clear,
+                PadScale = transform.localScale,
+                ResultOverlayColor = _resultOverlay != null
+                    ? _resultOverlay.color
+                    : Color.clear,
+                ResultOverlayScale = _resultOverlayRect != null
+                    ? _resultOverlayRect.localScale
+                    : Vector3.one,
+                TraceDotCursor = _traceDotCursor,
+                TraceDotCount = _traceDotCount,
+                TraceFadeRemaining = Mathf.Max(0f, _traceFadeUntil - Time.unscaledTime),
+                TraceResultColor = _traceResultColor,
+                TraceResultFillScale = _traceResultFillScale,
+                TraceDrawScales = (float[])_traceDrawScales.Clone(),
+                TraceVisuals = CaptureVisualStates(_traceDots, _traceImages),
+                GuideGesture = _guideGesture,
+                AppliedGuideGesture = _appliedGuideGesture,
+                GuideRequested = _guideRequested,
+                GuideVisible = _guideVisible,
+                GuidePresentationApplied = _guidePresentationApplied,
+                GuideVisuals = CaptureVisualStates(_guideDots, _guideImages),
+                LiveHoldReadinessActive = _liveHoldReadinessActive,
+                LiveHoldReady = _liveHoldReady,
+                LiveHoldHapticPlayed = _liveHoldHapticPlayed,
+                LiveHoldOverlayObserved = _liveHoldOverlayObserved,
+                LiveHoldHapticCount = _liveHoldHapticCount,
+                LiveHoldScore = _liveHoldScore,
+                HasLastLiveHoldRuntimeEvidence = _hasLastLiveHoldRuntimeEvidence,
+                LastLiveHoldActionKind = _lastLiveHoldActionKind,
+                LastLiveHoldStartStep = _lastLiveHoldStartStep,
+                LastLiveHoldEndStep = _lastLiveHoldEndStep,
+                LastLiveHoldOverlayObserved = _lastLiveHoldOverlayObserved,
+                LastLiveHoldHapticCount = _lastLiveHoldHapticCount,
+                LastLiveHoldCompletionAccepted = _lastLiveHoldCompletionAccepted,
+                LastLiveHoldCompletionHapticSuppressed =
+                    _lastLiveHoldCompletionHapticSuppressed,
+                LastLiveHoldCleanupObserved = _lastLiveHoldCleanupObserved,
+                LastLiveHoldCancellationCleanupObserved =
+                    _lastLiveHoldCancellationCleanupObserved,
+                LastLiveHoldCancellationReason = _lastLiveHoldCancellationReason
+            };
+            detail = $"transaction={snapshot.TransactionId} coverage=" +
+                $"{CapturedQATransactionCoverage}";
+            return true;
+        }
+
+        public bool RestoreQATransaction(QATransactionSnapshot snapshot, out string detail)
+        {
+            if (snapshot == null || snapshot.TransactionId == 0 ||
+                snapshot.TransactionId != _activeQATransactionId)
+            {
+                detail = $"snapshot={(snapshot != null ? snapshot.TransactionId : 0)} " +
+                    $"active={_activeQATransactionId}";
+                return false;
+            }
+
+            CancelTracking("qa-transaction-restore");
+            _gesture = snapshot.Gesture;
+            _startedAt = snapshot.StartedAt;
+            _pointerId = int.MinValue;
+            _startedZone = null;
+            _trackingFreeHop = false;
+            _contextMovementController = null;
+            _points.Clear();
+            if (snapshot.Points != null)
+                _points.AddRange(snapshot.Points);
+            LastScore = snapshot.LastScore;
+            LastSample = snapshot.LastSample;
+            LastRejectionReason = snapshot.LastRejectionReason ?? "";
+            MultitouchRejectionCount = snapshot.MultitouchRejectionCount;
+            _lastResultPassed = snapshot.LastResultPassed;
+            _feedbackUntil = snapshot.FeedbackRemaining > 0f
+                ? Time.unscaledTime + snapshot.FeedbackRemaining
+                : 0f;
+            _feedbackColor = snapshot.FeedbackColor;
+            _feedbackFillScale = snapshot.FeedbackFillScale;
+            if (_surface != null) _surface.color = snapshot.SurfaceColor;
+            transform.localScale = snapshot.PadScale;
+            if (_resultOverlay != null) _resultOverlay.color = snapshot.ResultOverlayColor;
+            if (_resultOverlayRect != null)
+                _resultOverlayRect.localScale = snapshot.ResultOverlayScale;
+
+            _traceDotCursor = snapshot.TraceDotCursor;
+            _traceDotCount = snapshot.TraceDotCount;
+            _traceFadeUntil = snapshot.TraceFadeRemaining > 0f
+                ? Time.unscaledTime + snapshot.TraceFadeRemaining
+                : 0f;
+            _traceResultColor = snapshot.TraceResultColor;
+            _traceResultFillScale = snapshot.TraceResultFillScale;
+            if (snapshot.TraceDrawScales != null)
+                System.Array.Copy(snapshot.TraceDrawScales, _traceDrawScales,
+                    Mathf.Min(snapshot.TraceDrawScales.Length, _traceDrawScales.Length));
+            RestoreVisualStates(_traceDots, _traceImages, snapshot.TraceVisuals);
+
+            _guideGesture = snapshot.GuideGesture;
+            _appliedGuideGesture = snapshot.AppliedGuideGesture;
+            _guideRequested = snapshot.GuideRequested;
+            _guideVisible = snapshot.GuideVisible;
+            _guidePresentationApplied = snapshot.GuidePresentationApplied;
+            RestoreVisualStates(_guideDots, _guideImages, snapshot.GuideVisuals);
+
+            _liveHoldReadinessActive = snapshot.LiveHoldReadinessActive;
+            _liveHoldReady = snapshot.LiveHoldReady;
+            _liveHoldHapticPlayed = snapshot.LiveHoldHapticPlayed;
+            _liveHoldOverlayObserved = snapshot.LiveHoldOverlayObserved;
+            _liveHoldHapticCount = snapshot.LiveHoldHapticCount;
+            _liveHoldScore = snapshot.LiveHoldScore;
+            _hasLastLiveHoldRuntimeEvidence = snapshot.HasLastLiveHoldRuntimeEvidence;
+            _lastLiveHoldActionKind = snapshot.LastLiveHoldActionKind;
+            _lastLiveHoldStartStep = snapshot.LastLiveHoldStartStep;
+            _lastLiveHoldEndStep = snapshot.LastLiveHoldEndStep;
+            _lastLiveHoldOverlayObserved = snapshot.LastLiveHoldOverlayObserved;
+            _lastLiveHoldHapticCount = snapshot.LastLiveHoldHapticCount;
+            _lastLiveHoldCompletionAccepted = snapshot.LastLiveHoldCompletionAccepted;
+            _lastLiveHoldCompletionHapticSuppressed =
+                snapshot.LastLiveHoldCompletionHapticSuppressed;
+            _lastLiveHoldCleanupObserved = snapshot.LastLiveHoldCleanupObserved;
+            _lastLiveHoldCancellationCleanupObserved =
+                snapshot.LastLiveHoldCancellationCleanupObserved;
+            _lastLiveHoldCancellationReason = snapshot.LastLiveHoldCancellationReason ?? "";
+
+            bool stateMatches = QATransactionStateMatches(snapshot);
+            _activeQATransactionId = 0;
+            detail = $"transaction={snapshot.TransactionId} coverage=" +
+                $"{RestoredQATransactionCoverage} stateMatches={stateMatches}";
+            return stateMatches;
+        }
+
+        bool QATransactionStateMatches(QATransactionSnapshot snapshot)
+        {
+            bool sampleMatches = LastSample.IsInitialized == snapshot.LastSample.IsInitialized &&
+                (!LastSample.IsInitialized || LastSample.ContentEquals(snapshot.LastSample));
+            bool pointsMatch = snapshot.Points != null &&
+                _points.Count == snapshot.Points.Length;
+            if (pointsMatch)
+                for (int i = 0; i < _points.Count; i++)
+                    pointsMatch &= _points[i] == snapshot.Points[i];
+            float feedbackRemaining = Mathf.Max(0f, _feedbackUntil - Time.unscaledTime);
+            float traceRemaining = Mathf.Max(0f, _traceFadeUntil - Time.unscaledTime);
+            bool input = _pointerId == int.MinValue && _startedZone == null &&
+                !_trackingFreeHop && _contextMovementController == null &&
+                _gesture == snapshot.Gesture && pointsMatch;
+            bool result = Mathf.Approximately(LastScore, snapshot.LastScore) &&
+                sampleMatches && LastRejectionReason == (snapshot.LastRejectionReason ?? "") &&
+                MultitouchRejectionCount == snapshot.MultitouchRejectionCount &&
+                _lastResultPassed == snapshot.LastResultPassed &&
+                Mathf.Abs(feedbackRemaining - snapshot.FeedbackRemaining) <= 0.02f &&
+                _feedbackColor == snapshot.FeedbackColor &&
+                Mathf.Approximately(_feedbackFillScale, snapshot.FeedbackFillScale) &&
+                (_surface == null || _surface.color == snapshot.SurfaceColor) &&
+                transform.localScale == snapshot.PadScale &&
+                (_resultOverlay == null ||
+                    _resultOverlay.color == snapshot.ResultOverlayColor) &&
+                (_resultOverlayRect == null ||
+                    _resultOverlayRect.localScale == snapshot.ResultOverlayScale);
+            bool trace = _traceDotCursor == snapshot.TraceDotCursor &&
+                _traceDotCount == snapshot.TraceDotCount &&
+                Mathf.Abs(traceRemaining - snapshot.TraceFadeRemaining) <= 0.02f &&
+                _traceResultColor == snapshot.TraceResultColor &&
+                Mathf.Approximately(_traceResultFillScale,
+                    snapshot.TraceResultFillScale) &&
+                FloatArraysMatch(_traceDrawScales, snapshot.TraceDrawScales) &&
+                VisualStatesMatch(_traceDots, _traceImages, snapshot.TraceVisuals);
+            bool guide = _guideGesture == snapshot.GuideGesture &&
+                _appliedGuideGesture == snapshot.AppliedGuideGesture &&
+                _guideRequested == snapshot.GuideRequested &&
+                _guideVisible == snapshot.GuideVisible &&
+                _guidePresentationApplied == snapshot.GuidePresentationApplied &&
+                VisualStatesMatch(_guideDots, _guideImages, snapshot.GuideVisuals);
+            bool liveHold = _liveHoldReadinessActive == snapshot.LiveHoldReadinessActive &&
+                _liveHoldReady == snapshot.LiveHoldReady &&
+                _liveHoldHapticPlayed == snapshot.LiveHoldHapticPlayed &&
+                _liveHoldOverlayObserved == snapshot.LiveHoldOverlayObserved &&
+                _liveHoldHapticCount == snapshot.LiveHoldHapticCount &&
+                Mathf.Approximately(_liveHoldScore, snapshot.LiveHoldScore) &&
+                _hasLastLiveHoldRuntimeEvidence ==
+                    snapshot.HasLastLiveHoldRuntimeEvidence &&
+                _lastLiveHoldActionKind == snapshot.LastLiveHoldActionKind &&
+                _lastLiveHoldStartStep == snapshot.LastLiveHoldStartStep &&
+                _lastLiveHoldEndStep == snapshot.LastLiveHoldEndStep &&
+                _lastLiveHoldOverlayObserved == snapshot.LastLiveHoldOverlayObserved &&
+                _lastLiveHoldHapticCount == snapshot.LastLiveHoldHapticCount &&
+                _lastLiveHoldCompletionAccepted ==
+                    snapshot.LastLiveHoldCompletionAccepted &&
+                _lastLiveHoldCompletionHapticSuppressed ==
+                    snapshot.LastLiveHoldCompletionHapticSuppressed &&
+                _lastLiveHoldCleanupObserved == snapshot.LastLiveHoldCleanupObserved &&
+                _lastLiveHoldCancellationCleanupObserved ==
+                    snapshot.LastLiveHoldCancellationCleanupObserved &&
+                _lastLiveHoldCancellationReason ==
+                    (snapshot.LastLiveHoldCancellationReason ?? "");
+            return input && result && trace && guide && liveHold;
+        }
+
+        static bool FloatArraysMatch(float[] actual, float[] expected)
+        {
+            if (actual == null || expected == null || actual.Length != expected.Length)
+                return false;
+            for (int i = 0; i < actual.Length; i++)
+                if (!Mathf.Approximately(actual[i], expected[i])) return false;
+            return true;
+        }
+
+        static bool VisualStatesMatch(RectTransform[] rects, Image[] images,
+            QAVisualState[] states)
+        {
+            if (states == null || states.Length != rects.Length ||
+                states.Length != images.Length)
+                return false;
+            for (int i = 0; i < states.Length; i++)
+            {
+                if (rects[i] != null &&
+                    (rects[i].gameObject.activeSelf != states[i].Active ||
+                     rects[i].anchoredPosition != states[i].AnchoredPosition ||
+                     rects[i].localScale != states[i].Scale))
+                    return false;
+                if (images[i] != null && images[i].color != states[i].Color)
+                    return false;
+            }
+            return true;
+        }
+
+        static bool CanBeginQATransaction(bool transactionActive, bool tracking,
+            bool movementLockHeld) => !transactionActive && !tracking && !movementLockHeld;
+
+        public static bool ValidateQATransactionSnapshotContract(out string detail)
+        {
+            bool coverage = CapturedQATransactionCoverage == RequiredQATransactionCoverage &&
+                RestoredQATransactionCoverage == RequiredQATransactionCoverage;
+            bool preconditions = CanBeginQATransaction(false, false, false) &&
+                !CanBeginQATransaction(true, false, false) &&
+                !CanBeginQATransaction(false, true, false) &&
+                !CanBeginQATransaction(false, false, true);
+            int requiredGroups = System.Enum.GetValues(typeof(QATransactionCoverage)).Length - 1;
+            int coveredGroups = CountCoverageGroups(CapturedQATransactionCoverage);
+            bool poolShape = GestureTraceDotCapacity == 24 && GestureGuideDotCapacity == 12;
+            detail = $"groups={coveredGroups}/{requiredGroups} capture=" +
+                $"{CapturedQATransactionCoverage} restore={RestoredQATransactionCoverage} " +
+                $"preconditions={preconditions} pools={GestureTraceDotCapacity}/" +
+                $"{GestureGuideDotCapacity}";
+            return coverage && preconditions && poolShape && coveredGroups == requiredGroups;
+        }
+
+        static int CountCoverageGroups(QATransactionCoverage coverage)
+        {
+            int count = 0;
+            foreach (QATransactionCoverage value in
+                     System.Enum.GetValues(typeof(QATransactionCoverage)))
+                if (value != QATransactionCoverage.None && (coverage & value) == value)
+                    count++;
+            return count;
+        }
+
+        static QAVisualState[] CaptureVisualStates(RectTransform[] rects, Image[] images)
+        {
+            int count = Mathf.Min(rects.Length, images.Length);
+            var states = new QAVisualState[count];
+            for (int i = 0; i < count; i++)
+            {
+                RectTransform rect = rects[i];
+                Image image = images[i];
+                states[i] = new QAVisualState
+                {
+                    Active = rect != null && rect.gameObject.activeSelf,
+                    AnchoredPosition = rect != null ? rect.anchoredPosition : Vector2.zero,
+                    Scale = rect != null ? rect.localScale : Vector3.one,
+                    Color = image != null ? image.color : Color.clear
+                };
+            }
+            return states;
+        }
+
+        static void RestoreVisualStates(RectTransform[] rects, Image[] images,
+            QAVisualState[] states)
+        {
+            if (states == null) return;
+            int count = Mathf.Min(states.Length, Mathf.Min(rects.Length, images.Length));
+            for (int i = 0; i < count; i++)
+            {
+                if (rects[i] != null)
+                {
+                    rects[i].anchoredPosition = states[i].AnchoredPosition;
+                    rects[i].localScale = states[i].Scale;
+                    rects[i].gameObject.SetActive(states[i].Active);
+                }
+                if (images[i] != null) images[i].color = states[i].Color;
+            }
+        }
 
         public void OnPointerDown(PointerEventData eventData)
         {

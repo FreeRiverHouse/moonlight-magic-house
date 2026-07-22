@@ -61,6 +61,10 @@ namespace MoonlightMagicHouse
 
         Coroutine _resultRoutine;
         MoonlightSpatialActionZone _resultZone;
+        ContextResultRoutinePhase _resultRoutinePhase;
+        string _resultRoutineSourceText = "";
+        float _resultRoutineDuration;
+        float _resultRoutineVisibleUntil;
         GameObject _roomNavigationRoot;
         TMP_Text _iPadProgressLabel;
         Image _iPadProgressFill;
@@ -86,6 +90,7 @@ namespace MoonlightMagicHouse
         int _lastQAScreenHeight;
         Rect _lastQASafeArea;
         bool _qaReportPending;
+        Coroutine _qaReportRoutine;
         bool _freeHopAvailable;
         string _freeHopBlockReason = "";
 
@@ -93,6 +98,138 @@ namespace MoonlightMagicHouse
         public const float NavigationCueSeparationPaddingPixels = 8f;
         public const int NavigationCueMaximumLabelCharacters = 10;
         const float IPadProgressTrackWidth = 84f;
+
+        [Flags]
+        enum QATransactionCoverage
+        {
+            None = 0,
+            ContextResultRoutine = 1 << 0,
+            ContextResultTelemetry = 1 << 1,
+            NavigationLock = 1 << 2,
+            ActivityQuality = 1 << 3,
+            ActivityProgress = 1 << 4,
+            NavigationCue = 1 << 5,
+            ActionPresentation = 1 << 6,
+            CharacterHud = 1 << 7,
+            LayoutReportRoutine = 1 << 8
+        }
+
+        const QATransactionCoverage RequiredQATransactionCoverage =
+            QATransactionCoverage.ContextResultRoutine |
+            QATransactionCoverage.ContextResultTelemetry |
+            QATransactionCoverage.NavigationLock |
+            QATransactionCoverage.ActivityQuality |
+            QATransactionCoverage.ActivityProgress |
+            QATransactionCoverage.NavigationCue |
+            QATransactionCoverage.ActionPresentation |
+            QATransactionCoverage.CharacterHud |
+            QATransactionCoverage.LayoutReportRoutine;
+        const QATransactionCoverage CapturedQATransactionCoverage =
+            QATransactionCoverage.ContextResultRoutine |
+            QATransactionCoverage.ContextResultTelemetry |
+            QATransactionCoverage.NavigationLock |
+            QATransactionCoverage.ActivityQuality |
+            QATransactionCoverage.ActivityProgress |
+            QATransactionCoverage.NavigationCue |
+            QATransactionCoverage.ActionPresentation |
+            QATransactionCoverage.CharacterHud |
+            QATransactionCoverage.LayoutReportRoutine;
+        const QATransactionCoverage RestoredQATransactionCoverage =
+            QATransactionCoverage.ContextResultRoutine |
+            QATransactionCoverage.ContextResultTelemetry |
+            QATransactionCoverage.NavigationLock |
+            QATransactionCoverage.ActivityQuality |
+            QATransactionCoverage.ActivityProgress |
+            QATransactionCoverage.NavigationCue |
+            QATransactionCoverage.ActionPresentation |
+            QATransactionCoverage.CharacterHud |
+            QATransactionCoverage.LayoutReportRoutine;
+        int _nextQATransactionId;
+        int _activeQATransactionId;
+
+        internal enum ContextResultRoutinePhase
+        {
+            None,
+            WaitingForAction,
+            Visible
+        }
+
+        public sealed class QATransactionSnapshot
+        {
+            internal int TransactionId;
+            internal MoonlightSpatialActionZone ResultZone;
+            internal bool HadResultRoutine;
+            internal ContextResultRoutinePhase ResultRoutinePhase;
+            internal string ResultRoutineSourceText;
+            internal float ResultRoutineDuration;
+            internal float ResultRoutineVisibleRemaining;
+            internal string ResultText;
+            internal float LastResultDuration;
+            internal int ResultDurationSelections;
+            internal string LastResultShownText;
+            internal float LastResultShownAt;
+            internal float LastResultHiddenAt;
+            internal float LastResultVisibleDuration;
+            internal int ResultShownCount;
+            internal int ResultHiddenCount;
+            internal int LastHiddenShownCount;
+            internal bool RoomNavigationLocked;
+            internal bool ActivityPresentationWasVisible;
+            internal bool RoomNavigationVisible;
+            internal MoonlightSpatialActionZone QualityZone;
+            internal bool QualityRunActive;
+            internal bool QualityWasCompletedVisible;
+            internal bool QualityUsesCompletedSnapshot;
+            internal int QualityCombo;
+            internal float QualityRunScore;
+            internal bool QualityVisible;
+            internal string QualityText;
+            internal float ProgressFill;
+            internal bool ProgressVisible;
+            internal string ProgressText;
+            internal Vector2 ProgressFillSize;
+            internal Color ProgressFillColor;
+            internal bool NavigationCueVisible;
+            internal float NavigationCueAngle;
+            internal Vector2 NavigationCueDirection;
+            internal string NavigationCueTargetName;
+            internal string NavigationCueRenderedLabel;
+            internal float NavigationCueDistance;
+            internal Quaternion NavigationChevronRotation;
+            internal string NavigationCueText;
+            internal string GestureCommandMarker;
+            internal string ActivityPhaseMarker;
+            internal bool FreeHopAvailable;
+            internal string FreeHopBlockReason;
+            internal MoonlightPlayerController FreeHopController;
+            internal bool ActionVisible;
+            internal bool ActionInteractable;
+            internal Color ActionColor;
+            internal string ActionText;
+            internal string ContextText;
+            internal float Wonder;
+            internal float Warmth;
+            internal float Rest;
+            internal float Magic;
+            internal float Hunger;
+            internal string StageText;
+            internal string LegacyStageText;
+            internal string CoinsText;
+            internal string LegacyCoinsText;
+            internal string XPText;
+            internal string LegacyXPText;
+            internal string MoodText;
+            internal string LegacyMoodText;
+            internal string DaysText;
+            internal string LegacyDaysText;
+            internal bool PromptVisible;
+            internal string PromptText;
+            internal string LegacyPromptText;
+            internal bool LayoutReportPending;
+            internal int LastQAScreenWidth;
+            internal int LastQAScreenHeight;
+            internal Rect LastQASafeArea;
+        }
 
         static readonly string[] MoodLabels = { "ASLEEP", "GRUMPY", "BORED", "CALM", "HAPPY", "RADIANT" };
         static TMP_FontAsset _runtimeUIFontAsset;
@@ -560,7 +697,386 @@ namespace MoonlightMagicHouse
                 : null;
             _resultZone = interactor != null ? interactor.CurrentZone : null;
             RemoveContextResultText();
+            _resultRoutinePhase = ContextResultRoutinePhase.WaitingForAction;
+            _resultRoutineSourceText = text ?? "";
+            _resultRoutineDuration = ActivityResultDurationSeconds(text);
+            _resultRoutineVisibleUntil = 0f;
             _resultRoutine = StartCoroutine(ShowContextResultAfterAction(text));
+        }
+
+        public bool TryBeginQATransaction(out QATransactionSnapshot snapshot,
+            out string detail)
+        {
+            snapshot = null;
+            if (!CanBeginQATransaction(_activeQATransactionId != 0))
+            {
+                detail = $"activeTransaction={_activeQATransactionId != 0}";
+                return false;
+            }
+
+            _nextQATransactionId = _nextQATransactionId == int.MaxValue
+                ? 1
+                : _nextQATransactionId + 1;
+            _activeQATransactionId = _nextQATransactionId;
+            var progressRect = _iPadProgressFill != null
+                ? _iPadProgressFill.transform as RectTransform
+                : null;
+            snapshot = new QATransactionSnapshot
+            {
+                TransactionId = _activeQATransactionId,
+                ResultZone = _resultZone,
+                HadResultRoutine = _resultRoutine != null,
+                ResultRoutinePhase = _resultRoutinePhase,
+                ResultRoutineSourceText = _resultRoutineSourceText,
+                ResultRoutineDuration = _resultRoutineDuration,
+                ResultRoutineVisibleRemaining =
+                    _resultRoutinePhase == ContextResultRoutinePhase.Visible
+                        ? Mathf.Max(0f, _resultRoutineVisibleUntil - Time.time)
+                        : 0f,
+                ResultText = TextOf(resultLabel),
+                LastResultDuration = LastContextResultDurationSecondsForQA,
+                ResultDurationSelections = ContextResultDurationSelectionCountForQA,
+                LastResultShownText = LastContextResultShownTextForQA,
+                LastResultShownAt = LastContextResultShownAtSecondsForQA,
+                LastResultHiddenAt = LastContextResultHiddenAtSecondsForQA,
+                LastResultVisibleDuration = LastContextResultVisibleDurationSecondsForQA,
+                ResultShownCount = ContextResultShownCountForQA,
+                ResultHiddenCount = ContextResultHiddenCountForQA,
+                LastHiddenShownCount = LastContextResultHiddenShownCountForQA,
+                RoomNavigationLocked = _roomNavigationLocked,
+                ActivityPresentationWasVisible = _activityPresentationWasVisible,
+                RoomNavigationVisible = IsActive(_roomNavigationRoot),
+                QualityZone = _iPadActivityQualityZone,
+                QualityRunActive = _iPadActivityQualityRunActive,
+                QualityWasCompletedVisible = _iPadActivityQualityWasCompletedRunVisible,
+                QualityUsesCompletedSnapshot = _iPadActivityQualityUsesCompletedSnapshot,
+                QualityCombo = ActivityQualityReadoutComboForQA,
+                QualityRunScore = ActivityQualityReadoutRunScoreForQA,
+                QualityVisible = IsActive(_iPadActivityQualityRoot),
+                QualityText = TextOf(_iPadActivityQualityLabel),
+                ProgressFill = ActivityProgressFill01,
+                ProgressVisible = IsActive(_iPadProgressRoot),
+                ProgressText = TextOf(_iPadProgressLabel),
+                ProgressFillSize = progressRect != null ? progressRect.sizeDelta : Vector2.zero,
+                ProgressFillColor = _iPadProgressFill != null
+                    ? _iPadProgressFill.color
+                    : Color.clear,
+                NavigationCueVisible = _iPadNavigationCueRoot != null &&
+                    _iPadNavigationCueRoot.gameObject.activeSelf,
+                NavigationCueAngle = NavigationCueAngleDegrees,
+                NavigationCueDirection = NavigationCueCameraRelativeDirection,
+                NavigationCueTargetName = NavigationCueTargetName,
+                NavigationCueRenderedLabel = NavigationCueRenderedLabel,
+                NavigationCueDistance = NavigationCueTargetDistance,
+                NavigationChevronRotation = _iPadNavigationChevron != null
+                    ? _iPadNavigationChevron.localRotation
+                    : Quaternion.identity,
+                NavigationCueText = TextOf(_iPadNavigationLabel),
+                GestureCommandMarker = _gestureCommandMarker,
+                ActivityPhaseMarker = _activityPhaseMarker,
+                FreeHopAvailable = _freeHopAvailable,
+                FreeHopBlockReason = _freeHopBlockReason,
+                FreeHopController = _freeHopController,
+                ActionVisible = actionBtn != null && actionBtn.gameObject.activeSelf,
+                ActionInteractable = actionBtn != null && actionBtn.interactable,
+                ActionColor = actionBtn != null && actionBtn.image != null
+                    ? actionBtn.image.color
+                    : Color.clear,
+                ActionText = TextOf(actionBtnLabel),
+                ContextText = TextOf(contextLabel),
+                Wonder = SliderValue(wonderBar),
+                Warmth = SliderValue(warmthBar),
+                Rest = SliderValue(restBar),
+                Magic = SliderValue(magicBar),
+                Hunger = SliderValue(hungerBar),
+                StageText = TextOf(stageLabel),
+                LegacyStageText = TextOf(legacyStageLabel),
+                CoinsText = TextOf(coinsLabel),
+                LegacyCoinsText = TextOf(legacyCoinsLabel),
+                XPText = TextOf(xpLabel),
+                LegacyXPText = TextOf(legacyXPLabel),
+                MoodText = TextOf(moodEmoji),
+                LegacyMoodText = TextOf(legacyMoodLabel),
+                DaysText = TextOf(daysLabel),
+                LegacyDaysText = TextOf(legacyDaysLabel),
+                PromptVisible = IsActive(promptRoot),
+                PromptText = TextOf(promptLabel),
+                LegacyPromptText = TextOf(legacyPromptLabel),
+                LayoutReportPending = _qaReportPending,
+                LastQAScreenWidth = _lastQAScreenWidth,
+                LastQAScreenHeight = _lastQAScreenHeight,
+                LastQASafeArea = _lastQASafeArea
+            };
+            if (_resultRoutine != null)
+            {
+                StopCoroutine(_resultRoutine);
+                _resultRoutine = null;
+            }
+            _resultRoutinePhase = ContextResultRoutinePhase.None;
+            if (_qaReportRoutine != null)
+                StopCoroutine(_qaReportRoutine);
+            _qaReportRoutine = null;
+            _qaReportPending = false;
+            detail = $"transaction={snapshot.TransactionId} coverage=" +
+                $"{CapturedQATransactionCoverage}";
+            return true;
+        }
+
+        public bool RestoreQATransaction(QATransactionSnapshot snapshot, out string detail)
+        {
+            if (snapshot == null || snapshot.TransactionId == 0 ||
+                snapshot.TransactionId != _activeQATransactionId)
+            {
+                detail = $"snapshot={(snapshot != null ? snapshot.TransactionId : 0)} " +
+                    $"active={_activeQATransactionId}";
+                return false;
+            }
+
+            if (_resultRoutine != null)
+                StopCoroutine(_resultRoutine);
+            if (_qaReportRoutine != null)
+                StopCoroutine(_qaReportRoutine);
+            _qaReportRoutine = null;
+            _resultRoutine = null;
+            _resultZone = snapshot.ResultZone;
+            _resultRoutinePhase = snapshot.ResultRoutinePhase;
+            _resultRoutineSourceText = snapshot.ResultRoutineSourceText ?? "";
+            _resultRoutineDuration = snapshot.ResultRoutineDuration;
+            _resultRoutineVisibleUntil = snapshot.ResultRoutineVisibleRemaining > 0f
+                ? Time.time + snapshot.ResultRoutineVisibleRemaining
+                : 0f;
+            SetTextValue(resultLabel, snapshot.ResultText);
+            LastContextResultDurationSecondsForQA = snapshot.LastResultDuration;
+            ContextResultDurationSelectionCountForQA = snapshot.ResultDurationSelections;
+            LastContextResultShownTextForQA = snapshot.LastResultShownText;
+            LastContextResultShownAtSecondsForQA = snapshot.LastResultShownAt;
+            LastContextResultHiddenAtSecondsForQA = snapshot.LastResultHiddenAt;
+            LastContextResultVisibleDurationSecondsForQA = snapshot.LastResultVisibleDuration;
+            ContextResultShownCountForQA = snapshot.ResultShownCount;
+            ContextResultHiddenCountForQA = snapshot.ResultHiddenCount;
+            LastContextResultHiddenShownCountForQA = snapshot.LastHiddenShownCount;
+
+            _roomNavigationLocked = snapshot.RoomNavigationLocked;
+            _activityPresentationWasVisible = snapshot.ActivityPresentationWasVisible;
+            SetActive(_roomNavigationRoot, snapshot.RoomNavigationVisible);
+            _iPadActivityQualityZone = snapshot.QualityZone;
+            _iPadActivityQualityRunActive = snapshot.QualityRunActive;
+            _iPadActivityQualityWasCompletedRunVisible = snapshot.QualityWasCompletedVisible;
+            _iPadActivityQualityUsesCompletedSnapshot = snapshot.QualityUsesCompletedSnapshot;
+            ActivityQualityReadoutComboForQA = snapshot.QualityCombo;
+            ActivityQualityReadoutRunScoreForQA = snapshot.QualityRunScore;
+            SetTextValue(_iPadActivityQualityLabel, snapshot.QualityText);
+            SetActive(_iPadActivityQualityRoot, snapshot.QualityVisible);
+
+            ActivityProgressFill01 = snapshot.ProgressFill;
+            SetTextValue(_iPadProgressLabel, snapshot.ProgressText);
+            SetActive(_iPadProgressRoot, snapshot.ProgressVisible);
+            if (_iPadProgressFill != null)
+            {
+                _iPadProgressFill.color = snapshot.ProgressFillColor;
+                if (_iPadProgressFill.transform is RectTransform progressRect)
+                    progressRect.sizeDelta = snapshot.ProgressFillSize;
+            }
+
+            NavigationCueAngleDegrees = snapshot.NavigationCueAngle;
+            NavigationCueCameraRelativeDirection = snapshot.NavigationCueDirection;
+            NavigationCueTargetName = snapshot.NavigationCueTargetName;
+            NavigationCueRenderedLabel = snapshot.NavigationCueRenderedLabel;
+            NavigationCueTargetDistance = snapshot.NavigationCueDistance;
+            if (_iPadNavigationChevron != null)
+                _iPadNavigationChevron.localRotation = snapshot.NavigationChevronRotation;
+            SetTextValue(_iPadNavigationLabel, snapshot.NavigationCueText);
+            if (_iPadNavigationCueRoot != null)
+                _iPadNavigationCueRoot.gameObject.SetActive(snapshot.NavigationCueVisible);
+
+            _gestureCommandMarker = snapshot.GestureCommandMarker;
+            _activityPhaseMarker = snapshot.ActivityPhaseMarker;
+            _freeHopAvailable = snapshot.FreeHopAvailable;
+            _freeHopBlockReason = snapshot.FreeHopBlockReason;
+            _freeHopController = snapshot.FreeHopController;
+            if (actionBtn != null)
+            {
+                actionBtn.gameObject.SetActive(snapshot.ActionVisible);
+                actionBtn.interactable = snapshot.ActionInteractable;
+                if (actionBtn.image != null)
+                    actionBtn.image.color = snapshot.ActionColor;
+            }
+            SetTextValue(actionBtnLabel, snapshot.ActionText);
+            SetTextValue(contextLabel, snapshot.ContextText);
+
+            SetSliderValue(wonderBar, snapshot.Wonder);
+            SetSliderValue(warmthBar, snapshot.Warmth);
+            SetSliderValue(restBar, snapshot.Rest);
+            SetSliderValue(magicBar, snapshot.Magic);
+            SetSliderValue(hungerBar, snapshot.Hunger);
+            SetTextValue(stageLabel, snapshot.StageText);
+            SetTextValue(legacyStageLabel, snapshot.LegacyStageText);
+            SetTextValue(coinsLabel, snapshot.CoinsText);
+            SetTextValue(legacyCoinsLabel, snapshot.LegacyCoinsText);
+            SetTextValue(xpLabel, snapshot.XPText);
+            SetTextValue(legacyXPLabel, snapshot.LegacyXPText);
+            SetTextValue(moodEmoji, snapshot.MoodText);
+            SetTextValue(legacyMoodLabel, snapshot.LegacyMoodText);
+            SetTextValue(daysLabel, snapshot.DaysText);
+            SetTextValue(legacyDaysLabel, snapshot.LegacyDaysText);
+            SetTextValue(promptLabel, snapshot.PromptText);
+            SetTextValue(legacyPromptLabel, snapshot.LegacyPromptText);
+            SetActive(promptRoot, snapshot.PromptVisible);
+            _qaReportPending = snapshot.LayoutReportPending;
+            _lastQAScreenWidth = snapshot.LastQAScreenWidth;
+            _lastQAScreenHeight = snapshot.LastQAScreenHeight;
+            _lastQASafeArea = snapshot.LastQASafeArea;
+
+            bool stateMatches = QATransactionStateMatches(snapshot);
+            _activeQATransactionId = 0;
+            if (snapshot.HadResultRoutine)
+                _resultRoutine = StartCoroutine(ResumeContextResultAfterQATransaction(
+                    snapshot.ResultRoutinePhase, snapshot.ResultRoutineSourceText,
+                    snapshot.ResultRoutineDuration,
+                    snapshot.ResultRoutineVisibleRemaining));
+            if (snapshot.LayoutReportPending)
+                _qaReportRoutine = StartCoroutine(ReportIPadLayoutAfterCanvasUpdate());
+            detail = $"transaction={snapshot.TransactionId} coverage=" +
+                $"{RestoredQATransactionCoverage} stateMatches={stateMatches}";
+            return stateMatches;
+        }
+
+        bool QATransactionStateMatches(QATransactionSnapshot snapshot)
+        {
+            var progressRect = _iPadProgressFill != null
+                ? _iPadProgressFill.transform as RectTransform
+                : null;
+            bool result = _resultZone == snapshot.ResultZone &&
+                _resultRoutinePhase == snapshot.ResultRoutinePhase &&
+                _resultRoutineSourceText == (snapshot.ResultRoutineSourceText ?? "") &&
+                Mathf.Approximately(_resultRoutineDuration, snapshot.ResultRoutineDuration) &&
+                TextOf(resultLabel) == (snapshot.ResultText ?? "") &&
+                Mathf.Approximately(LastContextResultDurationSecondsForQA,
+                    snapshot.LastResultDuration) &&
+                ContextResultDurationSelectionCountForQA == snapshot.ResultDurationSelections &&
+                LastContextResultShownTextForQA == snapshot.LastResultShownText &&
+                Mathf.Approximately(LastContextResultShownAtSecondsForQA,
+                    snapshot.LastResultShownAt) &&
+                Mathf.Approximately(LastContextResultHiddenAtSecondsForQA,
+                    snapshot.LastResultHiddenAt) &&
+                Mathf.Approximately(LastContextResultVisibleDurationSecondsForQA,
+                    snapshot.LastResultVisibleDuration) &&
+                ContextResultShownCountForQA == snapshot.ResultShownCount &&
+                ContextResultHiddenCountForQA == snapshot.ResultHiddenCount &&
+                LastContextResultHiddenShownCountForQA == snapshot.LastHiddenShownCount;
+            bool navigation = _roomNavigationLocked == snapshot.RoomNavigationLocked &&
+                _activityPresentationWasVisible == snapshot.ActivityPresentationWasVisible &&
+                IsActive(_roomNavigationRoot) == snapshot.RoomNavigationVisible &&
+                (_iPadNavigationCueRoot != null &&
+                    _iPadNavigationCueRoot.gameObject.activeSelf) ==
+                    snapshot.NavigationCueVisible &&
+                Mathf.Approximately(NavigationCueAngleDegrees, snapshot.NavigationCueAngle) &&
+                NavigationCueCameraRelativeDirection == snapshot.NavigationCueDirection &&
+                NavigationCueTargetName == snapshot.NavigationCueTargetName &&
+                NavigationCueRenderedLabel == snapshot.NavigationCueRenderedLabel &&
+                Mathf.Approximately(NavigationCueTargetDistance,
+                    snapshot.NavigationCueDistance) &&
+                (_iPadNavigationChevron == null ||
+                    _iPadNavigationChevron.localRotation ==
+                        snapshot.NavigationChevronRotation) &&
+                TextOf(_iPadNavigationLabel) == (snapshot.NavigationCueText ?? "");
+            bool activity = _iPadActivityQualityZone == snapshot.QualityZone &&
+                _iPadActivityQualityRunActive == snapshot.QualityRunActive &&
+                _iPadActivityQualityWasCompletedRunVisible ==
+                    snapshot.QualityWasCompletedVisible &&
+                _iPadActivityQualityUsesCompletedSnapshot ==
+                    snapshot.QualityUsesCompletedSnapshot &&
+                ActivityQualityReadoutComboForQA == snapshot.QualityCombo &&
+                Mathf.Approximately(ActivityQualityReadoutRunScoreForQA,
+                    snapshot.QualityRunScore) &&
+                IsActive(_iPadActivityQualityRoot) == snapshot.QualityVisible &&
+                TextOf(_iPadActivityQualityLabel) == (snapshot.QualityText ?? "") &&
+                Mathf.Approximately(ActivityProgressFill01, snapshot.ProgressFill) &&
+                IsActive(_iPadProgressRoot) == snapshot.ProgressVisible &&
+                TextOf(_iPadProgressLabel) == (snapshot.ProgressText ?? "") &&
+                (progressRect == null || progressRect.sizeDelta == snapshot.ProgressFillSize) &&
+                (_iPadProgressFill == null ||
+                    _iPadProgressFill.color == snapshot.ProgressFillColor);
+            bool action = _gestureCommandMarker == snapshot.GestureCommandMarker &&
+                _activityPhaseMarker == snapshot.ActivityPhaseMarker &&
+                _freeHopAvailable == snapshot.FreeHopAvailable &&
+                _freeHopBlockReason == snapshot.FreeHopBlockReason &&
+                _freeHopController == snapshot.FreeHopController &&
+                (actionBtn == null ||
+                    (actionBtn.gameObject.activeSelf == snapshot.ActionVisible &&
+                     actionBtn.interactable == snapshot.ActionInteractable &&
+                     (actionBtn.image == null || actionBtn.image.color == snapshot.ActionColor))) &&
+                TextOf(actionBtnLabel) == (snapshot.ActionText ?? "") &&
+                TextOf(contextLabel) == (snapshot.ContextText ?? "");
+            bool hud = Mathf.Approximately(SliderValue(wonderBar), snapshot.Wonder) &&
+                Mathf.Approximately(SliderValue(warmthBar), snapshot.Warmth) &&
+                Mathf.Approximately(SliderValue(restBar), snapshot.Rest) &&
+                Mathf.Approximately(SliderValue(magicBar), snapshot.Magic) &&
+                Mathf.Approximately(SliderValue(hungerBar), snapshot.Hunger) &&
+                TextOf(stageLabel) == (snapshot.StageText ?? "") &&
+                TextOf(legacyStageLabel) == (snapshot.LegacyStageText ?? "") &&
+                TextOf(coinsLabel) == (snapshot.CoinsText ?? "") &&
+                TextOf(legacyCoinsLabel) == (snapshot.LegacyCoinsText ?? "") &&
+                TextOf(xpLabel) == (snapshot.XPText ?? "") &&
+                TextOf(legacyXPLabel) == (snapshot.LegacyXPText ?? "") &&
+                TextOf(moodEmoji) == (snapshot.MoodText ?? "") &&
+                TextOf(legacyMoodLabel) == (snapshot.LegacyMoodText ?? "") &&
+                TextOf(daysLabel) == (snapshot.DaysText ?? "") &&
+                TextOf(legacyDaysLabel) == (snapshot.LegacyDaysText ?? "") &&
+                IsActive(promptRoot) == snapshot.PromptVisible &&
+                TextOf(promptLabel) == (snapshot.PromptText ?? "") &&
+                TextOf(legacyPromptLabel) == (snapshot.LegacyPromptText ?? "") &&
+                _qaReportPending == snapshot.LayoutReportPending &&
+                _lastQAScreenWidth == snapshot.LastQAScreenWidth &&
+                _lastQAScreenHeight == snapshot.LastQAScreenHeight &&
+                _lastQASafeArea.Equals(snapshot.LastQASafeArea);
+            return result && navigation && activity && action && hud;
+        }
+
+        static bool CanBeginQATransaction(bool transactionActive) => !transactionActive;
+
+        public static bool ValidateQATransactionSnapshotContract(out string detail)
+        {
+            bool coverage = CapturedQATransactionCoverage == RequiredQATransactionCoverage &&
+                RestoredQATransactionCoverage == RequiredQATransactionCoverage;
+            bool preconditions = CanBeginQATransaction(false) &&
+                !CanBeginQATransaction(true);
+            int requiredGroups = Enum.GetValues(typeof(QATransactionCoverage)).Length - 1;
+            int coveredGroups = CountCoverageGroups(CapturedQATransactionCoverage);
+            detail = $"groups={coveredGroups}/{requiredGroups} capture=" +
+                $"{CapturedQATransactionCoverage} restore={RestoredQATransactionCoverage} " +
+                $"preconditions={preconditions}";
+            return coverage && preconditions && coveredGroups == requiredGroups;
+        }
+
+        static int CountCoverageGroups(QATransactionCoverage coverage)
+        {
+            int count = 0;
+            foreach (QATransactionCoverage value in Enum.GetValues(typeof(QATransactionCoverage)))
+                if (value != QATransactionCoverage.None && (coverage & value) == value)
+                    count++;
+            return count;
+        }
+
+        static bool IsActive(GameObject target) => target != null && target.activeSelf;
+        static float SliderValue(Slider slider) => slider != null ? slider.value : 0f;
+        static void SetSliderValue(Slider slider, float value)
+        {
+            if (slider != null) slider.value = value;
+        }
+        static string TextOf(TMP_Text label) => label != null ? label.text : "";
+        static string TextOf(Text label) => label != null ? label.text : "";
+        static void SetTextValue(TMP_Text label, string value)
+        {
+            if (label != null) label.text = value ?? "";
+        }
+        static void SetTextValue(Text label, string value)
+        {
+            if (label != null) label.text = value ?? "";
+        }
+        static void SetActive(GameObject target, bool active)
+        {
+            if (target != null) target.SetActive(active);
         }
 
         void RefreshContextAction()
@@ -1445,7 +1961,7 @@ namespace MoonlightMagicHouse
         {
             if (_qaReportPending) return;
             _qaReportPending = true;
-            StartCoroutine(ReportIPadLayoutAfterCanvasUpdate());
+            _qaReportRoutine = StartCoroutine(ReportIPadLayoutAfterCanvasUpdate());
         }
 
         IEnumerator ReportIPadLayoutAfterCanvasUpdate()
@@ -1456,6 +1972,7 @@ namespace MoonlightMagicHouse
             _lastQAScreenHeight = Screen.height;
             _lastQASafeArea = Screen.safeArea;
             _qaReportPending = false;
+            _qaReportRoutine = null;
             Rect touchRect = ActionTouchTargetScreenRect;
             Debug.Log($"[MoonlightHUDQA] marker={HUDLayoutQAMarker} screen={Screen.width}x{Screen.height} " +
                 $"typography={VisibleHUDTypographyQAMarker} tmpLabels={VisibleTMPHUDLabelCount}/" +
@@ -1844,6 +2361,7 @@ namespace MoonlightMagicHouse
         IEnumerator ShowContextResultAfterAction(string text)
         {
             float resultDuration = ActivityResultDurationSeconds(text);
+            _resultRoutineDuration = resultDuration;
             LastContextResultDurationSecondsForQA = resultDuration;
             ContextResultDurationSelectionCountForQA++;
             var moonlight = MoonlightGameManager.Instance?.moonlight;
@@ -1867,8 +2385,55 @@ namespace MoonlightMagicHouse
                 LastContextResultShownAtSecondsForQA = Time.time;
                 ContextResultShownCountForQA++;
             }
-            float visibleUntil = Time.time + resultDuration;
-            while (Time.time < visibleUntil && ResultZoneStillCurrent())
+            _resultRoutinePhase = ContextResultRoutinePhase.Visible;
+            _resultRoutineVisibleUntil = Time.time + resultDuration;
+            while (Time.time < _resultRoutineVisibleUntil && ResultZoneStillCurrent())
+                yield return null;
+            ClearContextResult();
+        }
+
+        IEnumerator ResumeContextResultAfterQATransaction(
+            ContextResultRoutinePhase phase, string text, float resultDuration,
+            float visibleRemaining)
+        {
+            if (phase == ContextResultRoutinePhase.WaitingForAction)
+            {
+                var moonlight = MoonlightGameManager.Instance?.moonlight;
+                var feedback = moonlight != null
+                    ? moonlight.GetComponent<MoonlightActionFeedback>()
+                    : null;
+                while (feedback != null && feedback.IsPerformingAction)
+                    yield return null;
+                if (!ResultZoneStillCurrent())
+                {
+                    ClearContextResult();
+                    yield break;
+                }
+                if (resultLabel != null)
+                {
+                    resultLabel.text = _iPadLayoutActive ? FormatIPadResult(text) : text;
+                    resultLabel.ForceMeshUpdate();
+                    LastContextResultShownTextForQA = resultLabel.text;
+                    LastContextResultShownAtSecondsForQA = Time.time;
+                    ContextResultShownCountForQA++;
+                }
+                _resultRoutinePhase = ContextResultRoutinePhase.Visible;
+                _resultRoutineVisibleUntil = Time.time + resultDuration;
+            }
+            else if (phase == ContextResultRoutinePhase.Visible)
+            {
+                _resultRoutinePhase = ContextResultRoutinePhase.Visible;
+                LastContextResultShownAtSecondsForQA = Time.time -
+                    Mathf.Max(0f, resultDuration - visibleRemaining);
+                _resultRoutineVisibleUntil = Time.time + Mathf.Max(0f, visibleRemaining);
+            }
+            else
+            {
+                ClearContextResult();
+                yield break;
+            }
+
+            while (Time.time < _resultRoutineVisibleUntil && ResultZoneStillCurrent())
                 yield return null;
             ClearContextResult();
         }
@@ -1933,6 +2498,10 @@ namespace MoonlightMagicHouse
             RemoveContextResultText();
             _resultZone = null;
             _resultRoutine = null;
+            _resultRoutinePhase = ContextResultRoutinePhase.None;
+            _resultRoutineSourceText = "";
+            _resultRoutineDuration = 0f;
+            _resultRoutineVisibleUntil = 0f;
         }
 
         void RemoveContextResultText()

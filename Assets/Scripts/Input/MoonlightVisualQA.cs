@@ -29,6 +29,18 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_GESTURE_READ_RUNTIME_CONTRACT_VERIFIED";
         public const string GestureReadRuntimeContractFailureMarker =
             "MOONLIGHT_GESTURE_READ_RUNTIME_CONTRACT_FAILED";
+        public const string GestureCareStaticContractMarker =
+            "MOONLIGHT_GESTURE_CARE_STATIC_CONTRACT_VERIFIED";
+        public const string GestureCareStaticContractFailureMarker =
+            "MOONLIGHT_GESTURE_CARE_STATIC_CONTRACT_FAILED";
+        public const string GestureCareRuntimeContractMarker =
+            "MOONLIGHT_GESTURE_CARE_PROPAGATION_4_OF_4_VERIFIED";
+        public const string GestureCareRuntimeStepMarker =
+            "MOONLIGHT_GESTURE_CARE_RUNTIME_STEP_VERIFIED";
+        public const string GestureCareRuntimeContractFailureMarker =
+            "MOONLIGHT_GESTURE_CARE_RUNTIME_CONTRACT_FAILED";
+        public const string GestureCareContrastRuntimeContractMarker =
+            "MOONLIGHT_GESTURE_CARE_LIVE_CONTRASTS_VERIFIED";
         public const string ActivityQualityReadoutStaticContractMarker =
             "MOONLIGHT_IPAD_ACTIVITY_QUALITY_STATIC_CONTRACT_VERIFIED";
         public const string ActivityQualityReadoutRuntimeContractMarker =
@@ -92,6 +104,141 @@ namespace MoonlightMagicHouse
             public float FeedbackEndedAtSeconds;
             public float ShownAtSeconds;
             public float VisibleSeconds;
+        }
+
+        sealed class CareLiveProbeSpec
+        {
+            public readonly string Name;
+            public readonly int Step;
+            public readonly Vector2[] Points;
+            public readonly float HoldSeconds;
+            public readonly bool MeasureFinalLinger;
+
+            public CareLiveProbeSpec(string name, int step, Vector2[] points,
+                float holdSeconds = 0f, bool measureFinalLinger = false)
+            {
+                Name = name;
+                Step = step;
+                Points = points;
+                HoldSeconds = holdSeconds;
+                MeasureFinalLinger = measureFinalLinger;
+            }
+        }
+
+        sealed class CareLiveProbeObservation
+        {
+            public bool Passed;
+            public string Detail = "not-run";
+            public MoonlightGestureSample Sample;
+            public Vector3 PrimaryA;
+            public Vector3 PrimaryB;
+            public Vector3 BubbleA;
+            public Vector3 BubbleB;
+            public Vector3 AuraScale;
+            public float LightIntensity;
+            public int MoteCount;
+            public int RendererCount;
+            public int MaterialCount;
+            public int LightCount;
+            public bool PersistentIsolationPassed;
+            public bool FinalLingerPassed;
+            public string FinalLingerDetail = "not-measured";
+        }
+
+        sealed class CareLiveHarnessResult
+        {
+            public bool Passed;
+            public string Detail = "not-run";
+        }
+
+        sealed class CareLiveHarnessContext
+        {
+            public MoonlightActionFeedback Feedback;
+            public MoonlightActivityStage Stage;
+        }
+
+        readonly struct CareCompletionRootState
+        {
+            public readonly int InstanceId;
+            public readonly bool ActiveSelf;
+
+            public CareCompletionRootState(Transform root)
+            {
+                InstanceId = root.GetInstanceID();
+                ActiveSelf = root.gameObject.activeSelf;
+            }
+        }
+
+        sealed class CareLiveStationSnapshot
+        {
+            readonly MoonlightActivityStation _station;
+            readonly int _instanceId;
+            readonly bool _activeSelf;
+            readonly bool _activeInHierarchy;
+            readonly bool _enabled;
+            readonly bool _hasCompletion;
+            readonly int _completionRenderers;
+            readonly int _completionMaterials;
+            readonly int _completionColliders;
+            readonly int _completionLights;
+            readonly bool _completionSeparateMaterials;
+            readonly CareCompletionRootState[] _completionRoots;
+
+            public CareLiveStationSnapshot(MoonlightActivityStation station)
+            {
+                _station = station;
+                _instanceId = station.GetInstanceID();
+                _activeSelf = station.gameObject.activeSelf;
+                _activeInHierarchy = station.gameObject.activeInHierarchy;
+                _enabled = station.enabled;
+                _hasCompletion = station.HasCompletionState;
+                _completionRenderers = station.CompletionRendererCount;
+                _completionMaterials = station.CompletionUniqueMaterialCount;
+                _completionColliders = station.CompletionEnabledColliderCount;
+                _completionLights = station.CompletionEnabledLightCount;
+                _completionSeparateMaterials = station.CompletionUsesSeparateMaterials;
+                _completionRoots = CareCompletionRoots(station);
+            }
+
+            public bool Matches(out string detail)
+            {
+                CareCompletionRootState[] roots = _station != null
+                    ? CareCompletionRoots(_station)
+                    : System.Array.Empty<CareCompletionRootState>();
+                bool rootIdentity = roots.Length == _completionRoots.Length;
+                for (int i = 0; i < roots.Length && rootIdentity; i++)
+                    rootIdentity &= roots[i].InstanceId == _completionRoots[i].InstanceId &&
+                        roots[i].ActiveSelf == _completionRoots[i].ActiveSelf;
+                bool pass = _station != null && _station.GetInstanceID() == _instanceId &&
+                    _station.gameObject.activeSelf == _activeSelf &&
+                    _station.gameObject.activeInHierarchy == _activeInHierarchy &&
+                    _station.enabled == _enabled &&
+                    _station.HasCompletionState == _hasCompletion &&
+                    _station.CompletionRendererCount == _completionRenderers &&
+                    _station.CompletionUniqueMaterialCount == _completionMaterials &&
+                    _station.CompletionEnabledColliderCount == _completionColliders &&
+                    _station.CompletionEnabledLightCount == _completionLights &&
+                    _station.CompletionUsesSeparateMaterials ==
+                        _completionSeparateMaterials && rootIdentity;
+                detail = $"station={_instanceId} alive={_station != null} " +
+                    $"active={(_station != null && _station.gameObject.activeSelf)}/" +
+                    $"{_activeSelf} enabled={(_station != null && _station.enabled)}/" +
+                    $"{_enabled} completion=" +
+                    $"{(_station != null && _station.HasCompletionState)}/" +
+                    $"{_hasCompletion} roots={roots.Length}/{_completionRoots.Length} " +
+                    $"rootIdentity={rootIdentity}";
+                return pass;
+            }
+
+            static CareCompletionRootState[] CareCompletionRoots(
+                MoonlightActivityStation station) => station == null
+                ? System.Array.Empty<CareCompletionRootState>()
+                : station.GetComponentsInChildren<Transform>(true)
+                    .Where(candidate => candidate != station.transform &&
+                        candidate.name == "PersistentCareCompletion")
+                    .OrderBy(candidate => candidate.GetInstanceID())
+                    .Select(candidate => new CareCompletionRootState(candidate))
+                    .ToArray();
         }
 
         Vector3 _lastLoggedPosition;
@@ -783,6 +930,31 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] gesture-read-contract " +
                 $"sample=({gestureSampleDetail}) read=({responsiveReadDetail}) " +
                 $"marker={GestureReadStaticContractMarker}");
+            if (!MoonlightActivityStage.ValidateGestureResponsiveCareContract(
+                    out string responsiveCareDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] gesture-care-contract " +
+                    $"{responsiveCareDetail} marker={GestureCareStaticContractFailureMarker}");
+                Application.Quit(156);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] gesture-care-contract " +
+                $"sample=({gestureSampleDetail}) care=({responsiveCareDetail}) " +
+                $"marker={GestureCareStaticContractMarker}");
+            bool uiTransactionPass = MoonlightUI.ValidateQATransactionSnapshotContract(
+                out string uiTransactionDetail);
+            bool padTransactionPass = MoonlightGesturePad.ValidateQATransactionSnapshotContract(
+                out string padTransactionDetail);
+            if (!uiTransactionPass || !padTransactionPass)
+            {
+                Debug.LogError("[MoonlightGameplayQA][FAIL] care-live-qa-transaction " +
+                    $"ui=({uiTransactionDetail}) pad=({padTransactionDetail})");
+                Application.Quit(157);
+                yield break;
+            }
+            Debug.Log("[MoonlightGameplayQA][PASS] care-live-qa-transaction " +
+                $"ui=({uiTransactionDetail}) pad=({padTransactionDetail}) " +
+                "marker=MOONLIGHT_CARE_LIVE_QA_TRANSACTION_STATIC_VERIFIED");
             if (!MoonlightGesturePad.ValidateLiveHoldReadinessStaticContract(
                     out string liveHoldReadinessDetail))
             {
@@ -2022,6 +2194,26 @@ namespace MoonlightMagicHouse
                 int rewardCoins = moonlight.coins;
                 controller.TeleportTo(zone.transform.position, controller.RoomBounds);
                 yield return new WaitForSeconds(0.65f);
+                if (expectedKind == MoonlightSpatialActionKind.Care)
+                {
+                    var careLiveHarness = new CareLiveHarnessResult();
+                    yield return RunGestureResponsiveCareLiveHarness(moonlight,
+                        spatialInteractor, ui, pad, zone, careLiveHarness);
+                    if (!careLiveHarness.Passed)
+                    {
+                        Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                            $"gesture-care-live-contrasts {careLiveHarness.Detail} " +
+                            $"marker={GestureCareRuntimeContractFailureMarker}");
+                        Application.Quit(158);
+                        yield break;
+                    }
+                    Debug.Log("[MoonlightGameplayQA][PASS] " +
+                        $"gesture-care-live-contrasts {careLiveHarness.Detail} " +
+                        $"marker={GestureCareContrastRuntimeContractMarker} " +
+                        "marker=MOONLIGHT_CARE_LIVE_PERSISTENT_ISOLATION_VERIFIED " +
+                        "marker=MOONLIGHT_CARE_LIVE_4_6S_LINGER_VERIFIED");
+                    yield return null;
+                }
                 string freshQualityDetail = "";
                 if (expectIPadHud &&
                     !ValidateActivityQualityReadoutRuntimeBinding(ui, zone, false, false,
@@ -2103,6 +2295,7 @@ namespace MoonlightMagicHouse
                     touchJoystick.ClearInputForQA();
 
                 var verifiedCareContacts = new System.Collections.Generic.HashSet<string>();
+                int verifiedGestureResponsiveCareSteps = 0;
                 float expectedSessionScoreTotal = 0f;
                 for (int step = 0; step < zone.RequiredSteps; step++)
                 {
@@ -3467,6 +3660,68 @@ namespace MoonlightMagicHouse
                         }
                         else if (zone.Kind == MoonlightSpatialActionKind.Care)
                         {
+                            bool careSampleEqualityPass = pad != null &&
+                                pad.LastSample.HasSevenFiniteNormalizedPoints &&
+                                zone.LastGestureSample.HasSevenFiniteNormalizedPoints &&
+                                feedback.ActiveGestureSample.HasSevenFiniteNormalizedPoints &&
+                                stage.CareGestureSampleReady &&
+                                pad.LastSample.ContentEquals(zone.LastGestureSample) &&
+                                zone.LastGestureSample.ContentEquals(
+                                    feedback.ActiveGestureSample) &&
+                                feedback.ActiveGestureSample.ContentEquals(
+                                    stage.ActiveGestureSample);
+                            bool careGestureKindPass = step switch
+                            {
+                                0 => expected == MoonlightGestureKind.Tap,
+                                1 => expected == MoonlightGestureKind.Circle,
+                                2 => expected == MoonlightGestureKind.Swipe,
+                                _ => expected == MoonlightGestureKind.Hold
+                            };
+                            bool careResponsePass = step switch
+                            {
+                                0 => stage.CareActualGesturePropLocalPosition.x >= -0.78f &&
+                                     stage.CareActualGesturePropLocalPosition.x <= -0.44f &&
+                                     stage.CareActualGesturePropLocalPosition.z >= -0.10f &&
+                                     stage.CareActualGesturePropLocalPosition.z <= 0.12f,
+                                1 => Mathf.Abs(stage.CareWashSignedDirection) == 1f &&
+                                     stage.CareWashOrbitRadius >= 0.16f &&
+                                     stage.CareWashOrbitRadius <= 0.28f,
+                                2 => stage.CareActualGesturePropLocalPosition.x >= -0.30f &&
+                                     stage.CareActualGesturePropLocalPosition.x <= 0.46f,
+                                _ => stage.CareGlowAuraScaleMultiplier >= 0.80f &&
+                                     stage.CareActualGlowLightIntensity >= 0.32f &&
+                                     stage.CareActualGlowMoteCount ==
+                                         stage.CareExpectedGlowMoteCount &&
+                                     stage.CareActualGlowMoteCount is >= 2 and <= 6
+                            };
+                            bool gestureCareRuntimePass = careSampleEqualityPass &&
+                                careGestureKindPass && careResponsePass &&
+                                stage.CareRuntimeContractReady;
+                            if (!gestureCareRuntimePass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                    "gesture-care-runtime " +
+                                    $"step={step + 1}/4 sampleEquality={careSampleEqualityPass} " +
+                                    $"padPoints={(pad != null ? pad.LastSample.PointCount : 0)} " +
+                                    $"zonePoints={zone.LastGestureSample.PointCount} " +
+                                    $"feedbackPoints={feedback.ActiveGestureSample.PointCount} " +
+                                    $"stagePoints={stage.ActiveGestureSample.PointCount} " +
+                                    $"kind={expected}/{careGestureKindPass} " +
+                                    $"response={careResponsePass} " +
+                                    $"transform={stage.CareCurrentStepTransformAgreement} " +
+                                    $"evidence=({stage.CareTransformEvidence}) " +
+                                    $"marker={GestureCareRuntimeContractFailureMarker}");
+                                Application.Quit(157);
+                                yield break;
+                            }
+                            verifiedGestureResponsiveCareSteps++;
+                            Debug.Log("[MoonlightGameplayQA][PASS] gesture-care-runtime " +
+                                $"step={step + 1}/4 " +
+                                $"sampleEquality={careSampleEqualityPass} gesture={expected} " +
+                                $"transform=({stage.CareTransformEvidence}) " +
+                                $"verified={verifiedGestureResponsiveCareSteps}/4 " +
+                                $"marker={GestureCareRuntimeStepMarker}");
+
                             bool stageUsesFallback = stage.UsesProceduralCareStationFallback;
                             string expectedStageSource = stageUsesFallback
                                 ? "persistent-procedural-fallback"
@@ -4041,14 +4296,23 @@ namespace MoonlightMagicHouse
                         $"xpDrift={storyUI.LastModalXPDrift} coinDrift={storyUI.LastModalCoinDrift} " +
                         $"marker={StoryPageUI.ZeroDriftMarker}");
                 }
-                if (expectedKind == MoonlightSpatialActionKind.Care && verifiedCareContacts.Count != 4)
+                if (expectedKind == MoonlightSpatialActionKind.Care &&
+                    (verifiedCareContacts.Count != 4 ||
+                     verifiedGestureResponsiveCareSteps != 4))
                 {
-                    Debug.LogError($"[MoonlightGameplayQA][FAIL] care-live-contacts " +
-                        $"count={verifiedCareContacts.Count}/4 " +
-                        $"targets={string.Join(",", verifiedCareContacts.OrderBy(target => target))}");
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] care-live-contract " +
+                        $"contacts={verifiedCareContacts.Count}/4 " +
+                        $"responsiveSteps={verifiedGestureResponsiveCareSteps}/4 " +
+                        $"targets={string.Join(",", verifiedCareContacts.OrderBy(target => target))} " +
+                        $"marker={GestureCareRuntimeContractFailureMarker}");
                     Application.Quit(100);
                     yield break;
                 }
+                if (expectedKind == MoonlightSpatialActionKind.Care)
+                    Debug.Log($"[MoonlightGameplayQA][PASS] care-live-contract " +
+                        $"contacts={verifiedCareContacts.Count}/4 " +
+                        $"responsiveSteps={verifiedGestureResponsiveCareSteps}/4 " +
+                        $"marker={GestureCareRuntimeContractMarker}");
                 if (persistentStation != null)
                 {
                     RoomType detour = activityRooms[activityIndex] == RoomType.LivingRoom
@@ -4254,6 +4518,566 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] suite collisions={controller.CollisionCount} " +
                 $"audioCues={audio.CuePlayCount} rooms={rooms.rooms.Count} activities={completedActivities}");
             Application.Quit(0);
+        }
+
+        IEnumerator RunGestureResponsiveCareLiveHarness(MoonlightCharacter liveMoonlight,
+            MoonlightSpatialInteractor liveInteractor, MoonlightUI ui,
+            MoonlightGesturePad pad, MoonlightSpatialActionZone liveZone,
+            CareLiveHarnessResult result)
+        {
+            MoonlightGameManager manager = MoonlightGameManager.Instance;
+            if (manager == null || liveMoonlight == null || liveInteractor == null ||
+                ui == null || pad == null || liveZone == null || EventSystem.current == null)
+            {
+                result.Detail = $"prerequisites manager={(manager != null)} " +
+                    $"moonlight={(liveMoonlight != null)} interactor={(liveInteractor != null)} " +
+                    $"ui={(ui != null)} pad={(pad != null)} zone={(liveZone != null)} " +
+                    $"eventSystem={(EventSystem.current != null)}";
+                yield break;
+            }
+
+            MoonlightCharacter originalManagedMoonlight = manager.moonlight;
+            bool liveZoneWasEnabled = liveZone.enabled;
+            float liveWonder = liveMoonlight.stats.wonder;
+            float liveWarmth = liveMoonlight.stats.warmth;
+            float liveRest = liveMoonlight.stats.rest;
+            float liveMagic = liveMoonlight.stats.magic;
+            float liveHunger = liveMoonlight.stats.hunger;
+            float liveDaysInHouse = liveMoonlight.daysInHouse;
+            MoonlightStage liveStage = liveMoonlight.stage;
+            int liveXP = liveMoonlight.xp;
+            int liveCoins = liveMoonlight.coins;
+            int liveRoomsUnlocked = liveMoonlight.roomsUnlocked;
+            CareLiveStationSnapshot[] liveCareStationSnapshots =
+                FindObjectsByType<MoonlightActivityStation>(
+                        FindObjectsInactive.Include, FindObjectsSortMode.None)
+                    .Where(station => station.Kind == MoonlightSpatialActionKind.Care)
+                    .OrderBy(station => station.GetInstanceID())
+                    .Select(station => new CareLiveStationSnapshot(station))
+                    .ToArray();
+            GameObject harnessRoot = null;
+            MoonlightUI.QATransactionSnapshot uiSnapshot = null;
+            MoonlightGesturePad.QATransactionSnapshot padSnapshot = null;
+            var context = new CareLiveHarnessContext();
+            try
+            {
+                if (!ui.TryBeginQATransaction(out uiSnapshot,
+                        out string uiTransactionDetail))
+                {
+                    result.Detail = $"ui-transaction-begin ({uiTransactionDetail})";
+                    yield break;
+                }
+                if (!pad.TryBeginQATransaction(out padSnapshot,
+                        out string padTransactionDetail))
+                {
+                    result.Detail = $"pad-transaction-begin ({padTransactionDetail})";
+                    yield break;
+                }
+
+                harnessRoot = new GameObject("MoonlightCareGestureLiveHarness-Isolated");
+                harnessRoot.transform.position = liveMoonlight.transform.position;
+                var probeMoonlight = harnessRoot.AddComponent<MoonlightCharacter>();
+                var probeInteractor = harnessRoot.AddComponent<MoonlightSpatialInteractor>();
+                context.Stage = harnessRoot.AddComponent<MoonlightActivityStage>();
+                if (!context.Stage.ConfigureCareLiveHarnessIsolationForQA(true))
+                {
+                    result.Detail = "stage-persistent-isolation-config-failed";
+                    yield break;
+                }
+                context.Feedback = harnessRoot.AddComponent<MoonlightActionFeedback>();
+                manager.moonlight = probeMoonlight;
+                liveZone.enabled = false;
+
+                var tapLeft = new CareLiveProbeObservation();
+                var tapRight = new CareLiveProbeObservation();
+                var circleNarrow = new CareLiveProbeObservation();
+                var circleWide = new CareLiveProbeObservation();
+                var circleReverse = new CareLiveProbeObservation();
+                var swipeRight = new CareLiveProbeObservation();
+                var swipeLeft = new CareLiveProbeObservation();
+                var glowScoreLow = new CareLiveProbeObservation();
+                var glowScoreHigh = new CareLiveProbeObservation();
+                var glowDurationShort = new CareLiveProbeObservation();
+                var glowDurationLong = new CareLiveProbeObservation();
+
+                yield return RunCareLiveProbe(probeMoonlight, probeInteractor, context,
+                    ui, pad, new CareLiveProbeSpec("tap-left", 0,
+                        new[] { new Vector2(-0.38f, 0f) }), tapLeft);
+                yield return RunCareLiveProbe(probeMoonlight, probeInteractor, context,
+                    ui, pad, new CareLiveProbeSpec("tap-right", 0,
+                        new[] { new Vector2(0.38f, 0f) }), tapRight);
+                yield return RunCareLiveProbe(probeMoonlight, probeInteractor, context,
+                    ui, pad, new CareLiveProbeSpec("circle-narrow", 1,
+                        CareCirclePointerPoints(0.16f, false)), circleNarrow);
+                yield return RunCareLiveProbe(probeMoonlight, probeInteractor, context,
+                    ui, pad, new CareLiveProbeSpec("circle-wide", 1,
+                        CareCirclePointerPoints(0.42f, false)), circleWide);
+                yield return RunCareLiveProbe(probeMoonlight, probeInteractor, context,
+                    ui, pad, new CareLiveProbeSpec("circle-reverse", 1,
+                        CareCirclePointerPoints(0.42f, true)), circleReverse);
+                yield return RunCareLiveProbe(probeMoonlight, probeInteractor, context,
+                    ui, pad, new CareLiveProbeSpec("swipe-right", 2,
+                        new[] { new Vector2(-0.42f, 0f), new Vector2(0.42f, 0f) }),
+                    swipeRight);
+                yield return RunCareLiveProbe(probeMoonlight, probeInteractor, context,
+                    ui, pad, new CareLiveProbeSpec("swipe-left", 2,
+                        new[] { new Vector2(0.42f, 0f), new Vector2(-0.42f, 0f) }),
+                    swipeLeft);
+                yield return RunCareLiveProbe(probeMoonlight, probeInteractor, context,
+                    ui, pad, new CareLiveProbeSpec("glow-score-low", 3,
+                        new[] { Vector2.zero, new Vector2(0.122f, 0f) }, 1f),
+                    glowScoreLow);
+                yield return RunCareLiveProbe(probeMoonlight, probeInteractor, context,
+                    ui, pad, new CareLiveProbeSpec("glow-score-high", 3,
+                        new[] { Vector2.zero }, 1f), glowScoreHigh);
+                yield return RunCareLiveProbe(probeMoonlight, probeInteractor, context,
+                    ui, pad, new CareLiveProbeSpec("glow-duration-short", 3,
+                        new[] { Vector2.zero }, 0.80f), glowDurationShort);
+                yield return RunCareLiveProbe(probeMoonlight, probeInteractor, context,
+                    ui, pad, new CareLiveProbeSpec("glow-duration-long", 3,
+                        new[] { Vector2.zero, new Vector2(0.124f, 0f) }, 1.10f, true),
+                    glowDurationLong);
+
+                CareLiveProbeObservation[] observations =
+                {
+                    tapLeft, tapRight, circleNarrow, circleWide, circleReverse,
+                    swipeRight, swipeLeft, glowScoreLow, glowScoreHigh,
+                    glowDurationShort, glowDurationLong
+                };
+                bool probesPassed = observations.All(observation => observation.Passed);
+                bool budgetPass = observations.All(observation =>
+                    observation.RendererCount > 0 && observation.RendererCount <= 48 &&
+                    observation.MaterialCount > 0 && observation.MaterialCount <= 28 &&
+                    observation.LightCount == 1);
+                bool persistentIsolationPass = observations.All(observation =>
+                    observation.PersistentIsolationPassed);
+                bool finalLingerPass = glowDurationLong.FinalLingerPassed;
+
+                float tapLandingDelta = Vector3.Distance(tapLeft.PrimaryB, tapRight.PrimaryB);
+                bool tapPass = tapLandingDelta >=
+                    MoonlightActivityStage.CarePrepMinimumLandingSeparation;
+
+                float narrowBrushCross = CareObservedOrbitCross(
+                    circleNarrow.PrimaryA, circleNarrow.PrimaryB);
+                float wideBrushCross = CareObservedOrbitCross(
+                    circleWide.PrimaryA, circleWide.PrimaryB);
+                float reverseBrushCross = CareObservedOrbitCross(
+                    circleReverse.PrimaryA, circleReverse.PrimaryB);
+                float wideBubbleCross = CareObservedOrbitCross(
+                    circleWide.BubbleA, circleWide.BubbleB);
+                float reverseBubbleCross = CareObservedOrbitCross(
+                    circleReverse.BubbleA, circleReverse.BubbleB);
+                float narrowRadius = Mathf.Abs(circleNarrow.PrimaryA.x);
+                float wideRadius = Mathf.Abs(circleWide.PrimaryA.x);
+                float observedRadiusDelta = wideRadius - narrowRadius;
+                bool circlePass = Mathf.Abs(narrowBrushCross) >= 0.001f &&
+                    Mathf.Abs(wideBrushCross) >= 0.001f &&
+                    Mathf.Abs(reverseBrushCross) >= 0.001f &&
+                    Mathf.Sign(narrowBrushCross) == Mathf.Sign(wideBrushCross) &&
+                    Mathf.Sign(wideBrushCross) == -Mathf.Sign(reverseBrushCross) &&
+                    Mathf.Abs(wideBubbleCross) >= 0.001f &&
+                    Mathf.Abs(reverseBubbleCross) >= 0.001f &&
+                    Mathf.Sign(wideBubbleCross) == -Mathf.Sign(reverseBubbleCross) &&
+                    observedRadiusDelta >= MoonlightActivityStage.CareWashMinimumRadiusDelta;
+
+                float rightTraversal = swipeRight.PrimaryB.x - swipeRight.PrimaryA.x;
+                float leftTraversal = swipeLeft.PrimaryB.x - swipeLeft.PrimaryA.x;
+                float swipeEndpointDelta = Vector3.Distance(
+                    swipeRight.PrimaryB, swipeLeft.PrimaryB);
+                bool swipePass = rightTraversal * leftTraversal < 0f &&
+                    Mathf.Abs(rightTraversal) >=
+                        MoonlightActivityStage.CareBrushMinimumEndpointSeparation &&
+                    Mathf.Abs(leftTraversal) >=
+                        MoonlightActivityStage.CareBrushMinimumEndpointSeparation &&
+                    swipeEndpointDelta >=
+                        MoonlightActivityStage.CareBrushMinimumEndpointSeparation;
+
+                float scoreDurationDrift = Mathf.Abs(
+                    glowScoreHigh.Sample.Duration - glowScoreLow.Sample.Duration);
+                float scoreAuraDelta = glowScoreHigh.AuraScale.x - glowScoreLow.AuraScale.x;
+                float scoreLightDelta = glowScoreHigh.LightIntensity -
+                    glowScoreLow.LightIntensity;
+                int scoreMoteDelta = glowScoreHigh.MoteCount - glowScoreLow.MoteCount;
+                bool glowScorePass = glowScoreHigh.Sample.Score >=
+                        glowScoreLow.Sample.Score + 0.20f &&
+                    scoreDurationDrift <= 0.06f && scoreAuraDelta >= 0.04f &&
+                    scoreLightDelta >= 0.08f && scoreMoteDelta >= 1;
+
+                float durationScoreDrift = Mathf.Abs(
+                    glowDurationLong.Sample.Score - glowDurationShort.Sample.Score);
+                float durationAuraDelta = glowDurationLong.AuraScale.x -
+                    glowDurationShort.AuraScale.x;
+                float durationLightDelta = glowDurationLong.LightIntensity -
+                    glowDurationShort.LightIntensity;
+                int durationMoteDelta = glowDurationLong.MoteCount -
+                    glowDurationShort.MoteCount;
+                bool glowDurationPass = glowDurationLong.Sample.Duration >=
+                        glowDurationShort.Sample.Duration + 0.20f &&
+                    durationScoreDrift <= 0.06f && durationAuraDelta >= 0.02f &&
+                    durationLightDelta >= 0.04f && durationMoteDelta >= 1;
+
+                result.Passed = probesPassed && budgetPass && persistentIsolationPass &&
+                    finalLingerPass && tapPass && circlePass && swipePass &&
+                    glowScorePass && glowDurationPass;
+                result.Detail = $"probes={observations.Count(observation => observation.Passed)}/" +
+                    $"{observations.Length} propagation={probesPassed} " +
+                    $"tapLandingDelta={tapLandingDelta:0.000} " +
+                    $"brushOrbit={wideBrushCross:0.0000}/{reverseBrushCross:0.0000} " +
+                    $"bubbleOrbit={wideBubbleCross:0.0000}/{reverseBubbleCross:0.0000} " +
+                    $"radius={narrowRadius:0.000}/{wideRadius:0.000} " +
+                    $"delta={observedRadiusDelta:0.000} " +
+                    $"swipeTraversal={rightTraversal:0.000}/{leftTraversal:0.000} " +
+                    $"endpoints={swipeEndpointDelta:0.000} " +
+                    $"scoreFixedDuration={glowScoreLow.Sample.Score:0.000}->" +
+                    $"{glowScoreHigh.Sample.Score:0.000}@" +
+                    $"{glowScoreLow.Sample.Duration:0.000}/" +
+                    $"{glowScoreHigh.Sample.Duration:0.000}s " +
+                    $"deltas={scoreAuraDelta:0.000}/{scoreLightDelta:0.000}/" +
+                    $"{scoreMoteDelta} durationFixedScore=" +
+                    $"{glowDurationShort.Sample.Duration:0.000}->" +
+                    $"{glowDurationLong.Sample.Duration:0.000}s@" +
+                    $"{glowDurationShort.Sample.Score:0.000}/" +
+                    $"{glowDurationLong.Sample.Score:0.000} deltas=" +
+                    $"{durationAuraDelta:0.000}/{durationLightDelta:0.000}/" +
+                    $"{durationMoteDelta} contracts={tapPass}/{circlePass}/" +
+                    $"{swipePass}/{glowScorePass}/{glowDurationPass} budgets={budgetPass} " +
+                    $"persistentIsolation={persistentIsolationPass} " +
+                    $"finalLinger=({glowDurationLong.FinalLingerDetail})";
+                if (!probesPassed)
+                {
+                    string failed = string.Join(",", observations
+                        .Where(observation => !observation.Passed)
+                        .Select(observation => observation.Detail));
+                    result.Detail += $" failed=({failed})";
+                }
+                probeInteractor.RescanNowForQA();
+                yield return null;
+            }
+            finally
+            {
+                if (context.Feedback != null && context.Feedback.enabled)
+                {
+                    context.Feedback.enabled = false;
+                }
+                manager.moonlight = originalManagedMoonlight;
+                liveZone.enabled = liveZoneWasEnabled;
+                liveMoonlight.stats.wonder = liveWonder;
+                liveMoonlight.stats.warmth = liveWarmth;
+                liveMoonlight.stats.rest = liveRest;
+                liveMoonlight.stats.magic = liveMagic;
+                liveMoonlight.stats.hunger = liveHunger;
+                liveMoonlight.daysInHouse = liveDaysInHouse;
+                liveMoonlight.stage = liveStage;
+                liveMoonlight.xp = liveXP;
+                liveMoonlight.coins = liveCoins;
+                liveMoonlight.roomsUnlocked = liveRoomsUnlocked;
+                if (harnessRoot != null)
+                {
+                    harnessRoot.SetActive(false);
+                    Destroy(harnessRoot);
+                }
+                liveInteractor.RescanNowForQA();
+                var stationStateDetails = new List<string>();
+                bool liveStationStateUnchanged = liveCareStationSnapshots.Length > 0;
+                foreach (CareLiveStationSnapshot stationSnapshot in liveCareStationSnapshots)
+                {
+                    bool stationMatches = stationSnapshot.Matches(out string stationDetail);
+                    liveStationStateUnchanged &= stationMatches;
+                    stationStateDetails.Add(stationDetail);
+                }
+                result.Passed &= liveStationStateUnchanged;
+                result.Detail += $" liveCareStations={liveCareStationSnapshots.Length} " +
+                    $"unchanged={liveStationStateUnchanged} " +
+                    $"stationState=({string.Join(";", stationStateDetails)})";
+                string padRestoreDetail = "not-started";
+                string uiRestoreDetail = "not-started";
+                bool padRestored = padSnapshot == null;
+                bool uiRestored = uiSnapshot == null;
+                try
+                {
+                    if (padSnapshot != null)
+                        padRestored = pad.RestoreQATransaction(
+                            padSnapshot, out padRestoreDetail);
+                }
+                catch (System.Exception exception)
+                {
+                    padRestoreDetail = $"exception:{exception.GetType().Name}";
+                }
+                try
+                {
+                    if (uiSnapshot != null)
+                        uiRestored = ui.RestoreQATransaction(
+                            uiSnapshot, out uiRestoreDetail);
+                }
+                catch (System.Exception exception)
+                {
+                    uiRestoreDetail = $"exception:{exception.GetType().Name}";
+                }
+                if (!padRestored || !uiRestored)
+                {
+                    result.Passed = false;
+                    result.Detail += $" restore=pad:{padRestored}" +
+                        $"({padRestoreDetail})/ui:{uiRestored}({uiRestoreDetail})";
+                }
+                else if (padSnapshot != null || uiSnapshot != null)
+                {
+                    result.Detail += " restore=transactional";
+                }
+            }
+        }
+
+        IEnumerator RunCareLiveProbe(MoonlightCharacter probeMoonlight,
+            MoonlightSpatialInteractor probeInteractor, CareLiveHarnessContext context,
+            MoonlightUI ui, MoonlightGesturePad pad, CareLiveProbeSpec spec,
+            CareLiveProbeObservation observation)
+        {
+            GameObject zoneRoot = null;
+            try
+            {
+                zoneRoot = new GameObject($"CareLiveProbeZone-{spec.Name}");
+                zoneRoot.transform.position = probeMoonlight.transform.position;
+                var zone = zoneRoot.AddComponent<MoonlightSpatialActionZone>();
+                zone.Configure(MoonlightSpatialActionKind.Care,
+                    $"Care live probe {spec.Name}", 0.30f);
+                probeInteractor.RescanNowForQA();
+                ui.Refresh(probeMoonlight);
+                if (probeInteractor.CurrentZone != zone)
+                {
+                    observation.Detail = $"{spec.Name}:zone-not-current";
+                    yield break;
+                }
+
+                if (context.Feedback == null || !context.Feedback.CanBeginAction)
+                {
+                    observation.Detail = $"{spec.Name}:feedback-not-ready";
+                    yield break;
+                }
+
+                for (int step = 0; step <= spec.Step; step++)
+                {
+                    MoonlightGestureKind gesture =
+                        MoonlightSpatialActionZone.CareGestureForStep(step);
+                    Vector2[] points = step == spec.Step
+                        ? spec.Points
+                        : CareLeadInPointerPoints(gesture);
+                    float holdSeconds = step == spec.Step
+                        ? spec.HoldSeconds
+                        : 0f;
+                    yield return DriveCarePadPointerInput(pad, points, holdSeconds,
+                        8200 + spec.Step * 20 + step);
+
+                    var stage = context.Stage;
+                    MoonlightActionFeedback feedback = context.Feedback;
+                    bool persistentIsolation = stage != null &&
+                        stage.CareLiveHarnessIsolationEnabledForQA &&
+                        !stage.HasPersistentStationBindingForQA &&
+                        stage.UsesProceduralCareStationFallback &&
+                        stage.CareStationVisualSource == "stage-procedural-fallback" &&
+                        stage.CareLiveHarnessIsolationQAMarker ==
+                            "MOONLIGHT_CARE_LIVE_HARNESS_PERSISTENT_ISOLATED";
+                    bool propagationPass = zone.LastGesturePassed &&
+                        stage != null && stage.IsVisible &&
+                        feedback.ActivityStep == step && stage.CurrentStep == step &&
+                        pad.LastSample.ContentEquals(zone.LastGestureSample) &&
+                        zone.LastGestureSample.ContentEquals(feedback.ActiveGestureSample) &&
+                        feedback.ActiveGestureSample.ContentEquals(stage.ActiveGestureSample) &&
+                        persistentIsolation;
+                    if (!propagationPass)
+                    {
+                        observation.Detail = $"{spec.Name}:propagation step={step + 1} " +
+                            $"passed={zone.LastGesturePassed} stage={(stage != null && stage.IsVisible)} " +
+                            $"persistentIsolation={persistentIsolation} " +
+                            $"pad={pad.LastSample.PointCount} zone={zone.LastGestureSample.PointCount} " +
+                            $"feedback={feedback.ActiveGestureSample.PointCount}";
+                        yield break;
+                    }
+
+                    if (step == spec.Step)
+                    {
+                        observation.Sample = stage.ActiveGestureSample;
+                        CaptureCareLiveObservation(stage, spec.Step, observation);
+                        observation.RendererCount = stage.ActiveRendererCount;
+                        observation.MaterialCount = stage.ActiveUniqueMaterialCount;
+                        observation.LightCount = stage.ActiveLightCount;
+                        observation.PersistentIsolationPassed = persistentIsolation;
+                        observation.Passed = stage.CareGestureSampleReady &&
+                            stage.CareCurrentStepTransformAgreement &&
+                            observation.PersistentIsolationPassed;
+                        observation.Detail = observation.Passed
+                            ? spec.Name
+                            : $"{spec.Name}:transform {stage.CareTransformEvidence}";
+                    }
+
+                    if (step == spec.Step && spec.MeasureFinalLinger)
+                    {
+                        float enterDeadline = Time.time + 4f;
+                        while (!stage.IsLingering && Time.time < enterDeadline)
+                            yield return null;
+                        bool enteredLinger = stage.IsLingering &&
+                            feedback.IsPresentingResult &&
+                            stage.CurrentKind == MoonlightSpatialActionKind.Care &&
+                            stage.CurrentStep == 3 &&
+                            stage.CareLiveHarnessIsolationQAMarker ==
+                                "MOONLIGHT_CARE_LIVE_HARNESS_PERSISTENT_ISOLATED";
+                        float endDeadline = Time.time +
+                            MoonlightActivityStage.CareFinalPresentationSeconds + 0.75f;
+                        while (stage.IsLingering && Time.time < endDeadline)
+                            yield return null;
+                        string lingerDetail = "linger-timeout";
+                        bool lingerContract = !stage.IsLingering &&
+                            stage.ValidateLastCareLingerRuntimeContract(0.20f,
+                                out lingerDetail);
+                        observation.FinalLingerPassed = enteredLinger && lingerContract;
+                        observation.FinalLingerDetail = $"entered={enteredLinger} " +
+                            lingerDetail;
+                        observation.Passed &= observation.FinalLingerPassed;
+                        observation.Detail = observation.Passed
+                            ? $"{spec.Name}:linger ({observation.FinalLingerDetail})"
+                            : $"{spec.Name}:linger-failed ({observation.FinalLingerDetail})";
+                    }
+
+                    yield return ReplaceCareProbeFeedback(probeMoonlight, context);
+                    if (step < spec.Step &&
+                        (context.Feedback == null || !context.Feedback.CanBeginAction))
+                    {
+                        observation.Passed = false;
+                        observation.Detail = $"{spec.Name}:cooldown step={step + 1}";
+                        yield break;
+                    }
+                }
+            }
+            finally
+            {
+                if (context.Feedback != null && context.Feedback.enabled &&
+                    (context.Feedback.IsPerformingAction ||
+                     context.Feedback.IsPresentingResult))
+                    context.Feedback.enabled = false;
+                if (zoneRoot != null)
+                {
+                    zoneRoot.SetActive(false);
+                    Destroy(zoneRoot);
+                }
+                probeInteractor.RescanNowForQA();
+            }
+        }
+
+        static IEnumerator ReplaceCareProbeFeedback(MoonlightCharacter probeMoonlight,
+            CareLiveHarnessContext context)
+        {
+            MoonlightActionFeedback previous = context.Feedback;
+            context.Feedback = null;
+            if (previous != null)
+            {
+                previous.enabled = false;
+                Destroy(previous);
+                yield return null;
+            }
+            context.Feedback = probeMoonlight.gameObject.AddComponent<MoonlightActionFeedback>();
+        }
+
+        static void CaptureCareLiveObservation(MoonlightActivityStage stage, int step,
+            CareLiveProbeObservation observation)
+        {
+            if (step == 0)
+            {
+                stage.UpdateStage(MoonlightSpatialActionKind.Care, 1f);
+                observation.PrimaryB = stage.CareActualGesturePropLocalPosition;
+                return;
+            }
+            if (step == 1)
+            {
+                stage.UpdateStage(MoonlightSpatialActionKind.Care, 0f);
+                observation.PrimaryA = stage.CareActualGesturePropLocalPosition;
+                observation.BubbleA = stage.CareActualPrimaryBubbleLocalPosition;
+                stage.UpdateStage(MoonlightSpatialActionKind.Care, 0.05f);
+                observation.PrimaryB = stage.CareActualGesturePropLocalPosition;
+                observation.BubbleB = stage.CareActualPrimaryBubbleLocalPosition;
+                return;
+            }
+            if (step == 2)
+            {
+                stage.UpdateStage(MoonlightSpatialActionKind.Care, 0f);
+                observation.PrimaryA = stage.CareActualGesturePropLocalPosition;
+                stage.UpdateStage(MoonlightSpatialActionKind.Care, 1f);
+                observation.PrimaryB = stage.CareActualGesturePropLocalPosition;
+                return;
+            }
+
+            stage.UpdateStage(MoonlightSpatialActionKind.Care, 1f);
+            observation.AuraScale = stage.CareActualGlowAuraScale;
+            observation.LightIntensity = stage.CareActualGlowLightIntensity;
+            observation.MoteCount = stage.CareActualGlowMoteCount;
+        }
+
+        static IEnumerator DriveCarePadPointerInput(MoonlightGesturePad pad,
+            Vector2[] normalizedPoints, float holdSeconds, int pointerId)
+        {
+            var rect = pad.transform as RectTransform;
+            if (rect == null || normalizedPoints == null || normalizedPoints.Length == 0)
+                yield break;
+            float referenceSize = Mathf.Max(1f,
+                Mathf.Min(Mathf.Abs(rect.rect.width), Mathf.Abs(rect.rect.height)));
+            var pointer = new PointerEventData(EventSystem.current)
+            {
+                pointerId = pointerId,
+                button = PointerEventData.InputButton.Left,
+                position = CarePadScreenPoint(rect, normalizedPoints[0], referenceSize)
+            };
+            var raycaster = rect.GetComponentInParent<UnityEngine.UI.GraphicRaycaster>();
+            if (raycaster != null)
+                pointer.pointerPressRaycast = new RaycastResult { module = raycaster };
+            pad.OnPointerDown(pointer);
+            for (int i = 1; i < normalizedPoints.Length; i++)
+            {
+                pointer.position = CarePadScreenPoint(rect, normalizedPoints[i], referenceSize);
+                pad.OnDrag(pointer);
+            }
+            if (holdSeconds > 0f)
+                yield return new WaitForSecondsRealtime(holdSeconds);
+            pad.OnPointerUp(pointer);
+        }
+
+        static Vector2 CarePadScreenPoint(RectTransform rect, Vector2 normalizedPoint,
+            float referenceSize)
+        {
+            Vector3 world = rect.TransformPoint(normalizedPoint * referenceSize);
+            Canvas canvas = rect.GetComponentInParent<Canvas>();
+            Camera eventCamera = canvas != null &&
+                canvas.renderMode != RenderMode.ScreenSpaceOverlay
+                    ? canvas.worldCamera
+                    : null;
+            return RectTransformUtility.WorldToScreenPoint(eventCamera, world);
+        }
+
+        static Vector2[] CareCirclePointerPoints(float radius, bool reverse)
+        {
+            var points = new Vector2[17];
+            for (int i = 0; i < points.Length; i++)
+            {
+                int source = reverse ? points.Length - 1 - i : i;
+                float angle = source / (float)(points.Length - 1) * Mathf.PI * 2f;
+                points[i] = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+            }
+            return points;
+        }
+
+        static Vector2[] CareLeadInPointerPoints(MoonlightGestureKind gesture) =>
+            gesture switch
+            {
+                MoonlightGestureKind.Tap => new[] { Vector2.zero },
+                MoonlightGestureKind.Circle => CareCirclePointerPoints(0.32f, false),
+                MoonlightGestureKind.Swipe => new[]
+                {
+                    new Vector2(-0.42f, 0f), new Vector2(0.42f, 0f)
+                },
+                _ => new[] { Vector2.zero }
+            };
+
+        static float CareObservedOrbitCross(Vector3 first, Vector3 second)
+        {
+            const float centerZ = 0.02f;
+            return first.x * (second.z - centerZ) -
+                second.x * (first.z - centerZ);
         }
 
         static bool Approximately(float actual, float expected)

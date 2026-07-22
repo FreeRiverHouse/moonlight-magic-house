@@ -18,7 +18,14 @@ namespace MoonlightMagicHouse
         const float ActivityLightSpotAngle = 72f;
         const float ActivityLightBaseIntensity = 0.32f;
         const float ActivityLightPulseIntensity = 0.53f;
-        const float CareFinalLingerSeconds = 4.6f;
+        const float CareTowelMinimumX = -0.72f;
+        const float CareTowelMaximumX = -0.44f;
+        const float CareTowelMinimumZ = -0.08f;
+        const float CareTowelMaximumZ = 0.12f;
+        const float CareWashMinimumRadius = 0.16f;
+        const float CareWashMaximumRadius = 0.28f;
+        const float CareCombMinimumX = -0.30f;
+        const float CareCombMaximumX = 0.46f;
         const float BakeLoadStart = 0.08f;
         const float BakeLoadEnd = 0.32f;
         const float BakeDoorCloseStart = 0.34f;
@@ -77,6 +84,13 @@ namespace MoonlightMagicHouse
         public const float ReadMinimumLightIntensity = ActivityLightBaseIntensity;
         public const int RequiredReadStageRendererCount = 19;
         public const int RequiredReadStageMaterialCount = 7;
+        public const float CareFinalPresentationSeconds = 4.6f;
+        public const float CarePrepMinimumLandingSeparation = 0.10f;
+        public const float CareWashMinimumRadiusDelta = 0.08f;
+        public const float CareBrushMinimumEndpointSeparation = 0.50f;
+        public const float CareGlowMinimumAuraScaleDelta = 0.08f;
+        public const float CareGlowMinimumLightIntensityDelta = 0.15f;
+        public const int CareGlowMinimumMoteCountDelta = 1;
         public const string CookAddChoreographyReadyMarker =
             "MOONLIGHT_COOK_ADD_CHOREOGRAPHY_READY";
         public const string CookStirChoreographyReadyMarker =
@@ -165,11 +179,14 @@ namespace MoonlightMagicHouse
         Coroutine _lingerRoutine;
         float _lingerUntil;
         bool _applyPersistentCompletionOnEnd;
+        bool _careLiveHarnessIsolationEnabledForQA;
+        bool _lingerCompletingNaturally;
         Vector3 _center;
         int _requiredSteps = 1;
         float _playProgress;
         float _gardenProgress;
         float _readProgress;
+        float _careProgress;
         MoonlightGestureSample _gestureSample;
 
         public bool IsVisible => _root != null;
@@ -177,6 +194,26 @@ namespace MoonlightMagicHouse
         public float LingerSecondsRemaining => IsLingering
             ? Mathf.Max(0f, _lingerUntil - Time.time)
             : 0f;
+        public bool CareLiveHarnessIsolationEnabledForQA =>
+            _careLiveHarnessIsolationEnabledForQA;
+        public bool HasPersistentStationBindingForQA => _persistentStation != null;
+        public int PersistentStationBindingCountForQA { get; private set; }
+        public int PersistentStationResetCountForQA { get; private set; }
+        public int PersistentCompletionApplicationCountForQA { get; private set; }
+        public string CareLiveHarnessIsolationQAMarker =>
+            _careLiveHarnessIsolationEnabledForQA && _persistentStation == null &&
+            PersistentStationBindingCountForQA == 0 &&
+            PersistentStationResetCountForQA == 0 &&
+            PersistentCompletionApplicationCountForQA == 0 &&
+            UsesProceduralCareStationFallback &&
+            CareStationVisualSource == "stage-procedural-fallback"
+                ? "MOONLIGHT_CARE_LIVE_HARNESS_PERSISTENT_ISOLATED"
+                : "MOONLIGHT_CARE_LIVE_HARNESS_PERSISTENT_NOT_ISOLATED";
+        public float LastCareLingerRequestedSecondsForQA { get; private set; }
+        public float LastCareLingerStartedAtSecondsForQA { get; private set; }
+        public float LastCareLingerEndedAtSecondsForQA { get; private set; }
+        public float LastCareLingerObservedSecondsForQA { get; private set; }
+        public bool LastCareLingerCompletedNaturallyForQA { get; private set; }
         public MoonlightSpatialActionKind CurrentKind { get; private set; }
         public int CurrentStep { get; private set; }
         public int ActiveRendererCount { get; private set; }
@@ -634,11 +671,108 @@ namespace MoonlightMagicHouse
         public int AuthoredCareStationColliderCount { get; private set; }
         public int AuthoredCareStationLightCount { get; private set; }
         public Vector3 AuthoredCareStationBoundsSize { get; private set; }
+        public float CareProgress => _careProgress;
+        public bool CareGestureSampleReady =>
+            CurrentKind == MoonlightSpatialActionKind.Care &&
+            _gestureSample.PointCount == MoonlightGestureSample.ResampledPointCount &&
+            _gestureSample.HasSevenFiniteNormalizedPoints;
+        public Vector3 CareActualGesturePropLocalPosition => CurrentStep switch
+        {
+            0 when _careTowel != null => _careTowel.localPosition,
+            1 when _careBrush != null => _careBrush.localPosition,
+            2 when _careComb != null => _careComb.localPosition,
+            _ => new Vector3(float.NaN, float.NaN, float.NaN)
+        };
+        public Vector3 CareExpectedGesturePropLocalPosition => CurrentStep switch
+        {
+            0 => EvaluateCareTowelPosition(_careProgress, _gestureSample),
+            1 => EvaluateCareWashBrushPosition(_careProgress, _gestureSample),
+            2 => EvaluateCareCombPosition(_careProgress, _gestureSample),
+            _ => new Vector3(float.NaN, float.NaN, float.NaN)
+        };
+        public float CareWashSignedDirection => EvaluateCareWashDirection(_gestureSample);
+        public float CareWashOrbitRadius => EvaluateCareWashRadius(_gestureSample);
+        public Vector3 CareActualPrimaryBubbleLocalPosition =>
+            _careBubbles != null && _careBubbles.Length > 0 && _careBubbles[0] != null
+                ? _careBubbles[0].localPosition
+                : new Vector3(float.NaN, float.NaN, float.NaN);
+        public float CareGlowAuraScaleMultiplier =>
+            EvaluateCareGlowScaleMultiplier(_gestureSample);
+        public Vector3 CareActualGlowAuraScale => _careMirrorAura != null
+            ? _careMirrorAura.localScale
+            : new Vector3(float.NaN, float.NaN, float.NaN);
+        public Vector3 CareExpectedGlowAuraScale =>
+            EvaluateCareGlowAuraScale(_careProgress, _gestureSample);
+        public float CareActualGlowLightIntensity => _activityLight != null
+            ? _activityLight.intensity
+            : float.NaN;
+        public float CareExpectedGlowLightIntensity =>
+            EvaluateCareGlowLightIntensity(_careProgress, _gestureSample);
+        public int CareActualGlowMoteCount => CountActiveCareMotes();
+        public int CareExpectedGlowMoteCount => EvaluateCareGlowMoteCount(_gestureSample);
+        public bool CarePrepTransformAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Care && CurrentStep == 0 &&
+            _careTowel != null &&
+            Vector3.Distance(_careTowel.localPosition,
+                EvaluateCareTowelPosition(_careProgress, _gestureSample)) <= 0.001f &&
+            Quaternion.Angle(_careTowel.localRotation,
+                Quaternion.Euler(EvaluateCareTowelEuler(_careProgress, _gestureSample))) <= 0.01f;
+        public bool CareWashTransformAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Care && CurrentStep == 1 &&
+            CareWashTransformsMatch();
+        public bool CareBrushTransformAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Care && CurrentStep == 2 &&
+            _careComb != null &&
+            Vector3.Distance(_careComb.localPosition,
+                EvaluateCareCombPosition(_careProgress, _gestureSample)) <= 0.001f &&
+            Quaternion.Angle(_careComb.localRotation,
+                Quaternion.Euler(EvaluateCareCombEuler(_careProgress, _gestureSample))) <= 0.01f;
+        public bool CareGlowTransformAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Care && CurrentStep == 3 &&
+            CareGlowTransformsMatch();
+        public bool CareCurrentStepTransformAgreement => CurrentStep switch
+        {
+            0 => CarePrepTransformAgreement,
+            1 => CareWashTransformAgreement,
+            2 => CareBrushTransformAgreement,
+            3 => CareGlowTransformAgreement,
+            _ => false
+        };
+        public bool CareRuntimeContractReady => CareGestureSampleReady &&
+            CareCurrentStepTransformAgreement;
+        public string CareTransformEvidence => CurrentStep switch
+        {
+            0 => $"towel={CareActualGesturePropLocalPosition:F3}/" +
+                $"{CareExpectedGesturePropLocalPosition:F3}",
+            1 => $"brush={CareActualGesturePropLocalPosition:F3}/" +
+                $"{CareExpectedGesturePropLocalPosition:F3} " +
+                $"direction={CareWashSignedDirection:0}/radius={CareWashOrbitRadius:0.000}",
+            2 => $"comb={CareActualGesturePropLocalPosition:F3}/" +
+                $"{CareExpectedGesturePropLocalPosition:F3}",
+            3 => $"aura={CareActualGlowAuraScale:F3}/" +
+                $"{CareExpectedGlowAuraScale:F3} " +
+                $"light={CareActualGlowLightIntensity:0.000}/" +
+                $"{CareExpectedGlowLightIntensity:0.000} " +
+                $"motes={CareActualGlowMoteCount}/{CareExpectedGlowMoteCount}",
+            _ => "inactive"
+        };
 
         public void Begin(MoonlightSpatialActionKind kind)
         {
             Begin(kind, 0, 1);
         }
+
+        public bool ConfigureCareLiveHarnessIsolationForQA(bool enabled)
+        {
+            if (IsVisible || IsLingering) return false;
+            _careLiveHarnessIsolationEnabledForQA = enabled;
+            return true;
+        }
+
+        static bool ShouldBindPersistentStation(MoonlightSpatialActionKind kind,
+            bool careLiveHarnessIsolationEnabled) =>
+            kind != MoonlightSpatialActionKind.Care ||
+            !careLiveHarnessIsolationEnabled;
 
         public void Begin(MoonlightSpatialActionKind kind, int stepIndex, int requiredSteps)
             => Begin(kind, stepIndex, requiredSteps,
@@ -658,9 +792,18 @@ namespace MoonlightMagicHouse
             CurrentStep = Mathf.Clamp(stepIndex, 0, _requiredSteps - 1);
             _root = new GameObject($"ActivityStage-{kind}");
             _root.transform.SetParent(null, true);
-            _persistentStation = MoonlightActivityStation.FindNearestActive(kind, transform.position);
+            bool allowPersistentStation = ShouldBindPersistentStation(kind,
+                _careLiveHarnessIsolationEnabledForQA);
+            _persistentStation = allowPersistentStation
+                ? MoonlightActivityStation.FindNearestActive(kind, transform.position)
+                : null;
+            if (_persistentStation != null)
+                PersistentStationBindingCountForQA++;
             if (_persistentStation != null && CurrentStep == 0)
+            {
+                PersistentStationResetCountForQA++;
                 _persistentStation.ResetCompletionState();
+            }
             _center = _persistentStation != null
                 ? _persistentStation.AnchorPosition
                 : transform.position + (kind == MoonlightSpatialActionKind.Cook
@@ -705,15 +848,25 @@ namespace MoonlightMagicHouse
                 return false;
 
             if (CurrentKind == MoonlightSpatialActionKind.Care)
-                seconds = CareFinalLingerSeconds;
+                seconds = CareFinalPresentationSeconds;
 
             if (_lingerRoutine != null)
                 StopCoroutine(_lingerRoutine);
 
             UpdateStage(CurrentKind, 1f);
-            _applyPersistentCompletionOnEnd = true;
+            _applyPersistentCompletionOnEnd = ShouldBindPersistentStation(CurrentKind,
+                _careLiveHarnessIsolationEnabledForQA);
             IsLingering = true;
             _lingerUntil = Time.time + Mathf.Max(0.5f, seconds);
+            _lingerCompletingNaturally = false;
+            if (CurrentKind == MoonlightSpatialActionKind.Care)
+            {
+                LastCareLingerRequestedSecondsForQA = _lingerUntil - Time.time;
+                LastCareLingerStartedAtSecondsForQA = Time.time;
+                LastCareLingerEndedAtSecondsForQA = 0f;
+                LastCareLingerObservedSecondsForQA = 0f;
+                LastCareLingerCompletedNaturallyForQA = false;
+            }
             _lingerRoutine = StartCoroutine(LingerThenEnd());
             Debug.Log($"[MoonlightActivityQA] final-presentation kind={CurrentKind} " +
                 $"step={CurrentStep + 1}/{_requiredSteps} hold={seconds:0.00}s " +
@@ -727,7 +880,9 @@ namespace MoonlightMagicHouse
                 yield return null;
 
             _lingerRoutine = null;
+            _lingerCompletingNaturally = true;
             End();
+            _lingerCompletingNaturally = false;
         }
 
         public void UpdateStage(MoonlightSpatialActionKind kind, float t)
@@ -748,6 +903,8 @@ namespace MoonlightMagicHouse
                     intensity *= EvaluateGardenBloomIntensity(_gestureSample);
                 else if (CurrentKind == MoonlightSpatialActionKind.Read && CurrentStep == 3)
                     intensity = EvaluateReadLightTarget(t, CurrentStep, _gestureSample);
+                else if (CurrentKind == MoonlightSpatialActionKind.Care && CurrentStep == 3)
+                    intensity = EvaluateCareGlowLightIntensity(t, _gestureSample);
                 _activityLight.intensity = intensity;
             }
 
@@ -891,6 +1048,14 @@ namespace MoonlightMagicHouse
 
         public void End()
         {
+            if (IsLingering && CurrentKind == MoonlightSpatialActionKind.Care)
+            {
+                LastCareLingerEndedAtSecondsForQA = Time.time;
+                LastCareLingerObservedSecondsForQA = Mathf.Max(0f,
+                    LastCareLingerEndedAtSecondsForQA -
+                    LastCareLingerStartedAtSecondsForQA);
+                LastCareLingerCompletedNaturallyForQA = _lingerCompletingNaturally;
+            }
             if (_applyPersistentCompletionOnEnd)
             {
                 var persistentStation = _persistentStation;
@@ -898,6 +1063,7 @@ namespace MoonlightMagicHouse
                 _persistentStation = null;
                 if (persistentStation != null)
                 {
+                    PersistentCompletionApplicationCountForQA++;
                     persistentStation.ApplyCompletionState();
                 }
                 else
@@ -1030,6 +1196,35 @@ namespace MoonlightMagicHouse
             ActiveRendererCount = 0;
             ActiveUniqueMaterialCount = 0;
             ActiveLightCount = 0;
+        }
+
+        public bool ValidateLastCareLingerRuntimeContract(float toleranceSeconds,
+            out string detail)
+        {
+            float tolerance = Mathf.Clamp(toleranceSeconds, 0.05f, 0.50f);
+            bool entered = LastCareLingerStartedAtSecondsForQA > 0f &&
+                LastCareLingerEndedAtSecondsForQA >=
+                    LastCareLingerStartedAtSecondsForQA;
+            bool requested = Mathf.Abs(LastCareLingerRequestedSecondsForQA -
+                CareFinalPresentationSeconds) <= 0.01f;
+            bool observed = Mathf.Abs(LastCareLingerObservedSecondsForQA -
+                CareFinalPresentationSeconds) <= tolerance;
+            bool isolated = _careLiveHarnessIsolationEnabledForQA &&
+                _persistentStation == null && !_applyPersistentCompletionOnEnd &&
+                PersistentStationBindingCountForQA == 0 &&
+                PersistentStationResetCountForQA == 0 &&
+                PersistentCompletionApplicationCountForQA == 0;
+            detail = $"entered={entered} natural=" +
+                $"{LastCareLingerCompletedNaturallyForQA} requested=" +
+                $"{LastCareLingerRequestedSecondsForQA:0.000}s observed=" +
+                $"{LastCareLingerObservedSecondsForQA:0.000}s expected=" +
+                $"{CareFinalPresentationSeconds:0.000}s tolerance={tolerance:0.000}s " +
+                $"persistentIsolated={isolated} stationOps=" +
+                $"{PersistentStationBindingCountForQA}/" +
+                $"{PersistentStationResetCountForQA}/" +
+                $"{PersistentCompletionApplicationCountForQA}";
+            return entered && requested && observed &&
+                LastCareLingerCompletedNaturallyForQA && isolated;
         }
 
         void BuildCookStage()
@@ -4152,6 +4347,536 @@ namespace MoonlightMagicHouse
             }
         }
 
+        public static Vector3 EvaluateCareTowelPosition(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float eased = Mathf.SmoothStep(0f, 1f, t);
+            Vector2 tap = sample.HasSevenFiniteNormalizedPoints ? sample.Start : Vector2.zero;
+            Vector3 target = new(
+                Mathf.Clamp(-0.58f + tap.x * 0.175f,
+                    CareTowelMinimumX, CareTowelMaximumX),
+                0.335f,
+                Mathf.Clamp(0.02f + tap.y * 0.125f,
+                    CareTowelMinimumZ, CareTowelMaximumZ));
+            return Vector3.Lerp(new Vector3(-0.78f, 0.72f, -0.10f), target, eased);
+        }
+
+        public static Vector3 EvaluateCareTowelEuler(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float eased = Mathf.SmoothStep(0f, 1f, t);
+            Vector2 tap = sample.HasSevenFiniteNormalizedPoints ? sample.Start : Vector2.zero;
+            return new Vector3(0f, Mathf.Lerp(-18f, tap.x * 7f, eased),
+                Mathf.Sin(t * Mathf.PI * 3f) * 4f + tap.y * (1f - eased) * 3f);
+        }
+
+        public static float EvaluateCareWashDirection(MoonlightGestureSample sample)
+        {
+            float signedArea = CareSampleSignedArea(sample);
+            return Mathf.Abs(signedArea) > 0.0001f ? Mathf.Sign(signedArea) : 1f;
+        }
+
+        public static float EvaluateCareWashRadius(MoonlightGestureSample sample)
+        {
+            float extent = CareSampleRadialExtent(sample);
+            float response = Mathf.InverseLerp(0.12f, 0.48f, extent);
+            return Mathf.Lerp(CareWashMinimumRadius, CareWashMaximumRadius, response);
+        }
+
+        public static Vector3 EvaluateCareWashBrushPosition(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float direction = EvaluateCareWashDirection(sample);
+            float radius = EvaluateCareWashRadius(sample);
+            float angle = direction * t * Mathf.PI * 4f;
+            return new Vector3(Mathf.Cos(angle) * radius,
+                0.62f + Mathf.Sin(t * Mathf.PI) * 0.07f,
+                0.02f + Mathf.Sin(angle) * radius * 0.75f);
+        }
+
+        public static Vector3 EvaluateCareWashBrushEuler(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            return new Vector3(18f, EvaluateCareWashDirection(sample) * t * 540f, 64f);
+        }
+
+        public static Vector3 EvaluateCareWashBubblePosition(int bubbleIndex, float progress,
+            MoonlightGestureSample sample)
+        {
+            int index = Mathf.Clamp(bubbleIndex, 0, 4);
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float direction = EvaluateCareWashDirection(sample);
+            float radius = EvaluateCareWashRadius(sample) * 0.65f + index * 0.025f;
+            float phase = Mathf.Repeat(t * 1.45f + index * 0.19f, 1f);
+            float angle = index * Mathf.PI * 2f / 5f +
+                direction * t * Mathf.PI * 2f;
+            return new Vector3(Mathf.Cos(angle) * radius,
+                0.53f + phase * 0.30f,
+                0.02f + Mathf.Sin(angle) * radius * 0.85f);
+        }
+
+        public static float EvaluateCareWashBubbleScale(int bubbleIndex, float progress)
+        {
+            int index = Mathf.Clamp(bubbleIndex, 0, 4);
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float phase = Mathf.Repeat(t * 1.45f + index * 0.19f, 1f);
+            return Mathf.Max(0.015f,
+                Mathf.Sin(phase * Mathf.PI) * (0.055f + index * 0.006f));
+        }
+
+        public static Vector3 EvaluateCareCombPosition(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float eased = Mathf.SmoothStep(0f, 1f, t);
+            float direction = CareSwipeDirection(sample);
+            float from = direction >= 0f ? CareCombMaximumX : CareCombMinimumX;
+            float to = direction >= 0f ? CareCombMinimumX : CareCombMaximumX;
+            return new Vector3(Mathf.Lerp(from, to, eased),
+                0.62f + Mathf.Sin(t * Mathf.PI * 3f) * 0.06f, 0.12f);
+        }
+
+        public static Vector3 EvaluateCareCombEuler(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float direction = CareSwipeDirection(sample);
+            float from = direction >= 0f ? -22f : 18f;
+            float to = direction >= 0f ? 18f : -22f;
+            return new Vector3(0f, 18f, Mathf.Lerp(from, to, t));
+        }
+
+        public static float EvaluateCareGlowScaleMultiplier(MoonlightGestureSample sample)
+        {
+            float score = Mathf.Clamp01(IsFinite(sample.Score) ? sample.Score : 0f);
+            float duration = Mathf.Clamp(IsFinite(sample.Duration) ? sample.Duration : 0f,
+                0f, 8f);
+            float durationResponse = Mathf.InverseLerp(0.25f, 1.25f, duration);
+            return 0.80f + score * 0.35f + durationResponse * 0.25f;
+        }
+
+        public static Vector3 EvaluateCareGlowAuraScale(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float pulse = 1f + Mathf.Sin(t * Mathf.PI * 4f) * 0.10f;
+            return new Vector3(0.38f, 0.018f, 0.46f) *
+                (pulse * EvaluateCareGlowScaleMultiplier(sample));
+        }
+
+        public static float EvaluateCareGlowLightIntensity(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float score = Mathf.Clamp01(IsFinite(sample.Score) ? sample.Score : 0f);
+            float duration = Mathf.Clamp(IsFinite(sample.Duration) ? sample.Duration : 0f,
+                0f, 8f);
+            float durationResponse = Mathf.InverseLerp(0.25f, 1.25f, duration);
+            return ActivityLightBaseIntensity +
+                Mathf.Sin(t * Mathf.PI) * ActivityLightPulseIntensity +
+                score * 0.26f + durationResponse * 0.18f;
+        }
+
+        public static int EvaluateCareGlowMoteCount(MoonlightGestureSample sample)
+        {
+            float score = Mathf.Clamp01(IsFinite(sample.Score) ? sample.Score : 0f);
+            float duration = Mathf.Clamp(IsFinite(sample.Duration) ? sample.Duration : 0f,
+                0f, 8f);
+            int scoreMotes = score >= 0.75f ? 2 : score >= 0.40f ? 1 : 0;
+            int durationMotes = duration >= 0.90f ? 2 : duration >= 0.55f ? 1 : 0;
+            return Mathf.Clamp(2 + scoreMotes + durationMotes, 2, 6);
+        }
+
+        public static Vector3 EvaluateCareGlowMotePosition(int moteIndex, float progress,
+            MoonlightGestureSample sample)
+        {
+            int index = Mathf.Clamp(moteIndex, 0, 5);
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float score = Mathf.Clamp01(IsFinite(sample.Score) ? sample.Score : 0f);
+            float duration = Mathf.Clamp(IsFinite(sample.Duration) ? sample.Duration : 0f,
+                0f, 8f);
+            float durationResponse = Mathf.InverseLerp(0.25f, 1.25f, duration);
+            float phase = Mathf.Repeat(t * Mathf.Lerp(0.72f, 1.02f, durationResponse) +
+                index * 0.16f, 1f);
+            float angle = index * Mathf.PI * 2f / 6f +
+                t * Mathf.PI * Mathf.Lerp(0.62f, 0.96f, score);
+            float radius = 0.36f + score * 0.06f;
+            return new Vector3(0.59f + Mathf.Cos(angle) * radius,
+                0.55f + phase * Mathf.Lerp(0.48f, 0.62f, durationResponse),
+                0.20f + Mathf.Sin(angle) * 0.13f);
+        }
+
+        public static float EvaluateCareGlowMoteScale(int moteIndex, float progress,
+            MoonlightGestureSample sample)
+        {
+            int index = Mathf.Clamp(moteIndex, 0, 5);
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float score = Mathf.Clamp01(IsFinite(sample.Score) ? sample.Score : 0f);
+            float duration = Mathf.Clamp(IsFinite(sample.Duration) ? sample.Duration : 0f,
+                0f, 8f);
+            float durationResponse = Mathf.InverseLerp(0.25f, 1.25f, duration);
+            float phase = Mathf.Repeat(t * Mathf.Lerp(0.72f, 1.02f, durationResponse) +
+                index * 0.16f, 1f);
+            return (0.020f + Mathf.Sin(phase * Mathf.PI) * 0.036f) *
+                Mathf.Lerp(0.90f, 1.15f, score);
+        }
+
+        public static bool ValidateGestureResponsiveCareContract(out string detail)
+        {
+            MoonlightGestureSample leftTap = CareTapSample(new Vector2(-0.80f, 0f));
+            MoonlightGestureSample rightTap = CareTapSample(new Vector2(0.80f, 0f));
+            MoonlightGestureSample narrowCircle = CareCircleSample(0.14f, false);
+            MoonlightGestureSample wideCircle = CareCircleSample(0.48f, false);
+            MoonlightGestureSample reverseCircle = CareCircleSample(0.48f, true);
+            MoonlightGestureSample rightSwipe = CareSwipeSample(false);
+            MoonlightGestureSample leftSwipe = CareSwipeSample(true);
+            MoonlightGestureSample lowScore = CareHoldSample(0.20f, 0.70f);
+            MoonlightGestureSample highScore = CareHoldSample(0.95f, 0.70f);
+            MoonlightGestureSample shortHold = CareHoldSample(0.70f, 0.30f);
+            MoonlightGestureSample longHold = CareHoldSample(0.70f, 1.20f);
+            MoonlightGestureSample minimumInput = CareTapSample(new Vector2(-1f, -1f));
+            MoonlightGestureSample maximumInput = CareHoldSample(1f, 8f);
+            MoonlightGestureSample maximumTap = CareTapSample(new Vector2(1f, 1f));
+            MoonlightGestureSample malformedInput = MoonlightGestureSample.Create(
+                float.NaN, float.PositiveInfinity,
+                new[] { new Vector2(float.NaN, float.NegativeInfinity) });
+
+            float towelSeparation = Vector3.Distance(
+                EvaluateCareTowelPosition(1f, leftTap),
+                EvaluateCareTowelPosition(1f, rightTap));
+            Vector3 leftLanding = EvaluateCareTowelPosition(1f, leftTap);
+            Vector3 rightLanding = EvaluateCareTowelPosition(1f, rightTap);
+            bool prepLandingBounds = leftLanding.x >= CareTowelMinimumX &&
+                leftLanding.x <= CareTowelMaximumX &&
+                rightLanding.x >= CareTowelMinimumX &&
+                rightLanding.x <= CareTowelMaximumX &&
+                leftLanding.z >= CareTowelMinimumZ && leftLanding.z <= CareTowelMaximumZ &&
+                rightLanding.z >= CareTowelMinimumZ && rightLanding.z <= CareTowelMaximumZ;
+            float narrowRadius = EvaluateCareWashRadius(narrowCircle);
+            float wideRadius = EvaluateCareWashRadius(wideCircle);
+            float radiusDelta = wideRadius - narrowRadius;
+            float brushForwardArea = CareBrushOrbitSignedArea(wideCircle);
+            float brushReverseArea = CareBrushOrbitSignedArea(reverseCircle);
+            float bubbleForwardArea = CareBubbleOrbitSignedArea(wideCircle);
+            float bubbleReverseArea = CareBubbleOrbitSignedArea(reverseCircle);
+            bool washReversal = brushForwardArea * brushReverseArea < 0f &&
+                bubbleForwardArea * bubbleReverseArea < 0f &&
+                Mathf.Sign(brushForwardArea) == EvaluateCareWashDirection(wideCircle) &&
+                Mathf.Sign(bubbleForwardArea) == EvaluateCareWashDirection(wideCircle) &&
+                Mathf.Sign(brushReverseArea) == EvaluateCareWashDirection(reverseCircle) &&
+                Mathf.Sign(bubbleReverseArea) == EvaluateCareWashDirection(reverseCircle);
+
+            Vector3 rightSwipeEnd = EvaluateCareCombPosition(1f, rightSwipe);
+            Vector3 leftSwipeEnd = EvaluateCareCombPosition(1f, leftSwipe);
+            float combEndpointSeparation = Vector3.Distance(rightSwipeEnd, leftSwipeEnd);
+            bool combReversal = true;
+            for (int i = 0; i <= 40; i++)
+            {
+                float t = i / 40f;
+                combReversal &= Vector3.Distance(
+                    EvaluateCareCombPosition(t, rightSwipe),
+                    EvaluateCareCombPosition(1f - t, leftSwipe)) <= 0.0001f;
+            }
+
+            float scoreAuraDelta = EvaluateCareGlowAuraScale(0.25f, highScore).x -
+                EvaluateCareGlowAuraScale(0.25f, lowScore).x;
+            float durationAuraDelta = EvaluateCareGlowAuraScale(0.25f, longHold).x -
+                EvaluateCareGlowAuraScale(0.25f, shortHold).x;
+            float scoreLightDelta = EvaluateCareGlowLightIntensity(0.5f, highScore) -
+                EvaluateCareGlowLightIntensity(0.5f, lowScore);
+            float durationLightDelta = EvaluateCareGlowLightIntensity(0.5f, longHold) -
+                EvaluateCareGlowLightIntensity(0.5f, shortHold);
+            int scoreMoteDelta = EvaluateCareGlowMoteCount(highScore) -
+                EvaluateCareGlowMoteCount(lowScore);
+            int durationMoteDelta = EvaluateCareGlowMoteCount(longHold) -
+                EvaluateCareGlowMoteCount(shortHold);
+            bool glowResponse = scoreAuraDelta >= CareGlowMinimumAuraScaleDelta &&
+                durationAuraDelta >= CareGlowMinimumAuraScaleDelta &&
+                scoreLightDelta >= CareGlowMinimumLightIntensityDelta &&
+                durationLightDelta >= CareGlowMinimumLightIntensityDelta &&
+                scoreMoteDelta >= CareGlowMinimumMoteCountDelta &&
+                durationMoteDelta >= CareGlowMinimumMoteCountDelta;
+
+            MoonlightGestureSample[] samples =
+            {
+                leftTap, rightTap, narrowCircle, wideCircle, reverseCircle,
+                rightSwipe, leftSwipe, lowScore, highScore, shortHold, longHold,
+                minimumInput, maximumInput, maximumTap, malformedInput, default
+            };
+            bool finiteAndBounded = true;
+            for (int i = 0; i <= 40; i++)
+            {
+                float t = i / 40f;
+                foreach (MoonlightGestureSample sample in samples)
+                {
+                    finiteAndBounded &= CarePointIsFiniteAndBounded(
+                            EvaluateCareTowelPosition(t, sample)) &&
+                        CarePointIsFiniteAndBounded(
+                            EvaluateCareWashBrushPosition(t, sample)) &&
+                        CarePointIsFiniteAndBounded(
+                            EvaluateCareCombPosition(t, sample)) &&
+                        CareScaleIsFiniteAndBounded(
+                            EvaluateCareGlowAuraScale(t, sample));
+                    Vector3 towelEuler = EvaluateCareTowelEuler(t, sample);
+                    Vector3 brushEuler = EvaluateCareWashBrushEuler(t, sample);
+                    Vector3 combEuler = EvaluateCareCombEuler(t, sample);
+                    float direction = EvaluateCareWashDirection(sample);
+                    float radius = EvaluateCareWashRadius(sample);
+                    float glowScale = EvaluateCareGlowScaleMultiplier(sample);
+                    float light = EvaluateCareGlowLightIntensity(t, sample);
+                    finiteAndBounded &= IsFinite(towelEuler) &&
+                        Mathf.Abs(towelEuler.x) <= 0.001f &&
+                        Mathf.Abs(towelEuler.y) <= 18f && Mathf.Abs(towelEuler.z) <= 7f &&
+                        IsFinite(brushEuler) && Mathf.Abs(brushEuler.x) <= 18f &&
+                        Mathf.Abs(brushEuler.y) <= 540f && Mathf.Abs(brushEuler.z) <= 64f &&
+                        IsFinite(combEuler) && Mathf.Abs(combEuler.x) <= 0.001f &&
+                        Mathf.Abs(combEuler.y) <= 18f && Mathf.Abs(combEuler.z) <= 22f &&
+                        IsFinite(direction) && Mathf.Abs(direction) == 1f &&
+                        IsFinite(radius) && radius >= CareWashMinimumRadius &&
+                        radius <= CareWashMaximumRadius &&
+                        IsFinite(glowScale) && glowScale >= 0.80f && glowScale <= 1.40f &&
+                        IsFinite(light) && light >= 0.32f && light <= 1.30f &&
+                        EvaluateCareGlowMoteCount(sample) is >= 2 and <= 6;
+                    for (int mote = 0; mote < 6; mote++)
+                    {
+                        Vector3 motePosition = EvaluateCareGlowMotePosition(mote, t, sample);
+                        float moteScale = EvaluateCareGlowMoteScale(mote, t, sample);
+                        finiteAndBounded &= CarePointIsFiniteAndBounded(motePosition) &&
+                            IsFinite(moteScale) && moteScale >= 0.018f && moteScale <= 0.065f;
+                    }
+                    for (int bubble = 0; bubble < 5; bubble++)
+                    {
+                        Vector3 bubblePosition = EvaluateCareWashBubblePosition(
+                            bubble, t, sample);
+                        float bubbleScale = EvaluateCareWashBubbleScale(bubble, t);
+                        finiteAndBounded &= CarePointIsFiniteAndBounded(bubblePosition) &&
+                            IsFinite(bubbleScale) && bubbleScale >= 0.015f &&
+                            bubbleScale <= 0.080f;
+                    }
+                }
+            }
+            finiteAndBounded &= CarePointIsFiniteAndBounded(
+                    EvaluateCareTowelPosition(float.NaN, maximumTap)) &&
+                CarePointIsFiniteAndBounded(
+                    EvaluateCareWashBrushPosition(float.PositiveInfinity, wideCircle)) &&
+                CarePointIsFiniteAndBounded(
+                    EvaluateCareCombPosition(float.NegativeInfinity, leftSwipe)) &&
+                CareScaleIsFiniteAndBounded(
+                    EvaluateCareGlowAuraScale(float.NaN, maximumInput)) &&
+                IsFinite(EvaluateCareGlowLightIntensity(
+                    float.PositiveInfinity, maximumInput));
+            bool malformedGlowScalePass = malformedInput.HasSevenFiniteNormalizedPoints &&
+                malformedInput.Score == 0f && malformedInput.Duration == 0f &&
+                IsFinite(EvaluateCareGlowMoteScale(0, 0.5f, malformedInput)) &&
+                IsFinite(EvaluateCareGlowMoteScale(0, 0.5f, default));
+
+            bool sequencePreserved =
+                MoonlightSpatialActionZone.CareGestureForStep(0) == MoonlightGestureKind.Tap &&
+                MoonlightSpatialActionZone.CareGestureForStep(1) == MoonlightGestureKind.Circle &&
+                MoonlightSpatialActionZone.CareGestureForStep(2) == MoonlightGestureKind.Swipe &&
+                MoonlightSpatialActionZone.CareGestureForStep(3) == MoonlightGestureKind.Hold;
+            bool timingPreserved = Mathf.Approximately(CareFinalPresentationSeconds, 4.6f);
+            bool persistentIsolationPolicy =
+                !ShouldBindPersistentStation(MoonlightSpatialActionKind.Care, true) &&
+                ShouldBindPersistentStation(MoonlightSpatialActionKind.Care, false) &&
+                ShouldBindPersistentStation(MoonlightSpatialActionKind.Cook, true);
+            detail = $"points={wideCircle.PointCount} " +
+                $"prepSeparation={towelSeparation:0.000}/" +
+                $"{CarePrepMinimumLandingSeparation:0.00} " +
+                $"prepBounds={prepLandingBounds} " +
+                $"washDirection={brushForwardArea:0.000}/{brushReverseArea:0.000}," +
+                $"{bubbleForwardArea:0.000}/{bubbleReverseArea:0.000} " +
+                $"radius={narrowRadius:0.000}/{wideRadius:0.000} delta={radiusDelta:0.000} " +
+                $"combReversal={combReversal} endpoints={combEndpointSeparation:0.000} " +
+                $"glowAuraDelta={scoreAuraDelta:0.000}/{durationAuraDelta:0.000} " +
+                $"lightDelta={scoreLightDelta:0.000}/{durationLightDelta:0.000} " +
+                $"moteDelta={scoreMoteDelta}/{durationMoteDelta} " +
+                $"finiteBounds={finiteAndBounded} malformedGlow={malformedGlowScalePass} " +
+                $"sequence={sequencePreserved} " +
+                $"linger={CareFinalPresentationSeconds:0.0}s " +
+                $"persistentIsolationPolicy={persistentIsolationPolicy}";
+            return wideCircle.HasSevenFiniteNormalizedPoints &&
+                reverseCircle.HasSevenFiniteNormalizedPoints &&
+                towelSeparation >= CarePrepMinimumLandingSeparation && prepLandingBounds &&
+                radiusDelta >= CareWashMinimumRadiusDelta && washReversal &&
+                combReversal && combEndpointSeparation >= CareBrushMinimumEndpointSeparation &&
+                glowResponse && finiteAndBounded && malformedGlowScalePass &&
+                sequencePreserved && timingPreserved && persistentIsolationPolicy;
+        }
+
+        static float CareSampleSignedArea(MoonlightGestureSample sample)
+        {
+            if (!sample.HasSevenFiniteNormalizedPoints) return 1f;
+            float area = 0f;
+            for (int i = 0; i < MoonlightGestureSample.ResampledPointCount; i++)
+            {
+                Vector2 from = sample[i];
+                Vector2 to = sample[(i + 1) % MoonlightGestureSample.ResampledPointCount];
+                area += from.x * to.y - to.x * from.y;
+            }
+            return area * 0.5f;
+        }
+
+        static float CareSampleRadialExtent(MoonlightGestureSample sample)
+        {
+            if (!sample.HasSevenFiniteNormalizedPoints) return 0.32f;
+            Vector2 center = Vector2.zero;
+            for (int i = 0; i < MoonlightGestureSample.ResampledPointCount; i++)
+                center += sample[i];
+            center /= MoonlightGestureSample.ResampledPointCount;
+            float extent = 0f;
+            for (int i = 0; i < MoonlightGestureSample.ResampledPointCount; i++)
+                extent = Mathf.Max(extent, Vector2.Distance(sample[i], center));
+            return Mathf.Clamp(extent, 0f, 1.5f);
+        }
+
+        static float CareSwipeDirection(MoonlightGestureSample sample)
+        {
+            if (!sample.HasSevenFiniteNormalizedPoints) return 1f;
+            Vector2 displacement = sample.Displacement;
+            float primary = Mathf.Abs(displacement.x) >= Mathf.Abs(displacement.y)
+                ? displacement.x
+                : displacement.y;
+            return Mathf.Abs(primary) > 0.0001f ? Mathf.Sign(primary) : 1f;
+        }
+
+        static float CareBrushOrbitSignedArea(MoonlightGestureSample sample)
+        {
+            float area = 0f;
+            Vector3 previous = EvaluateCareWashBrushPosition(0f, sample);
+            for (int i = 1; i <= 40; i++)
+            {
+                Vector3 current = EvaluateCareWashBrushPosition(i / 40f, sample);
+                area += previous.x * (current.z - 0.02f) -
+                    current.x * (previous.z - 0.02f);
+                previous = current;
+            }
+            return area * 0.5f;
+        }
+
+        static float CareBubbleOrbitSignedArea(MoonlightGestureSample sample)
+        {
+            float area = 0f;
+            Vector3 previous = EvaluateCareWashBubblePosition(0, 0f, sample);
+            for (int i = 1; i <= 40; i++)
+            {
+                Vector3 current = EvaluateCareWashBubblePosition(0, i / 40f, sample);
+                area += previous.x * (current.z - 0.02f) -
+                    current.x * (previous.z - 0.02f);
+                previous = current;
+            }
+            return area * 0.5f;
+        }
+
+        static MoonlightGestureSample CareTapSample(Vector2 position)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++) points[i] = position;
+            return MoonlightGestureSample.Create(0.95f, 0.12f, points);
+        }
+
+        static MoonlightGestureSample CareCircleSample(float radius, bool reverse)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++)
+            {
+                int source = reverse ? points.Length - 1 - i : i;
+                float angle = source / (float)(points.Length - 1) * Mathf.PI * 2f;
+                points[i] = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+            }
+            return MoonlightGestureSample.Create(0.95f, 0.80f, points);
+        }
+
+        static MoonlightGestureSample CareSwipeSample(bool reverse)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++)
+            {
+                float t = i / (float)(points.Length - 1);
+                points[i] = new Vector2(Mathf.Lerp(-0.72f, 0.72f,
+                    reverse ? 1f - t : t), 0f);
+            }
+            return MoonlightGestureSample.Create(0.95f, 0.35f, points);
+        }
+
+        static MoonlightGestureSample CareHoldSample(float score, float duration)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            return MoonlightGestureSample.Create(score, duration, points);
+        }
+
+        static bool CarePointIsFiniteAndBounded(Vector3 point) =>
+            IsFinite(point) && Mathf.Abs(point.x) <= 1.05f &&
+            point.y >= 0.20f && point.y <= 1.18f && Mathf.Abs(point.z) <= 0.40f;
+
+        static bool CareScaleIsFiniteAndBounded(Vector3 scale) =>
+            IsFinite(scale) && scale.x >= 0.25f && scale.x <= 0.60f &&
+            scale.y >= 0.01f && scale.y <= 0.03f &&
+            scale.z >= 0.30f && scale.z <= 0.72f;
+
+        bool CareWashTransformsMatch()
+        {
+            if (_careBrush == null || _careBubbles == null || _careBubbles.Length != 5)
+                return false;
+            if (Vector3.Distance(_careBrush.localPosition,
+                    EvaluateCareWashBrushPosition(_careProgress, _gestureSample)) > 0.001f ||
+                Quaternion.Angle(_careBrush.localRotation,
+                    Quaternion.Euler(EvaluateCareWashBrushEuler(
+                        _careProgress, _gestureSample))) > 0.01f)
+                return false;
+            for (int i = 0; i < _careBubbles.Length; i++)
+            {
+                if (_careBubbles[i] == null || !_careBubbles[i].gameObject.activeSelf ||
+                    Vector3.Distance(_careBubbles[i].localPosition,
+                        EvaluateCareWashBubblePosition(i, _careProgress, _gestureSample)) > 0.001f ||
+                    Vector3.Distance(_careBubbles[i].localScale,
+                        Vector3.one * EvaluateCareWashBubbleScale(i, _careProgress)) > 0.001f)
+                    return false;
+            }
+            return true;
+        }
+
+        bool CareGlowTransformsMatch()
+        {
+            if (_careMirrorAura == null || _careMotes == null || _careMotes.Length != 6 ||
+                !_careMirrorAura.gameObject.activeSelf ||
+                Vector3.Distance(_careMirrorAura.localScale,
+                    EvaluateCareGlowAuraScale(_careProgress, _gestureSample)) > 0.001f ||
+                !IsFinite(CareActualGlowLightIntensity) ||
+                Mathf.Abs(CareActualGlowLightIntensity -
+                    CareExpectedGlowLightIntensity) > 0.001f ||
+                CareActualGlowMoteCount != CareExpectedGlowMoteCount)
+                return false;
+            for (int i = 0; i < _careMotes.Length; i++)
+            {
+                bool expectedActive = i < CareExpectedGlowMoteCount;
+                if (_careMotes[i] == null ||
+                    _careMotes[i].gameObject.activeSelf != expectedActive)
+                    return false;
+                if (!expectedActive) continue;
+                if (Vector3.Distance(_careMotes[i].localPosition,
+                        EvaluateCareGlowMotePosition(i, _careProgress, _gestureSample)) > 0.001f ||
+                    Vector3.Distance(_careMotes[i].localScale,
+                        Vector3.one * EvaluateCareGlowMoteScale(
+                            i, _careProgress, _gestureSample)) > 0.001f)
+                    return false;
+            }
+            return true;
+        }
+
+        int CountActiveCareMotes()
+        {
+            int count = 0;
+            if (_careMotes == null) return count;
+            for (int i = 0; i < _careMotes.Length; i++)
+                if (_careMotes[i] != null && _careMotes[i].gameObject.activeSelf) count++;
+            return count;
+        }
+
         void BuildCareStage()
         {
             bool hasPersistentSet = BindPersistentActivitySet(MoonlightSpatialActionKind.Care,
@@ -4307,23 +5032,22 @@ namespace MoonlightMagicHouse
                 return;
 
             int step = Mathf.Clamp(CurrentStep, 0, 3);
-            float eased = Mathf.SmoothStep(0f, 1f, t);
+            _careProgress = t;
 
             _careTowelTray.localScale = new Vector3(0.31f, 0.025f, 0.24f) *
                 (step == 0 ? 1f + Mathf.Sin(t * Mathf.PI) * 0.08f : 1f);
             _careTowel.localPosition = step == 0
-                ? Vector3.Lerp(new Vector3(-0.78f, 0.72f, -0.10f),
-                    new Vector3(-0.58f, 0.335f, 0.02f), eased)
+                ? EvaluateCareTowelPosition(t, _gestureSample)
                 : new Vector3(-0.58f, 0.335f, 0.02f);
-            _careTowel.localRotation = Quaternion.Euler(0f, step == 0 ? Mathf.Lerp(-18f, 0f, eased) : 0f,
-                step == 0 ? Mathf.Sin(t * Mathf.PI * 3f) * 4f : 0f);
+            _careTowel.localRotation = step == 0
+                ? Quaternion.Euler(EvaluateCareTowelEuler(t, _gestureSample))
+                : Quaternion.identity;
 
             if (step == 1)
             {
-                float angle = t * Mathf.PI * 4f;
-                _careBrush.localPosition = new Vector3(Mathf.Cos(angle) * 0.24f,
-                    0.62f + Mathf.Sin(t * Mathf.PI) * 0.07f, 0.02f + Mathf.Sin(angle) * 0.18f);
-                _careBrush.localRotation = Quaternion.Euler(18f, t * 540f, 64f);
+                _careBrush.localPosition = EvaluateCareWashBrushPosition(t, _gestureSample);
+                _careBrush.localRotation = Quaternion.Euler(
+                    EvaluateCareWashBrushEuler(t, _gestureSample));
             }
             else
             {
@@ -4333,9 +5057,9 @@ namespace MoonlightMagicHouse
 
             if (step == 2)
             {
-                _careComb.localPosition = new Vector3(Mathf.Lerp(0.46f, -0.30f, eased),
-                    0.62f + Mathf.Sin(t * Mathf.PI * 3f) * 0.06f, 0.12f);
-                _careComb.localRotation = Quaternion.Euler(0f, 18f, Mathf.Lerp(-22f, 18f, t));
+                _careComb.localPosition = EvaluateCareCombPosition(t, _gestureSample);
+                _careComb.localRotation = Quaternion.Euler(
+                    EvaluateCareCombEuler(t, _gestureSample));
             }
             else
             {
@@ -4348,20 +5072,17 @@ namespace MoonlightMagicHouse
                 bool showBubble = step == 1;
                 _careBubbles[i].gameObject.SetActive(showBubble);
                 if (!showBubble) continue;
-                float phase = Mathf.Repeat(t * 1.45f + i * 0.19f, 1f);
-                float angle = i * Mathf.PI * 2f / _careBubbles.Length + t * Mathf.PI;
-                _careBubbles[i].localPosition = new Vector3(Mathf.Cos(angle) * (0.12f + i * 0.035f),
-                    0.53f + phase * 0.30f, 0.02f + Mathf.Sin(angle) * 0.18f);
+                _careBubbles[i].localPosition = EvaluateCareWashBubblePosition(
+                    i, t, _gestureSample);
                 _careBubbles[i].localScale = Vector3.one *
-                    Mathf.Max(0.015f, Mathf.Sin(phase * Mathf.PI) * (0.055f + i * 0.006f));
+                    EvaluateCareWashBubbleScale(i, t);
             }
 
             bool glow = step == 3;
             _careMirrorAura.gameObject.SetActive(glow);
             if (glow)
             {
-                float auraPulse = 1f + Mathf.Sin(t * Mathf.PI * 4f) * 0.10f;
-                _careMirrorAura.localScale = new Vector3(0.38f, 0.018f, 0.46f) * auraPulse;
+                _careMirrorAura.localScale = EvaluateCareGlowAuraScale(t, _gestureSample);
                 _careMirror.localScale = new Vector3(0.27f, 0.025f, 0.34f) *
                     (1f + Mathf.Sin(t * Mathf.PI * 3f) * 0.04f);
             }
@@ -4372,14 +5093,13 @@ namespace MoonlightMagicHouse
 
             for (int i = 0; i < _careMotes.Length; i++)
             {
-                _careMotes[i].gameObject.SetActive(glow);
-                if (!glow) continue;
-                float phase = Mathf.Repeat(t * 0.85f + i * 0.16f, 1f);
-                float angle = i * Mathf.PI * 2f / _careMotes.Length + t * Mathf.PI * 0.8f;
-                _careMotes[i].localPosition = new Vector3(0.59f + Mathf.Cos(angle) * 0.42f,
-                    0.55f + phase * 0.62f, 0.20f + Mathf.Sin(angle) * 0.13f);
+                bool showMote = glow && i < EvaluateCareGlowMoteCount(_gestureSample);
+                _careMotes[i].gameObject.SetActive(showMote);
+                if (!showMote) continue;
+                _careMotes[i].localPosition = EvaluateCareGlowMotePosition(
+                    i, t, _gestureSample);
                 _careMotes[i].localScale = Vector3.one *
-                    (0.025f + Mathf.Sin(phase * Mathf.PI) * 0.045f);
+                    EvaluateCareGlowMoteScale(i, t, _gestureSample);
             }
         }
 
