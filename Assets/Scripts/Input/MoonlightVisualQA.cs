@@ -47,6 +47,10 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_IPAD_ACTIVITY_QUALITY_RUNTIME_BINDING_VERIFIED";
         public const string ActivityQualityReadoutZoneExitMarker =
             "MOONLIGHT_IPAD_ACTIVITY_QUALITY_ZONE_EXIT_RESET_VERIFIED";
+        public const string PlayContinuityRuntimeMarker =
+            "MOONLIGHT_PLAY_CONTINUITY_TRANSACTION_VERIFIED";
+        public const string PlayContinuityOrderModeMarker =
+            "MOONLIGHT_PLAY_CONTINUITY_ORDER_MODE";
 
         static readonly string[] IntermediateActivityResults =
         {
@@ -155,6 +159,98 @@ namespace MoonlightMagicHouse
         {
             public MoonlightActionFeedback Feedback;
             public MoonlightActivityStage Stage;
+        }
+
+        readonly struct PlayRewardSnapshot
+        {
+            public readonly float Wonder;
+            public readonly float Warmth;
+            public readonly float Rest;
+            public readonly float Magic;
+            public readonly float Hunger;
+            public readonly int XP;
+            public readonly int Coins;
+
+            public PlayRewardSnapshot(MoonlightCharacter moonlight)
+            {
+                Wonder = moonlight.stats.wonder;
+                Warmth = moonlight.stats.warmth;
+                Rest = moonlight.stats.rest;
+                Magic = moonlight.stats.magic;
+                Hunger = moonlight.stats.hunger;
+                XP = moonlight.xp;
+                Coins = moonlight.coins;
+            }
+        }
+
+        readonly struct PlayHeldSnapshot
+        {
+            public readonly int RootId;
+            public readonly int BallId;
+            public readonly int TrailId;
+            public readonly int MaterialCount;
+            public readonly int BallMaterialId;
+            public readonly int TrailMaterialId;
+            public readonly Vector3 BallPosition;
+            public readonly int ProgressStep;
+            public readonly int AcceptedSteps;
+            public readonly float AverageScore;
+            public readonly int CurrentCombo;
+            public readonly int BestCombo;
+            public readonly int PerfectSteps;
+            public readonly PlayRewardSnapshot Rewards;
+
+            public PlayHeldSnapshot(MoonlightSpatialActionZone zone,
+                MoonlightActivityStage stage, MoonlightCharacter moonlight)
+            {
+                RootId = stage.PlayStageRootInstanceId;
+                BallId = stage.PlayBallInstanceId;
+                TrailId = stage.PlayTrailInstanceId;
+                MaterialCount = stage.ActiveUniqueMaterialCount;
+                BallMaterialId = stage.PlayBallSharedMaterialInstanceId;
+                TrailMaterialId = stage.PlayTrailSharedMaterialInstanceId;
+                BallPosition = stage.PlayBallLocalPosition;
+                ProgressStep = zone.ProgressStep;
+                AcceptedSteps = zone.ActivitySessionAcceptedSteps;
+                AverageScore = zone.ActivitySessionAverageScore;
+                CurrentCombo = zone.ActivityCurrentCombo;
+                BestCombo = zone.ActivityBestCombo;
+                PerfectSteps = zone.ActivityPerfectSteps;
+                Rewards = new PlayRewardSnapshot(moonlight);
+            }
+        }
+
+        sealed class PlayContinuityObservation
+        {
+            public readonly List<int> Progression = new();
+            public readonly PlayRewardSnapshot[] AcceptedRewards =
+                new PlayRewardSnapshot[4];
+            public readonly int[] MaterialCounts = new int[4];
+            public PlayRewardSnapshot BaselineRewards;
+            public MoonlightActivityStage Stage;
+            public int RootId;
+            public int BallId;
+            public int TrailId;
+            public int InitialMaterialCount;
+            public int BallMaterialId;
+            public int TrailMaterialId;
+            public int CompletionApplicationBaseline;
+            public int ContinuationBaseline;
+            public Vector3 HeldEndpoint;
+            public bool HasHeldEndpoint;
+            public bool HasInitialMaterialSnapshot;
+            public bool IdentityPreserved = true;
+            public bool TrajectoryFiniteAndBounded = true;
+            public int TrajectorySampleCount;
+            public int TrajectoryStepsObserved;
+            public int FirstRenderedContinuationFramesObserved;
+            public int RejectedPreservationCount;
+            public float MaximumImmediateDiscontinuity;
+            public float MaximumFirstRenderedFrameDiscontinuity;
+            public float MaximumContinuationClockDelta;
+            public bool ContinuationClockAdvanced;
+            public bool ContinuationClockSourceIsUnscaled = true;
+            public string OrderMode = "middle";
         }
 
         readonly struct CareCompletionRootState
@@ -908,6 +1004,16 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] gesture-play-contract " +
                 $"sample=({gestureSampleDetail}) trajectory=({responsivePlayDetail}) " +
                 "marker=MOONLIGHT_GESTURE_PLAY_STATIC_CONTRACT_VERIFIED");
+            if (!MoonlightActivityStage.ValidatePlayContinuationClockContract(
+                    out string playContinuationClockDetail))
+            {
+                Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                    $"play-continuation-clock-static {playContinuationClockDetail}");
+                Application.Quit(162);
+                yield break;
+            }
+            Debug.Log("[MoonlightGameplayQA][PASS] " +
+                $"play-continuation-clock-static {playContinuationClockDetail}");
             if (!MoonlightActivityStage.ValidateGestureResponsiveGardenContract(
                     out string responsiveGardenDetail))
             {
@@ -2076,22 +2182,12 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] feed-result-text " +
                 $"text=\"{ui.ContextResultQAText}\" marker=MOONLIGHT_FEED_RESULT_TEXT_VERIFIED");
 
-            var activityKinds = new[]
-            {
-                MoonlightSpatialActionKind.Cook,
-                MoonlightSpatialActionKind.Play,
-                MoonlightSpatialActionKind.Garden,
-                MoonlightSpatialActionKind.Read,
-                MoonlightSpatialActionKind.Care
-            };
-            var activityRooms = new[]
-            {
-                RoomType.Kitchen,
-                RoomType.LivingRoom,
-                RoomType.Garden,
-                RoomType.Library,
-                RoomType.Bedroom
-            };
+            MoonlightSpatialActionKind[] activityKinds = ResolveGameplayActivityOrder(
+                args, out string playContinuityOrderMode);
+            RoomType[] activityRooms = activityKinds.Select(ActivityRoomFor).ToArray();
+            Debug.Log($"[MoonlightGameplayQA] play-continuity-order " +
+                $"mode={playContinuityOrderMode} sequence={string.Join(",", activityKinds)} " +
+                $"marker={PlayContinuityOrderModeMarker}_{playContinuityOrderMode.ToUpperInvariant()}");
             bool forceCareFallback = args.Any(argument =>
                 string.Equals(argument, "-moonlightForceCareFallback",
                     System.StringComparison.OrdinalIgnoreCase));
@@ -2203,6 +2299,24 @@ namespace MoonlightMagicHouse
                 float rewardRest = moonlight.stats.rest;
                 int rewardXp = moonlight.xp;
                 int rewardCoins = moonlight.coins;
+                PlayContinuityObservation playContinuity = null;
+                if (expectedKind == MoonlightSpatialActionKind.Play)
+                {
+                    playContinuity = new PlayContinuityObservation
+                    {
+                        BaselineRewards = new PlayRewardSnapshot(moonlight),
+                        OrderMode = playContinuityOrderMode
+                    };
+                    playContinuity.Progression.Add(zone.ProgressStep);
+                    var priorStage = moonlight.GetComponent<MoonlightActivityStage>();
+                    if (priorStage != null)
+                    {
+                        playContinuity.CompletionApplicationBaseline =
+                            priorStage.PersistentCompletionApplicationCountForQA;
+                        playContinuity.ContinuationBaseline =
+                            priorStage.PlayContinuationCountForQA;
+                    }
+                }
                 controller.TeleportTo(zone.transform.position, controller.RoomBounds);
                 yield return new WaitForSeconds(0.65f);
                 if (expectedKind == MoonlightSpatialActionKind.Care)
@@ -2629,9 +2743,80 @@ namespace MoonlightMagicHouse
                         resultShownCountBeforeAccepted = ui != null
                             ? ui.ContextResultShownCountForQA
                             : -1;
-                        acceptedActionStarted = pad.SubmitSynthetic(expected, 0.95f);
+                        if (playContinuity != null && ui != null)
+                        {
+                            ui.ExecuteContextGesture(expected,
+                                PlayContinuitySample(step, 0.95f));
+                            acceptedActionStarted = zone.LastGesturePassed;
+                        }
+                        else
+                        {
+                            acceptedActionStarted = pad.SubmitSynthetic(expected, 0.95f);
+                        }
                     }
                     var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
+                    if (playContinuity != null)
+                    {
+                        var continuityStage = moonlight.GetComponent<MoonlightActivityStage>();
+                        playContinuity.Stage = continuityStage;
+                        if (continuityStage == null)
+                        {
+                            Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                $"play-continuity-stage-missing step={step + 1}/4");
+                            Application.Quit(161);
+                            yield break;
+                        }
+
+                        if (step == 0)
+                        {
+                            playContinuity.RootId = continuityStage.PlayStageRootInstanceId;
+                            playContinuity.BallId = continuityStage.PlayBallInstanceId;
+                            playContinuity.TrailId = continuityStage.PlayTrailInstanceId;
+                            playContinuity.CompletionApplicationBaseline =
+                                continuityStage.PersistentCompletionApplicationCountForQA;
+                            playContinuity.ContinuationBaseline =
+                                continuityStage.PlayContinuationCountForQA;
+                        }
+                        else
+                        {
+                            playContinuity.MaterialCounts[step] =
+                                continuityStage.ActiveUniqueMaterialCount;
+                            float immediateDiscontinuity = playContinuity.HasHeldEndpoint
+                                ? Vector3.Distance(playContinuity.HeldEndpoint,
+                                    continuityStage.PlayBallLocalPosition)
+                                : float.PositiveInfinity;
+                            playContinuity.MaximumImmediateDiscontinuity = Mathf.Max(
+                                playContinuity.MaximumImmediateDiscontinuity,
+                                immediateDiscontinuity);
+                            playContinuity.IdentityPreserved &= playContinuity.HasHeldEndpoint &&
+                                playContinuity.HasInitialMaterialSnapshot &&
+                                continuityStage.PlayStageRootInstanceId == playContinuity.RootId &&
+                                continuityStage.PlayBallInstanceId == playContinuity.BallId &&
+                                continuityStage.PlayTrailInstanceId == playContinuity.TrailId &&
+                                PlayMaterialsMatchObservation(continuityStage,
+                                    playContinuity) &&
+                                continuityStage.LastPlayContinuationDiscontinuityForQA <= 0.001f &&
+                                immediateDiscontinuity <= 0.001f;
+                            StartCoroutine(ObservePlayFirstRenderedContinuationFrame(
+                                continuityStage, playContinuity,
+                                playContinuity.HeldEndpoint, step));
+                        }
+
+                        playContinuity.IdentityPreserved &=
+                            continuityStage.AuthoritativePlayBallCount == 1 &&
+                            continuityStage.AuthoritativePlayTrailCount == 1 &&
+                            continuityStage.PlayBallSharedMaterialInstanceId != 0 &&
+                            continuityStage.PlayTrailSharedMaterialInstanceId != 0 &&
+                            CountActivePlayStageRoots() == 1;
+                        playContinuity.Progression.Add(zone.ProgressStep);
+                        playContinuity.AcceptedRewards[step] =
+                            new PlayRewardSnapshot(moonlight);
+                        StartCoroutine(ObservePlayContinuityTrajectory(feedback,
+                            continuityStage, playContinuity));
+                        if (step < zone.RequiredSteps - 1)
+                            StartCoroutine(ObservePlayHeldBusyRejection(zone, pad,
+                                moonlight, feedback, continuityStage, playContinuity));
+                    }
                     if (observeActualResultVisibility)
                     {
                         string expectedVisibleText = finalResultStep
@@ -3352,7 +3537,6 @@ namespace MoonlightMagicHouse
                                 stage.AuthoritativePlayBallCount == 1 &&
                                 stage.AuthoritativePlayTrailCount == 1 &&
                                 feedback.PlayUsesStageBallOnly && !feedback.HasOpaqueActionOrb &&
-                                pad.LastSample.ContentEquals(zone.LastGestureSample) &&
                                 zone.LastGestureSample.ContentEquals(
                                     feedback.ActiveGestureSample) &&
                                 feedback.ActiveGestureSample.ContentEquals(
@@ -3977,6 +4161,59 @@ namespace MoonlightMagicHouse
                     Debug.Log($"[MoonlightGameplayQA][PASS] activity-camera-state action={zone.Kind} " +
                         $"step={step + 1} state={(finalPresentationStep ? "held-for-presentation" : "released")} " +
                         $"blend={releasedCamera.ActivityFocusBlend:0.00}");
+                    if (playContinuity != null && !finalPresentationStep)
+                    {
+                        stage = moonlight.GetComponent<MoonlightActivityStage>();
+                        bool heldReady = stage != null && stage.IsHoldingPlayStepTerminal &&
+                            !stage.IsLingering && feedback != null && feedback.CanBeginAction &&
+                            !feedback.IsCameraFocusActive && feedback.VisualPoseRestoredForQA &&
+                            playContinuity.HasHeldEndpoint &&
+                            PlayMaterialsMatchObservation(stage, playContinuity);
+                        var wrongBefore = heldReady
+                            ? new PlayHeldSnapshot(zone, stage, moonlight)
+                            : default;
+                        MoonlightGestureKind wrongGesture = zone.RequiredGesture ==
+                            MoonlightGestureKind.Tap
+                                ? MoonlightGestureKind.Swipe
+                                : MoonlightGestureKind.Tap;
+                        string wrongResult = zone.ExecuteGesture(moonlight, wrongGesture,
+                            PlayContinuitySample(zone.ProgressStep, 0.95f));
+                        bool wrongPreserved = heldReady && !zone.LastGesturePassed &&
+                            PlayHeldStateMatches(wrongBefore, zone, stage, moonlight);
+
+                        var lowBefore = heldReady
+                            ? new PlayHeldSnapshot(zone, stage, moonlight)
+                            : default;
+                        string lowResult = zone.ExecuteGesture(moonlight,
+                            zone.RequiredGesture,
+                            PlayContinuitySample(zone.ProgressStep, 0.20f));
+                        bool lowPreserved = heldReady && !zone.LastGesturePassed &&
+                            PlayHeldStateMatches(lowBefore, zone, stage, moonlight);
+                        if (!wrongPreserved || !lowPreserved)
+                        {
+                            Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                $"play-held-rejection step={step + 1}/3 " +
+                                $"ready={heldReady} wrong={wrongPreserved} low={lowPreserved} " +
+                                $"wrongResult=\"{wrongResult}\" lowResult=\"{lowResult}\" " +
+                                $"root={(stage != null ? stage.PlayStageRootInstanceId : 0)}/" +
+                                $"{playContinuity.RootId} ball=" +
+                                $"{(stage != null ? stage.PlayBallInstanceId : 0)}/" +
+                                $"{playContinuity.BallId} position=" +
+                                $"{(stage != null ? stage.PlayBallLocalPosition : Vector3.zero):F4}");
+                            Application.Quit(161);
+                            yield break;
+                        }
+                        playContinuity.RejectedPreservationCount += 2;
+                        Debug.Log("[MoonlightGameplayQA][PASS] play-held-rejection " +
+                            $"step={step + 1}/3 wrong=True low=True root=" +
+                            $"{stage.PlayStageRootInstanceId} ball={stage.PlayBallInstanceId} " +
+                            $"trail={stage.PlayTrailInstanceId} position=" +
+                            $"{stage.PlayBallLocalPosition:F4} materials=" +
+                            $"{stage.ActiveUniqueMaterialCount}/" +
+                            $"{stage.PlayBallSharedMaterialInstanceId}/" +
+                            $"{stage.PlayTrailSharedMaterialInstanceId} " +
+                            "marker=MOONLIGHT_PLAY_HELD_REJECTION_PRESERVED");
+                    }
                     if (step == zone.RequiredSteps - 1)
                     {
                         stage = moonlight.GetComponent<MoonlightActivityStage>();
@@ -4331,6 +4568,118 @@ namespace MoonlightMagicHouse
                         : RoomType.LivingRoom;
                     rooms.GoToRoom(detour);
                     yield return new WaitForSeconds(0.12f);
+                    if (playContinuity != null)
+                    {
+                        bool firstThreeRewardsUnchanged = true;
+                        for (int acceptedStep = 0; acceptedStep < 3; acceptedStep++)
+                            firstThreeRewardsUnchanged &= PlayRewardsEqual(
+                                playContinuity.BaselineRewards,
+                                playContinuity.AcceptedRewards[acceptedStep]);
+                        PlayRewardSnapshot finalRewards =
+                            playContinuity.AcceptedRewards[3];
+                        bool finalRewardPass = PlayRewardDeltaMatches(
+                            playContinuity.BaselineRewards, finalRewards,
+                            25f, 0f, 0f, 13f, 0f, 32, 5);
+                        bool progressionPass = playContinuity.Progression.SequenceEqual(
+                            new[] { 0, 1, 2, 3, 0 });
+                        bool cleanupPass = playContinuity.Stage != null &&
+                            !playContinuity.Stage.IsVisible &&
+                            !playContinuity.Stage.IsLingering &&
+                            !playContinuity.Stage.IsHoldingPlayStepTerminal &&
+                            playContinuity.Stage.PlayStageRootInstanceId == 0 &&
+                            playContinuity.Stage.PlayBallInstanceId == 0 &&
+                            playContinuity.Stage.PlayTrailInstanceId == 0 &&
+                            playContinuity.Stage.ActiveUniqueMaterialCount == 0 &&
+                            playContinuity.Stage.PlayBallSharedMaterialInstanceId == 0 &&
+                            playContinuity.Stage.PlayTrailSharedMaterialInstanceId == 0 &&
+                            CountActivePlayStageRoots() == 0;
+                        int completionDelta = playContinuity.Stage != null
+                            ? playContinuity.Stage.PersistentCompletionApplicationCountForQA -
+                                playContinuity.CompletionApplicationBaseline
+                            : -1;
+                        int continuationDelta = playContinuity.Stage != null
+                            ? playContinuity.Stage.PlayContinuationCountForQA -
+                                playContinuity.ContinuationBaseline
+                            : -1;
+                        bool transactionPass = progressionPass &&
+                            playContinuity.IdentityPreserved &&
+                            playContinuity.MaximumImmediateDiscontinuity <= 0.001f &&
+                            playContinuity.FirstRenderedContinuationFramesObserved == 3 &&
+                            playContinuity.MaximumFirstRenderedFrameDiscontinuity <= 0.001f &&
+                            playContinuity.TrajectoryFiniteAndBounded &&
+                            playContinuity.TrajectoryStepsObserved == 4 &&
+                            playContinuity.TrajectorySampleCount >= 8 &&
+                            playContinuity.RejectedPreservationCount == 9 &&
+                            playContinuity.HasInitialMaterialSnapshot &&
+                            playContinuity.MaterialCounts.All(count =>
+                                count == playContinuity.InitialMaterialCount) &&
+                            playContinuity.ContinuationClockSourceIsUnscaled &&
+                            playContinuity.ContinuationClockAdvanced &&
+                            playContinuity.MaximumContinuationClockDelta <=
+                                MoonlightActivityStage.PlayContinuationMaximumDeltaSeconds &&
+                            firstThreeRewardsUnchanged && finalRewardPass &&
+                            zone.LastCompletedBestCombo == 4 &&
+                            zone.LastCompletedPerfectSteps == 4 &&
+                            zone.LastMasteryBonusCoins == 3 &&
+                            completionDelta == 1 && continuationDelta == 3 &&
+                            cleanupPass;
+                        if (!transactionPass)
+                        {
+                            Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                $"play-continuity-transaction progression=" +
+                                $"{string.Join("->", playContinuity.Progression)} " +
+                                $"ids={playContinuity.RootId}/" +
+                                $"{playContinuity.BallId}/{playContinuity.TrailId} " +
+                                $"identity={playContinuity.IdentityPreserved} " +
+                                $"discontinuity=" +
+                                $"{playContinuity.MaximumImmediateDiscontinuity:0.000000}m " +
+                                $"firstRendered=" +
+                                $"{playContinuity.FirstRenderedContinuationFramesObserved}/3@" +
+                                $"{playContinuity.MaximumFirstRenderedFrameDiscontinuity:0.000000}m " +
+                                $"materials={playContinuity.InitialMaterialCount}/" +
+                                $"{playContinuity.BallMaterialId}/" +
+                                $"{playContinuity.TrailMaterialId} counts=" +
+                                $"{string.Join(",", playContinuity.MaterialCounts)} " +
+                                $"trajectory={playContinuity.TrajectoryStepsObserved}/4 " +
+                                $"samples={playContinuity.TrajectorySampleCount} " +
+                                $"bounded={playContinuity.TrajectoryFiniteAndBounded} " +
+                                $"clock={MoonlightActivityStage.PlayContinuationClockSourceForQA}/" +
+                                $"{playContinuity.MaximumContinuationClockDelta:0.000000}/" +
+                                $"{playContinuity.ContinuationClockAdvanced} " +
+                                $"rejections={playContinuity.RejectedPreservationCount}/9 " +
+                                $"firstThreeRewards={firstThreeRewardsUnchanged} " +
+                                $"finalRewards={finalRewardPass} mastery=" +
+                                $"{zone.LastCompletedBestCombo}/" +
+                                $"{zone.LastCompletedPerfectSteps}/" +
+                                $"{zone.LastMasteryBonusCoins} completion=" +
+                                $"{completionDelta}/1 continuations={continuationDelta}/3 " +
+                                $"cleanup={cleanupPass}");
+                            Application.Quit(161);
+                            yield break;
+                        }
+                        Debug.Log("[MoonlightGameplayQA][PASS] " +
+                            $"play-continuity-transaction progression=" +
+                            $"{string.Join("->", playContinuity.Progression)} " +
+                            $"order={playContinuity.OrderMode} " +
+                            $"root={playContinuity.RootId} ball={playContinuity.BallId} " +
+                            $"trail={playContinuity.TrailId} discontinuity=" +
+                            $"{playContinuity.MaximumImmediateDiscontinuity:0.000000}m " +
+                            $"firstRendered=" +
+                            $"{playContinuity.MaximumFirstRenderedFrameDiscontinuity:0.000000}m " +
+                            $"materials={playContinuity.InitialMaterialCount}/" +
+                            $"{playContinuity.BallMaterialId}/" +
+                            $"{playContinuity.TrailMaterialId} counts=" +
+                            $"{string.Join(",", playContinuity.MaterialCounts)} " +
+                            $"trajectorySamples={playContinuity.TrajectorySampleCount} " +
+                            $"clock={MoonlightActivityStage.PlayContinuationClockSourceForQA}/" +
+                            $"{playContinuity.MaximumContinuationClockDelta:0.000000} " +
+                            "runtimePauseExecuted=False " +
+                            $"rejections={playContinuity.RejectedPreservationCount} " +
+                            "rewards=+25W/+13M/+32XP/+5C completion=1 cleanup=True " +
+                            $"marker={PlayContinuityRuntimeMarker} " +
+                            $"marker={PlayContinuityOrderModeMarker}_" +
+                            $"{playContinuity.OrderMode.ToUpperInvariant()}");
+                    }
                     if (expectIPadHud && ui != null &&
                         (!ui.IsRoomNavigationVisible || ui.IsRoomNavigationLocked))
                     {
@@ -4530,6 +4879,285 @@ namespace MoonlightMagicHouse
                 $"audioCues={audio.CuePlayCount} rooms={rooms.rooms.Count} activities={completedActivities}");
             Application.Quit(0);
         }
+
+        static MoonlightSpatialActionKind[] ResolveGameplayActivityOrder(string[] args,
+            out string mode)
+        {
+            mode = "middle";
+            int modeIndex = System.Array.FindIndex(args, argument =>
+                string.Equals(argument, "-moonlightPlayContinuityOrder",
+                    System.StringComparison.OrdinalIgnoreCase));
+            if (modeIndex >= 0 && modeIndex + 1 < args.Length)
+            {
+                string requested = args[modeIndex + 1].ToLowerInvariant();
+                if (requested is "first" or "middle" or "last") mode = requested;
+            }
+
+            return mode switch
+            {
+                "first" => new[]
+                {
+                    MoonlightSpatialActionKind.Play,
+                    MoonlightSpatialActionKind.Cook,
+                    MoonlightSpatialActionKind.Garden,
+                    MoonlightSpatialActionKind.Read,
+                    MoonlightSpatialActionKind.Care
+                },
+                "last" => new[]
+                {
+                    MoonlightSpatialActionKind.Cook,
+                    MoonlightSpatialActionKind.Garden,
+                    MoonlightSpatialActionKind.Read,
+                    MoonlightSpatialActionKind.Care,
+                    MoonlightSpatialActionKind.Play
+                },
+                _ => new[]
+                {
+                    MoonlightSpatialActionKind.Cook,
+                    MoonlightSpatialActionKind.Play,
+                    MoonlightSpatialActionKind.Garden,
+                    MoonlightSpatialActionKind.Read,
+                    MoonlightSpatialActionKind.Care
+                }
+            };
+        }
+
+        static RoomType ActivityRoomFor(MoonlightSpatialActionKind kind) => kind switch
+        {
+            MoonlightSpatialActionKind.Cook => RoomType.Kitchen,
+            MoonlightSpatialActionKind.Play => RoomType.LivingRoom,
+            MoonlightSpatialActionKind.Garden => RoomType.Garden,
+            MoonlightSpatialActionKind.Read => RoomType.Library,
+            MoonlightSpatialActionKind.Care => RoomType.Bedroom,
+            _ => RoomType.LivingRoom
+        };
+
+        static MoonlightGestureSample PlayContinuitySample(int step, float score)
+        {
+            Vector2[] points = Mathf.Clamp(step, 0, 3) switch
+            {
+                0 => new[]
+                {
+                    new Vector2(-0.78f, -0.28f), new Vector2(-0.52f, -0.16f),
+                    new Vector2(-0.26f, -0.04f), new Vector2(0f, 0.08f),
+                    new Vector2(0.26f, 0.20f), new Vector2(0.52f, 0.32f),
+                    new Vector2(0.78f, 0.44f)
+                },
+                1 => new[]
+                {
+                    new Vector2(-0.78f, -0.42f), new Vector2(-0.52f, 0.42f),
+                    new Vector2(-0.26f, -0.42f), new Vector2(0f, 0.42f),
+                    new Vector2(0.26f, -0.42f), new Vector2(0.52f, 0.42f),
+                    new Vector2(0.78f, -0.42f)
+                },
+                2 => new[]
+                {
+                    new Vector2(-0.48f, -0.72f), new Vector2(-0.32f, -0.48f),
+                    new Vector2(-0.16f, -0.24f), new Vector2(0f, 0f),
+                    new Vector2(0.16f, 0.24f), new Vector2(0.32f, 0.48f),
+                    new Vector2(0.48f, 0.72f)
+                },
+                _ => new[]
+                {
+                    new Vector2(0.18f, -0.12f), new Vector2(0.18f, -0.12f),
+                    new Vector2(0.18f, -0.12f), new Vector2(0.18f, -0.12f),
+                    new Vector2(0.18f, -0.12f), new Vector2(0.18f, -0.12f),
+                    new Vector2(0.18f, -0.12f)
+                }
+            };
+            return MoonlightGestureSample.Create(score, 0.42f, points);
+        }
+
+        IEnumerator ObservePlayContinuityTrajectory(MoonlightActionFeedback feedback,
+            MoonlightActivityStage stage, PlayContinuityObservation observation)
+        {
+            while (feedback != null && feedback.IsPerformingAction)
+            {
+                CapturePlayContinuityPoint(stage, observation);
+                yield return null;
+            }
+            CapturePlayContinuityPoint(stage, observation);
+            observation.TrajectoryStepsObserved++;
+        }
+
+        IEnumerator ObservePlayFirstRenderedContinuationFrame(
+            MoonlightActivityStage stage, PlayContinuityObservation observation,
+            Vector3 heldEndpoint, int step)
+        {
+            yield return new WaitForEndOfFrame();
+            float beginRenderDiscontinuity = stage != null
+                ? Vector3.Distance(heldEndpoint, stage.PlayBallLocalPosition)
+                : float.PositiveInfinity;
+            yield return null;
+            yield return new WaitForEndOfFrame();
+            float firstSubsequentRenderDiscontinuity = stage != null
+                ? Vector3.Distance(heldEndpoint, stage.PlayBallLocalPosition)
+                : float.PositiveInfinity;
+            float discontinuity = Mathf.Max(beginRenderDiscontinuity,
+                firstSubsequentRenderDiscontinuity);
+            int renderedMaterialCount = stage != null
+                ? stage.ActiveUniqueMaterialCount
+                : 0;
+            observation.MaterialCounts[step] = renderedMaterialCount;
+            observation.MaximumFirstRenderedFrameDiscontinuity = Mathf.Max(
+                observation.MaximumFirstRenderedFrameDiscontinuity, discontinuity);
+            bool preserved = stage != null && discontinuity <= 0.001f &&
+                stage.PlayStageRootInstanceId == observation.RootId &&
+                stage.PlayBallInstanceId == observation.BallId &&
+                stage.PlayTrailInstanceId == observation.TrailId &&
+                renderedMaterialCount == observation.InitialMaterialCount &&
+                PlayMaterialsMatchObservation(stage, observation);
+            if (preserved)
+                observation.FirstRenderedContinuationFramesObserved++;
+            else
+                observation.IdentityPreserved = false;
+        }
+
+        IEnumerator ObservePlayHeldBusyRejection(MoonlightSpatialActionZone zone,
+            MoonlightGesturePad pad, MoonlightCharacter moonlight,
+            MoonlightActionFeedback feedback, MoonlightActivityStage stage,
+            PlayContinuityObservation observation)
+        {
+            while (feedback != null && feedback.IsPerformingAction)
+                yield return null;
+
+            bool ready = feedback != null && feedback.IsCoolingDown &&
+                !feedback.IsCameraFocusActive && feedback.VisualPoseRestoredForQA &&
+                stage != null && stage.IsHoldingPlayStepTerminal && !stage.IsLingering;
+            var before = ready ? new PlayHeldSnapshot(zone, stage, moonlight) : default;
+            bool accepted = pad != null && pad.SubmitSynthetic(zone.RequiredGesture, 0.95f);
+            bool preserved = ready && !accepted &&
+                PlayHeldStateMatches(before, zone, stage, moonlight);
+            if (preserved)
+            {
+                if (!observation.HasInitialMaterialSnapshot)
+                {
+                    observation.InitialMaterialCount = stage.ActiveUniqueMaterialCount;
+                    observation.MaterialCounts[0] = observation.InitialMaterialCount;
+                    observation.BallMaterialId =
+                        stage.PlayBallSharedMaterialInstanceId;
+                    observation.TrailMaterialId =
+                        stage.PlayTrailSharedMaterialInstanceId;
+                    observation.HasInitialMaterialSnapshot =
+                        observation.InitialMaterialCount > 0 &&
+                        observation.BallMaterialId != 0 &&
+                        observation.TrailMaterialId != 0;
+                }
+                observation.IdentityPreserved &=
+                    PlayMaterialsMatchObservation(stage, observation);
+                observation.RejectedPreservationCount++;
+                observation.HeldEndpoint = stage.PlayBallLocalPosition;
+                observation.HasHeldEndpoint = true;
+                Debug.Log("[MoonlightGameplayQA][PASS] play-held-busy-rejection " +
+                    $"progress={zone.ProgressStep} root={stage.PlayStageRootInstanceId} " +
+                    $"ball={stage.PlayBallInstanceId} trail={stage.PlayTrailInstanceId} " +
+                    $"materials={stage.ActiveUniqueMaterialCount}/" +
+                    $"{stage.PlayBallSharedMaterialInstanceId}/" +
+                    $"{stage.PlayTrailSharedMaterialInstanceId} " +
+                    "marker=MOONLIGHT_PLAY_HELD_BUSY_PRESERVED");
+            }
+            else
+            {
+                observation.IdentityPreserved = false;
+            }
+        }
+
+        static void CapturePlayContinuityPoint(MoonlightActivityStage stage,
+            PlayContinuityObservation observation)
+        {
+            if (stage == null)
+            {
+                observation.TrajectoryFiniteAndBounded = false;
+                return;
+            }
+            Vector3 point = stage.PlayBallLocalPosition;
+            observation.TrajectorySampleCount++;
+            observation.TrajectoryFiniteAndBounded &=
+                PlayCoordinateIsFinite(point.x) && PlayCoordinateIsFinite(point.y) &&
+                PlayCoordinateIsFinite(point.z) &&
+                Mathf.Abs(point.x) <= 1.35f && point.y >= 0.15f && point.y <= 1.75f &&
+                Mathf.Abs(point.z) <= 1.35f;
+            observation.IdentityPreserved &=
+                stage.PlayStageRootInstanceId == observation.RootId &&
+                stage.PlayBallInstanceId == observation.BallId &&
+                stage.PlayTrailInstanceId == observation.TrailId &&
+                stage.AuthoritativePlayBallCount == 1 &&
+                stage.AuthoritativePlayTrailCount == 1 &&
+                (!observation.HasInitialMaterialSnapshot ||
+                 PlayMaterialIdsMatchObservation(stage, observation)) &&
+                CountActivePlayStageRoots() == 1;
+            float clockDelta = stage.LastPlayContinuationClockDeltaForQA;
+            observation.ContinuationClockSourceIsUnscaled &=
+                string.Equals(MoonlightActivityStage.PlayContinuationClockSourceForQA,
+                    "Time.unscaledDeltaTime", System.StringComparison.Ordinal) &&
+                PlayCoordinateIsFinite(clockDelta) && clockDelta >= 0f &&
+                clockDelta <= MoonlightActivityStage.PlayContinuationMaximumDeltaSeconds;
+            observation.MaximumContinuationClockDelta = Mathf.Max(
+                observation.MaximumContinuationClockDelta, clockDelta);
+            observation.ContinuationClockAdvanced |= clockDelta > 0f;
+        }
+
+        static bool PlayHeldStateMatches(PlayHeldSnapshot before,
+            MoonlightSpatialActionZone zone, MoonlightActivityStage stage,
+            MoonlightCharacter moonlight) =>
+            stage != null && stage.IsHoldingPlayStepTerminal && !stage.IsLingering &&
+            stage.PlayStageRootInstanceId == before.RootId &&
+            stage.PlayBallInstanceId == before.BallId &&
+            stage.PlayTrailInstanceId == before.TrailId &&
+            before.MaterialCount > 0 &&
+            before.BallMaterialId != 0 && before.TrailMaterialId != 0 &&
+            stage.ActiveUniqueMaterialCount == before.MaterialCount &&
+            stage.PlayBallSharedMaterialInstanceId == before.BallMaterialId &&
+            stage.PlayTrailSharedMaterialInstanceId == before.TrailMaterialId &&
+            stage.AuthoritativePlayBallCount == 1 &&
+            stage.AuthoritativePlayTrailCount == 1 &&
+            CountActivePlayStageRoots() == 1 &&
+            Vector3.Distance(stage.PlayBallLocalPosition, before.BallPosition) <= 0.000001f &&
+            zone.ProgressStep == before.ProgressStep &&
+            zone.ActivitySessionAcceptedSteps == before.AcceptedSteps &&
+            Mathf.Approximately(zone.ActivitySessionAverageScore, before.AverageScore) &&
+            zone.ActivityCurrentCombo == before.CurrentCombo &&
+            zone.ActivityBestCombo == before.BestCombo &&
+            zone.ActivityPerfectSteps == before.PerfectSteps &&
+            PlayRewardsEqual(before.Rewards, new PlayRewardSnapshot(moonlight));
+
+        static bool PlayMaterialsMatchObservation(MoonlightActivityStage stage,
+            PlayContinuityObservation observation) =>
+            observation.HasInitialMaterialSnapshot && stage != null &&
+            stage.ActiveUniqueMaterialCount == observation.InitialMaterialCount &&
+            PlayMaterialIdsMatchObservation(stage, observation);
+
+        static bool PlayMaterialIdsMatchObservation(MoonlightActivityStage stage,
+            PlayContinuityObservation observation) =>
+            observation.HasInitialMaterialSnapshot && stage != null &&
+            stage.PlayBallSharedMaterialInstanceId == observation.BallMaterialId &&
+            stage.PlayTrailSharedMaterialInstanceId == observation.TrailMaterialId;
+
+        static bool PlayRewardsEqual(PlayRewardSnapshot left, PlayRewardSnapshot right) =>
+            Mathf.Approximately(left.Wonder, right.Wonder) &&
+            Mathf.Approximately(left.Warmth, right.Warmth) &&
+            Mathf.Approximately(left.Rest, right.Rest) &&
+            Mathf.Approximately(left.Magic, right.Magic) &&
+            Mathf.Approximately(left.Hunger, right.Hunger) &&
+            left.XP == right.XP && left.Coins == right.Coins;
+
+        static bool PlayRewardDeltaMatches(PlayRewardSnapshot before,
+            PlayRewardSnapshot after, float wonder, float warmth, float rest,
+            float magic, float hunger, int xp, int coins) =>
+            Mathf.Approximately(after.Wonder - before.Wonder, wonder) &&
+            Mathf.Approximately(after.Warmth - before.Warmth, warmth) &&
+            Mathf.Approximately(after.Rest - before.Rest, rest) &&
+            Mathf.Approximately(after.Magic - before.Magic, magic) &&
+            Mathf.Approximately(after.Hunger - before.Hunger, hunger) &&
+            after.XP - before.XP == xp && after.Coins - before.Coins == coins;
+
+        static int CountActivePlayStageRoots() =>
+            FindObjectsByType<Transform>(FindObjectsSortMode.None)
+                .Count(candidate => candidate != null &&
+                    candidate.name == "ActivityStage-Play");
+
+        static bool PlayCoordinateIsFinite(float value) =>
+            !float.IsNaN(value) && !float.IsInfinity(value);
 
         IEnumerator RunGestureResponsiveCareLiveHarness(MoonlightCharacter liveMoonlight,
             MoonlightSpatialInteractor liveInteractor, MoonlightUI ui,

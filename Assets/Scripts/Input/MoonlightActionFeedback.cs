@@ -100,6 +100,10 @@ namespace MoonlightMagicHouse
         public int ActiveStageMaterials => _activityStage != null ? _activityStage.ActiveUniqueMaterialCount : 0;
         public int ActiveStageLights => _activityStage != null ? _activityStage.ActiveLightCount : 0;
         public bool IsCameraFocusActive => _cameraController != null && _cameraController.IsActivityFocusActive;
+        public bool VisualPoseRestoredForQA => _visual == null ||
+            (Vector3.Distance(_visual.localPosition, _basePosition) <= 0.0001f &&
+             Vector3.Distance(_visual.localScale, _baseScale) <= 0.0001f &&
+             Quaternion.Angle(_visual.localRotation, _baseRotation) <= 0.01f);
         public Vector3 CameraFocusAnchor => _cameraFocusAnchor;
         public string CameraFocusSource => _cameraFocusUsesStationAnchor
             ? "station-anchor"
@@ -385,15 +389,29 @@ namespace MoonlightMagicHouse
                 yield return null;
             }
 
+            while (kind == MoonlightSpatialActionKind.Play && _activityStage != null &&
+                   _activityStage.IsPlayContinuationBlending)
+            {
+                _activityStage.UpdateStage(kind, 1f);
+                yield return null;
+            }
+
             RestoreVisualPose();
             ActionProgress01 = 1f;
             bool finalActivityStep = _activityRequiredSteps > 1 &&
                 _activityStep == _activityRequiredSteps - 1;
             bool heldFinalPresentation = finalActivityStep &&
                 _activityStage.LingerFinalState(FinalPresentationSecondsFor(kind));
-            if (!heldFinalPresentation)
+            bool heldIntermediatePlayStep = !finalActivityStep &&
+                kind == MoonlightSpatialActionKind.Play &&
+                _activityStage != null && _activityStage.HoldPlayStepTerminal();
+            if (!heldFinalPresentation && !heldIntermediatePlayStep)
             {
                 _activityStage?.End();
+                EndCameraFocus();
+            }
+            else if (heldIntermediatePlayStep)
+            {
                 EndCameraFocus();
             }
             else

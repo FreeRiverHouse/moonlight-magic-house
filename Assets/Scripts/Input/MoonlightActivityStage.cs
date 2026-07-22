@@ -53,6 +53,11 @@ namespace MoonlightMagicHouse
         const float ReadBookmarkMaximumZ = 0.02f;
         const float ReadFinishMinimumIntensity = 1f;
         const float ReadFinishMaximumIntensity = 1.85f;
+        const float PlayContinuationBlendSeconds = 0.24f;
+        public const float PlayContinuationMaximumDeltaSeconds = 1f / 30f;
+        public const string PlayContinuationClockSourceForQA = "Time.unscaledDeltaTime";
+        public const string PlayContinuationClockQAMarker =
+            "MOONLIGHT_PLAY_CONTINUATION_CLOCK_UNSCALED_CAPPED";
         static readonly Vector3 CookDecorParkedPosition = new(-0.43f, 0.72f, 0.30f);
         static readonly Vector3[] GardenWateringCanBasePositions =
         {
@@ -173,6 +178,7 @@ namespace MoonlightMagicHouse
         Transform _careMirror;
         Transform _careMirrorAura;
         Transform _authoredCareStation;
+        Renderer _playBallRenderer;
         TrailRenderer _ballTrail;
         Light _activityLight;
         MoonlightActivityStation _persistentStation;
@@ -184,6 +190,14 @@ namespace MoonlightMagicHouse
         Vector3 _center;
         int _requiredSteps = 1;
         float _playProgress;
+        bool _isHoldingPlayStepTerminal;
+        bool _playContinuationActive;
+        bool _playContinuationFirstRenderedFramePending;
+        int _playContinuationBeginFrame;
+        int _playContinuationLastAdvancedFrame;
+        int _playZoneInstanceId;
+        float _playContinuationElapsed;
+        Vector3 _playContinuationStart;
         float _gardenProgress;
         float _readProgress;
         float _careProgress;
@@ -223,6 +237,35 @@ namespace MoonlightMagicHouse
         public Vector3 PlayBallLocalPosition => _ball != null
             ? _ball.localPosition
             : new Vector3(float.NaN, float.NaN, float.NaN);
+        public int PlayStageRootInstanceId => CurrentKind == MoonlightSpatialActionKind.Play &&
+            _root != null ? _root.GetInstanceID() : 0;
+        public int PlayBallInstanceId => _ball != null ? _ball.GetInstanceID() : 0;
+        public int PlayTrailInstanceId => _ballTrail != null ? _ballTrail.GetInstanceID() : 0;
+        public int PlayBallSharedMaterialInstanceId
+        {
+            get
+            {
+                Material material = _playBallRenderer != null
+                    ? _playBallRenderer.sharedMaterial
+                    : null;
+                return material != null ? material.GetInstanceID() : 0;
+            }
+        }
+        public int PlayTrailSharedMaterialInstanceId
+        {
+            get
+            {
+                Material material = _ballTrail != null ? _ballTrail.sharedMaterial : null;
+                return material != null ? material.GetInstanceID() : 0;
+            }
+        }
+        public bool IsHoldingPlayStepTerminal => _isHoldingPlayStepTerminal &&
+            CurrentKind == MoonlightSpatialActionKind.Play && _root != null && _ball != null;
+        public bool IsPlayContinuationBlending => _playContinuationActive &&
+            CurrentKind == MoonlightSpatialActionKind.Play && _root != null && _ball != null;
+        public int PlayContinuationCountForQA { get; private set; }
+        public float LastPlayContinuationDiscontinuityForQA { get; private set; }
+        public float LastPlayContinuationClockDeltaForQA { get; private set; }
         public int AuthoritativePlayBallCount => CountPlayObjectsNamed("StarBall");
         public int AuthoritativePlayTrailCount => CurrentKind == MoonlightSpatialActionKind.Play &&
             _root != null ? _root.GetComponentsInChildren<TrailRenderer>(true).Length : 0;
@@ -781,6 +824,9 @@ namespace MoonlightMagicHouse
         public void Begin(MoonlightSpatialActionKind kind, int stepIndex, int requiredSteps,
             MoonlightGestureSample gestureSample)
         {
+            if (TryBeginRetainedPlayStep(kind, stepIndex, requiredSteps, gestureSample))
+                return;
+
             End();
             CurrentKind = kind;
             _gestureSample = gestureSample;
@@ -790,6 +836,9 @@ namespace MoonlightMagicHouse
                 ? Mathf.Max(4, requiredSteps)
                 : Mathf.Max(1, requiredSteps);
             CurrentStep = Mathf.Clamp(stepIndex, 0, _requiredSteps - 1);
+            _playZoneInstanceId = kind == MoonlightSpatialActionKind.Play
+                ? CurrentInteractionZoneInstanceId()
+                : 0;
             _root = new GameObject($"ActivityStage-{kind}");
             _root.transform.SetParent(null, true);
             bool allowPersistentStation = ShouldBindPersistentStation(kind,
@@ -842,6 +891,73 @@ namespace MoonlightMagicHouse
             UpdateStage(kind, 0f);
         }
 
+        bool TryBeginRetainedPlayStep(MoonlightSpatialActionKind kind, int stepIndex,
+            int requiredSteps, MoonlightGestureSample gestureSample)
+        {
+            int nextStep = Mathf.Clamp(stepIndex, 0, Mathf.Max(3, requiredSteps - 1));
+            if (kind != MoonlightSpatialActionKind.Play || !IsHoldingPlayStepTerminal ||
+                IsLingering || nextStep != CurrentStep + 1 || _ballTrail == null)
+                return false;
+
+            int currentZoneInstanceId = CurrentInteractionZoneInstanceId();
+            if (_playZoneInstanceId != 0 && currentZoneInstanceId != _playZoneInstanceId)
+                return false;
+
+            Vector3 heldEndpoint = _ball.localPosition;
+            _requiredSteps = Mathf.Max(4, requiredSteps);
+            CurrentStep = Mathf.Clamp(stepIndex, 0, _requiredSteps - 1);
+            _gestureSample = gestureSample;
+            _playProgress = 0f;
+            _playContinuationStart = heldEndpoint;
+            _playContinuationActive = true;
+            _playContinuationFirstRenderedFramePending = true;
+            _playContinuationBeginFrame = Time.frameCount;
+            _playContinuationLastAdvancedFrame = Time.frameCount;
+            _playContinuationElapsed = 0f;
+            LastPlayContinuationClockDeltaForQA = 0f;
+            _isHoldingPlayStepTerminal = false;
+            UpdateStage(kind, 0f);
+            LastPlayContinuationDiscontinuityForQA =
+                Vector3.Distance(heldEndpoint, _ball.localPosition);
+            PlayContinuationCountForQA++;
+            Debug.Log($"[MoonlightActivityQA] play-stage-continued step={CurrentStep + 1}/" +
+                $"{_requiredSteps} root={PlayStageRootInstanceId} ball={PlayBallInstanceId} " +
+                $"trail={PlayTrailInstanceId} discontinuity=" +
+                $"{LastPlayContinuationDiscontinuityForQA:0.000000}m " +
+                $"materials={ActiveUniqueMaterialCount}/" +
+                $"{PlayBallSharedMaterialInstanceId}/" +
+                $"{PlayTrailSharedMaterialInstanceId} " +
+                "marker=MOONLIGHT_PLAY_STAGE_CONTINUITY_REUSED");
+            return true;
+        }
+
+        int CurrentInteractionZoneInstanceId()
+        {
+            var interactor = GetComponent<MoonlightSpatialInteractor>();
+            return interactor != null && interactor.CurrentZone != null
+                ? interactor.CurrentZone.GetInstanceID()
+                : 0;
+        }
+
+        public bool HoldPlayStepTerminal()
+        {
+            if (_root == null || CurrentKind != MoonlightSpatialActionKind.Play ||
+                CurrentStep >= _requiredSteps - 1 || _ball == null || _ballTrail == null)
+                return false;
+
+            _playContinuationActive = false;
+            UpdateStage(CurrentKind, 1f);
+            _isHoldingPlayStepTerminal = true;
+            Debug.Log($"[MoonlightActivityQA] play-step-terminal-held " +
+                $"step={CurrentStep + 1}/{_requiredSteps} root={PlayStageRootInstanceId} " +
+                $"ball={PlayBallInstanceId} trail={PlayTrailInstanceId} " +
+                $"materials={ActiveUniqueMaterialCount}/" +
+                $"{PlayBallSharedMaterialInstanceId}/" +
+                $"{PlayTrailSharedMaterialInstanceId} " +
+                "marker=MOONLIGHT_PLAY_STEP_TERMINAL_HELD");
+            return true;
+        }
+
         public bool LingerFinalState(float seconds)
         {
             if (_root == null || _requiredSteps <= 1 || CurrentStep != _requiredSteps - 1)
@@ -854,6 +970,8 @@ namespace MoonlightMagicHouse
                 StopCoroutine(_lingerRoutine);
 
             UpdateStage(CurrentKind, 1f);
+            _isHoldingPlayStepTerminal = false;
+            _playContinuationActive = false;
             _applyPersistentCompletionOnEnd = ShouldBindPersistentStation(CurrentKind,
                 _careLiveHarnessIsolationEnabledForQA);
             IsLingering = true;
@@ -1035,14 +1153,24 @@ namespace MoonlightMagicHouse
 
         void Update()
         {
-            if (!IsLingering) return;
+            if (!IsLingering && !IsHoldingPlayStepTerminal) return;
 
             var interactor = GetComponent<MoonlightSpatialInteractor>();
             var currentZone = interactor != null ? interactor.CurrentZone : null;
-            if (currentZone != null && currentZone.Kind == CurrentKind) return;
+            bool samePlayZone = CurrentKind != MoonlightSpatialActionKind.Play ||
+                _playZoneInstanceId == 0 ||
+                (currentZone != null && currentZone.GetInstanceID() == _playZoneInstanceId);
+            if (currentZone != null && currentZone.isActiveAndEnabled &&
+                currentZone.gameObject.activeInHierarchy &&
+                currentZone.Kind == CurrentKind && samePlayZone)
+                return;
 
-            Debug.Log($"[MoonlightActivityQA] final-presentation-cancel kind={CurrentKind} " +
-                "reason=left-zone marker=MOONLIGHT_ACTIVITY_FINAL_PRESENTATION_CANCELLED");
+            if (IsLingering)
+                Debug.Log($"[MoonlightActivityQA] final-presentation-cancel kind={CurrentKind} " +
+                    "reason=left-zone marker=MOONLIGHT_ACTIVITY_FINAL_PRESENTATION_CANCELLED");
+            else
+                Debug.Log("[MoonlightActivityQA] play-step-hold-cancel kind=Play " +
+                    "reason=left-zone marker=MOONLIGHT_PLAY_STEP_HOLD_CANCELLED");
             End();
         }
 
@@ -1115,8 +1243,18 @@ namespace MoonlightMagicHouse
             CookCurrentPhaseStateReady = false;
             _cookBakeDoorClearancePass = true;
             _ball = null;
+            _playBallRenderer = null;
             _gestureSample = default;
             _playProgress = 0f;
+            _isHoldingPlayStepTerminal = false;
+            _playContinuationActive = false;
+            _playContinuationFirstRenderedFramePending = false;
+            _playContinuationBeginFrame = 0;
+            _playContinuationLastAdvancedFrame = 0;
+            _playZoneInstanceId = 0;
+            _playContinuationElapsed = 0f;
+            LastPlayContinuationClockDeltaForQA = 0f;
+            _playContinuationStart = Vector3.zero;
             _gardenProgress = 0f;
             _readProgress = 0f;
             _blocks = null;
@@ -3096,6 +3234,28 @@ namespace MoonlightMagicHouse
 
         static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
 
+        static float CappedPlayContinuationDelta(float unscaledDeltaTime) =>
+            Mathf.Min(Mathf.Max(0f, unscaledDeltaTime),
+                PlayContinuationMaximumDeltaSeconds);
+
+        public static bool ValidatePlayContinuationClockContract(out string detail)
+        {
+            const float normalFrameDelta = 1f / 60f;
+            float normalDelta = CappedPlayContinuationDelta(normalFrameDelta);
+            float hitchDelta = CappedPlayContinuationDelta(1f);
+            float negativeDelta = CappedPlayContinuationDelta(-1f);
+            bool sourcePass = string.Equals(PlayContinuationClockSourceForQA,
+                "Time.unscaledDeltaTime", System.StringComparison.Ordinal);
+            detail = $"source={PlayContinuationClockSourceForQA} " +
+                $"normal={normalDelta:0.000000} hitch={hitchDelta:0.000000} " +
+                $"cap={PlayContinuationMaximumDeltaSeconds:0.000000} " +
+                $"negative={negativeDelta:0.000000} staticOnly=True " +
+                $"runtimePauseExecuted=False marker={PlayContinuationClockQAMarker}";
+            return sourcePass && Mathf.Approximately(normalDelta, normalFrameDelta) &&
+                Mathf.Approximately(hitchDelta, PlayContinuationMaximumDeltaSeconds) &&
+                Mathf.Approximately(negativeDelta, 0f);
+        }
+
         void BuildPlayStage()
         {
             bool authoredArena = BuildAuthoredPlayArena();
@@ -3111,6 +3271,7 @@ namespace MoonlightMagicHouse
 
             _ball = Primitive(PrimitiveType.Sphere, "StarBall", new Vector3(0f, 0.30f, 0f),
                 Vector3.one * 0.27f, new Color(0.42f, 0.86f, 1f), 0.10f);
+            _playBallRenderer = _ball.GetComponent<Renderer>();
             _starDetails = new Transform[6];
             for (int i = 0; i < _starDetails.Length; i++)
             {
@@ -3154,7 +3315,7 @@ namespace MoonlightMagicHouse
                 _pathMarkers[i] = Primitive(PrimitiveType.Cylinder, $"ChasePathMarker-{i + 1}",
                     Vector3.zero, new Vector3(0.12f, 0.010f, 0.12f),
                     i % 2 == 0 ? new Color(0.98f, 0.82f, 0.38f) : new Color(0.42f, 0.86f, 1f), 0.14f);
-                _pathMarkers[i].gameObject.SetActive(false);
+                SetPlayRendererVisible(_pathMarkers[i], false);
             }
 
             _playProps = authoredArena ? null : new[]
@@ -3183,7 +3344,7 @@ namespace MoonlightMagicHouse
                     Vector3.zero, Vector3.one * 0.07f,
                     i % 2 == 0 ? new Color(1f, 0.88f, 0.38f) : new Color(0.98f, 0.56f, 0.68f),
                     0.30f);
-                _celebrationStars[i].gameObject.SetActive(false);
+                SetPlayRendererVisible(_celebrationStars[i], false);
             }
 
             _playArches = authoredArena ? null : new[]
@@ -3205,7 +3366,7 @@ namespace MoonlightMagicHouse
             {
                 _playArches[0].localRotation = Quaternion.Euler(0f, 0f, -4f);
                 _playArches[1].localRotation = Quaternion.Euler(0f, 0f, 4f);
-                SetActive(_playArches, false);
+                SetPlayRenderersVisible(_playArches, false);
             }
 
             _podiumProps = new[]
@@ -3217,7 +3378,7 @@ namespace MoonlightMagicHouse
                 Primitive(PrimitiveType.Cube, "CelebrationMedal", new Vector3(0.94f, 0.40f, -0.46f),
                     new Vector3(0.18f, 0.15f, 0.035f), new Color(1f, 0.89f, 0.36f), 0.18f),
             };
-            SetActive(_podiumProps, false);
+            SetPlayRenderersVisible(_podiumProps, false);
             AddActivityLight(new Color(0.42f, 0.86f, 1f));
         }
 
@@ -3295,26 +3456,66 @@ namespace MoonlightMagicHouse
 
             int step = Mathf.Clamp(CurrentStep, 0, 3);
             _playProgress = Mathf.Clamp01(t);
-            SetActive(_podiumProps, step == 3);
+            SetPlayRenderersVisible(_podiumProps, step == 3);
             if (_playArches != null)
             {
                 for (int i = 0; i < _playArches.Length; i++)
                     if (_playArches[i] != null)
-                        _playArches[i].gameObject.SetActive((step == 2 && i < 3) || (step == 3 && i >= 3));
+                        SetPlayRendererVisible(_playArches[i],
+                            (step == 2 && i < 3) || (step == 3 && i >= 3));
             }
             if (_playProps != null && _playProps.Length >= 5)
             {
-                _playProps[0].gameObject.SetActive(step == 0);
-                _playProps[1].gameObject.SetActive(step == 0);
-                _playProps[2].gameObject.SetActive(step == 1 || step == 2);
-                _playProps[3].gameObject.SetActive(step == 3);
-                _playProps[4].gameObject.SetActive(step == 3);
+                SetPlayRendererVisible(_playProps[0], step == 0);
+                SetPlayRendererVisible(_playProps[1], step == 0);
+                SetPlayRendererVisible(_playProps[2], step == 1 || step == 2);
+                SetPlayRendererVisible(_playProps[3], step == 3);
+                SetPlayRendererVisible(_playProps[4], step == 3);
             }
-            if (_ballTrail != null) _ballTrail.enabled = step != 3 || t < 0.58f;
+            if (_ballTrail != null)
+            {
+                bool trailVisible = step != 3 || t < 0.58f;
+                _ballTrail.emitting = trailVisible;
+                _ballTrail.forceRenderingOff = !trailVisible;
+            }
             if (_ball != null)
             {
                 float bounce = Mathf.Abs(Mathf.Sin(t * Mathf.PI * 4f));
-                _ball.localPosition = EvaluatePlayTrajectory(step, t, _gestureSample);
+                Vector3 target = EvaluatePlayTrajectory(step, t, _gestureSample);
+                if (_playContinuationActive)
+                {
+                    bool beginFrame = Time.frameCount == _playContinuationBeginFrame;
+                    if (beginFrame || _playContinuationFirstRenderedFramePending)
+                    {
+                        _ball.localPosition = _playContinuationStart;
+                        if (!beginFrame)
+                        {
+                            _playContinuationFirstRenderedFramePending = false;
+                            _playContinuationLastAdvancedFrame = Time.frameCount;
+                        }
+                    }
+                    else
+                    {
+                        if (Time.frameCount != _playContinuationLastAdvancedFrame)
+                        {
+                            LastPlayContinuationClockDeltaForQA =
+                                CappedPlayContinuationDelta(Time.unscaledDeltaTime);
+                            _playContinuationElapsed +=
+                                LastPlayContinuationClockDeltaForQA;
+                            _playContinuationLastAdvancedFrame = Time.frameCount;
+                        }
+                        float blend = Mathf.SmoothStep(0f, 1f,
+                            Mathf.Clamp01(_playContinuationElapsed /
+                                PlayContinuationBlendSeconds));
+                        _ball.localPosition = Vector3.Lerp(
+                            _playContinuationStart, target, blend);
+                        if (blend >= 1f) _playContinuationActive = false;
+                    }
+                }
+                else
+                {
+                    _ball.localPosition = target;
+                }
 
                 float squash = 1f - (1f - bounce) * 0.18f;
                 _ball.localScale = new Vector3(0.27f / squash, 0.27f * squash, 0.27f / squash);
@@ -3329,7 +3530,7 @@ namespace MoonlightMagicHouse
 
             for (int i = 0; i < _blocks.Length; i++)
             {
-                _blocks[i].gameObject.SetActive(step != 0);
+                SetPlayRendererVisible(_blocks[i], step != 0);
                 float reveal = step == 0 ? 0f : Mathf.Clamp01((t - 0.12f - i * 0.08f) * 7f);
                 float pop = reveal <= 0f ? 0f : 1f + Mathf.Sin(reveal * Mathf.PI) * 0.24f;
                 float jump = step == 2 ? Mathf.Clamp01(t * 3.5f) : step == 3 ? 1f : 0f;
@@ -3346,7 +3547,7 @@ namespace MoonlightMagicHouse
             {
                 for (int i = 0; i < _pathMarkers.Length; i++)
                 {
-                    _pathMarkers[i].gameObject.SetActive(step <= 2);
+                    SetPlayRendererVisible(_pathMarkers[i], step <= 2);
                     float u = i / (float)(_pathMarkers.Length - 1);
                     _pathMarkers[i].localPosition = EvaluatePlayTrajectory(step, u, _gestureSample);
                     _pathMarkers[i].localPosition += Vector3.up * (step == 1 ? -0.18f : -0.04f);
@@ -3361,7 +3562,8 @@ namespace MoonlightMagicHouse
             {
                 for (int i = 0; i < _celebrationStars.Length; i++)
                 {
-                    _celebrationStars[i].gameObject.SetActive(step == 3 && t > 0.18f);
+                    SetPlayRendererVisible(_celebrationStars[i],
+                        step == 3 && t > 0.18f);
                     float phase = Mathf.Repeat(t * 1.8f + i * 0.13f, 1f);
                     float angle = i * Mathf.PI * 2f / _celebrationStars.Length + t * Mathf.PI * 2f;
                     _celebrationStars[i].localPosition = new Vector3(0.94f + Mathf.Cos(angle) * (0.18f + phase * 0.42f),
@@ -5250,6 +5452,22 @@ namespace MoonlightMagicHouse
             if (transforms == null) return;
             for (int i = 0; i < transforms.Length; i++)
                 if (transforms[i] != null) transforms[i].gameObject.SetActive(active);
+        }
+
+        static void SetPlayRendererVisible(Transform transform, bool visible)
+        {
+            if (transform == null) return;
+            // Preserve the retained Play material set while hiding step-specific props.
+            transform.gameObject.SetActive(true);
+            Renderer renderer = transform.GetComponent<Renderer>();
+            if (renderer != null) renderer.forceRenderingOff = !visible;
+        }
+
+        static void SetPlayRenderersVisible(Transform[] transforms, bool visible)
+        {
+            if (transforms == null) return;
+            for (int i = 0; i < transforms.Length; i++)
+                SetPlayRendererVisible(transforms[i], visible);
         }
 
         void UpdateActivityCounts()

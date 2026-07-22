@@ -213,7 +213,8 @@ namespace MoonlightMagicHouse
                 LastGestureScore, passingScore, true);
             if (!gesturePassed)
             {
-                _currentCombo = 0;
+                if (kind != MoonlightSpatialActionKind.Play || _progressStep == 0)
+                    _currentCombo = 0;
                 LastCueKey = "activity-try-again";
                 AudioManager.Instance?.Play(LastCueKey);
                 HapticFeedback.Failure();
