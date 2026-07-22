@@ -426,12 +426,29 @@ namespace MoonlightMagicHouse
                     Mathf.Sin(t * Mathf.PI * 2f) * 14f),
                 MoonlightGestureKind.Swipe => new Vector2(Mathf.Lerp(-46f, 46f, t), 0f),
                 MoonlightGestureKind.ZigZag => new Vector2(
-                    Mathf.Lerp(-46f, 46f, t),
-                    Mathf.PingPong(t * 4f, 1f) * 44f - 22f),
+                    EvaluateZigZagGuideX(t),
+                    Mathf.Lerp(-22f, 22f, t)),
                 _ => new Vector2(
                     Mathf.Sin(t * Mathf.PI * 4f),
                     Mathf.Cos(t * Mathf.PI * 4f)) * Mathf.Lerp(22f, 0f, t)
             };
+        }
+
+        static float EvaluateZigZagGuideX(float t)
+        {
+            const float firstTurn = 3f / 11f;
+            const float secondTurn = 6f / 11f;
+            const float thirdTurn = 9f / 11f;
+            if (t <= firstTurn)
+                return Mathf.Lerp(-46f, 46f, t / firstTurn);
+            if (t <= secondTurn)
+                return Mathf.Lerp(46f, -46f,
+                    (t - firstTurn) / (secondTurn - firstTurn));
+            if (t <= thirdTurn)
+                return Mathf.Lerp(-46f, 46f,
+                    (t - secondTurn) / (thirdTurn - secondTurn));
+            return Mathf.Lerp(46f, -46f,
+                (t - thirdTurn) / (1f - thirdTurn));
         }
 
         public static bool ValidateGestureGuideContract(out string detail)
@@ -441,22 +458,60 @@ namespace MoonlightMagicHouse
             Vector2 circleEnd = EvaluateGestureGuidePoint(MoonlightGestureKind.Circle, 1f);
             Vector2 swipeStart = EvaluateGestureGuidePoint(MoonlightGestureKind.Swipe, 0f);
             Vector2 swipeEnd = EvaluateGestureGuidePoint(MoonlightGestureKind.Swipe, 1f);
-            Vector2 zigA = EvaluateGestureGuidePoint(MoonlightGestureKind.ZigZag, 0.25f);
-            Vector2 zigB = EvaluateGestureGuidePoint(MoonlightGestureKind.ZigZag, 0.50f);
-            Vector2 zigC = EvaluateGestureGuidePoint(MoonlightGestureKind.ZigZag, 0.75f);
+            Vector2 zigStart = EvaluateGestureGuidePoint(MoonlightGestureKind.ZigZag, 0f);
+            Vector2 zigEnd = EvaluateGestureGuidePoint(MoonlightGestureKind.ZigZag, 1f);
             Vector2 tapEnd = EvaluateGestureGuidePoint(MoonlightGestureKind.Tap, 1f);
             Vector2 holdStart = EvaluateGestureGuidePoint(MoonlightGestureKind.Hold, 0f);
             bool circleClosed = Vector2.Distance(circleStart, circleEnd) <= 0.01f &&
                                 Mathf.Abs(circleQuarter.y) >= 25f;
             bool swipeClear = swipeEnd.x - swipeStart.x >= 90f;
-            bool zigZagClear = zigA.y > 0f && zigB.y < 0f && zigC.y > 0f;
             bool tapConverges = tapEnd.magnitude <= 0.01f;
             bool holdCompact = holdStart.magnitude >= 13f && holdStart.magnitude <= 15f;
+
+            Vector2 surface = new Vector2(280f, 100f);
+            var normalizedZigZag = new Vector2[GestureGuideDotCapacity];
+            int zigZagTurns = 0;
+            float previousXDirection = 0f;
+            float minimumX = float.PositiveInfinity;
+            float maximumX = float.NegativeInfinity;
+            float minimumY = float.PositiveInfinity;
+            float maximumY = float.NegativeInfinity;
+            for (int i = 0; i < GestureGuideDotCapacity; i++)
+            {
+                float t = i / (float)(GestureGuideDotCapacity - 1);
+                Vector2 guidePoint = EvaluateGestureGuidePoint(MoonlightGestureKind.ZigZag, t);
+                minimumX = Mathf.Min(minimumX, guidePoint.x);
+                maximumX = Mathf.Max(maximumX, guidePoint.x);
+                minimumY = Mathf.Min(minimumY, guidePoint.y);
+                maximumY = Mathf.Max(maximumY, guidePoint.y);
+                normalizedZigZag[i] = NormalizeGesturePoint(guidePoint, surface);
+                if (i == 0) continue;
+
+                float dx = normalizedZigZag[i].x - normalizedZigZag[i - 1].x;
+                if (Mathf.Abs(dx) < 0.035f) continue;
+                float direction = Mathf.Sign(dx);
+                if (previousXDirection != 0f && direction != previousXDirection)
+                    zigZagTurns++;
+                previousXDirection = direction;
+            }
+            float zigZagScore = ScoreGesture(MoonlightGestureKind.ZigZag,
+                normalizedZigZag, 0.8f);
+            float zigZagWidth = maximumX - minimumX;
+            float zigZagHeight = maximumY - minimumY;
+            float zigZagCenterX = (minimumX + maximumX) * 0.5f;
+            bool zigZagClear = Mathf.Abs(zigZagWidth - 92f) <= 0.01f &&
+                Mathf.Abs(zigZagHeight - 44f) <= 0.01f &&
+                Mathf.Abs(zigZagCenterX) <= 0.01f &&
+                zigStart.x <= -45.99f && zigEnd.x <= -45.99f;
             detail = $"dots={GestureGuideDotCapacity} circleClosed={circleClosed} " +
-                     $"swipeSpan={swipeEnd.x - swipeStart.x:0} zig={zigA.y:0}/{zigB.y:0}/{zigC.y:0} " +
+                     $"swipeSpan={swipeEnd.x - swipeStart.x:0} " +
+                     $"zigScore={zigZagScore:0.00} zigTurns={zigZagTurns} " +
+                     $"zigBounds={zigZagWidth:0.0}x{zigZagHeight:0.0} " +
+                     $"zigCenterX={zigZagCenterX:0.00} " +
                      $"tapEnd={tapEnd.magnitude:0.0} holdRadius={holdStart.magnitude:0.0}";
             return GestureGuideDotCapacity >= 10 && circleClosed && swipeClear &&
-                   zigZagClear && tapConverges && holdCompact;
+                   zigZagClear && zigZagScore >= 0.70f && zigZagTurns == 3 &&
+                   tapConverges && holdCompact;
         }
 
         public static bool ValidateResultFeedbackContract(out string detail)
