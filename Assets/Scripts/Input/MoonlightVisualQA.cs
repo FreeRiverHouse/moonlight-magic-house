@@ -15,11 +15,70 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_ANIMATOR_CONTROLLER_LOCOMOTION_INCOMPLETE";
         public const string MoonbudPhotorealSpecialistLocomotionMarker =
             "MOONLIGHT_PHOTOREAL_SPECIALIST_LOCOMOTION_VERIFIED";
+        public const string ActivityResultTimingMarker =
+            "MOONLIGHT_ACTIVITY_RESULT_TIMING_CLASSIFICATION_VERIFIED";
+        public const string ActivityResultDisplayBoundaryMarker =
+            "MOONLIGHT_ACTIVITY_RESULT_DISPLAY_BOUNDARY_VERIFIED";
+        public const string ActivityResultVisibleIntervalMarker =
+            "MOONLIGHT_ACTIVITY_RESULT_VISIBLE_INTERVAL_VERIFIED";
+
+        static readonly string[] IntermediateActivityResults =
+        {
+            "INGREDIENTS ADDED  /  PERFECT 100  COMBO x1  /  NEXT: CIRCLE TO STIR",
+            "BATTER SPARKLING  /  PERFECT 100  COMBO x2  /  NEXT: HOLD TO BAKE",
+            "MOONCAKES BAKED  /  PERFECT 100  COMBO x3  /  NEXT: ZIG-ZAG TO DECORATE",
+            "STAR BALL THROWN  /  PERFECT 100  COMBO x1  /  NEXT: ZIG-ZAG CHASE",
+            "GREAT CHASE  /  PERFECT 100  COMBO x2  /  NEXT: SWIPE TO JUMP",
+            "MAGIC JUMP  /  PERFECT 100  COMBO x3  /  NEXT: TAP TO CATCH",
+            "MOONSEEDS PLANTED  /  PERFECT 100  COMBO x1  /  NEXT: CIRCLE TO WATER",
+            "DEW SPARKLING  /  PERFECT 100  COMBO x2  /  NEXT: ZIG-ZAG TO TEND",
+            "SPROUTS TENDED  /  PERFECT 100  COMBO x3  /  NEXT: HOLD TO BLOOM",
+            "STORY OPENED  /  PERFECT 100  COMBO x1  /  NEXT: SWIPE TO TURN",
+            "STAR PAGE TURNED  /  PERFECT 100  COMBO x2  /  NEXT: CIRCLE TO TRACE",
+            "CONSTELLATION TRACED  /  PERFECT 100  COMBO x3  /  NEXT: HOLD TO REMEMBER",
+            "SPA PREPARED  /  PERFECT 100  COMBO x1  /  NEXT: CIRCLE TO WASH",
+            "MOONLIGHT WASHED  /  PERFECT 100  COMBO x2  /  NEXT: SWIPE TO BRUSH",
+            "HAIR BRUSHED  /  PERFECT 100  COMBO x3  /  NEXT: HOLD TO GLOW"
+        };
+
+        static readonly string[] FinalActivityResults =
+        {
+            "MOONCAKES DECORATED  /  RUN PERFECT 100 x4  /  +5 WONDER  +8 WARMTH  +5 MAGIC  +20 HUNGER  +14 XP  +3 COINS",
+            "STAR BALL COMBO  /  RUN PERFECT 100 x4  /  +25 WONDER  +13 MAGIC  +32 XP  +5 COINS",
+            "MOON GARDEN BLOOMED  /  RUN PERFECT 100 x4  /  +16 WONDER  +12 MAGIC  +10 XP  +6 COINS",
+            "STORY REMEMBERED  /  RUN PERFECT 100 x4  /  +14 WONDER  +10 WARMTH  +6 REST  +12 XP  +5 COINS",
+            "MOON SPA COMPLETE  /  RUN PERFECT 100 x4  /  +18 WARMTH  +12 REST  +6 MAGIC  +12 XP  +5 COINS"
+        };
+
+        static readonly string[] NonFinalActivityResultEdgeCases =
+        {
+            null,
+            "ARBITRARY RESULT",
+            "MOONCAKES DECORATED",
+            "FED  /  +18 HUNGER  MOON SPA COMPLETE",
+            "STAR BALL COMBO  /  RUN  /  +5 COINS",
+            "MOON SPA COMPLETE  /  RUN PERFECT 100 x4  /  "
+        };
 
         public static MoonlightVisualQA Instance { get; private set; }
 
         static readonly List<MoonlightAnimator> MoonlightAnimatorQACandidates = new();
         static readonly List<MoonlightKidAnimator> MoonlightKidAnimatorQACandidates = new();
+
+        sealed class ContextResultVisibilityObservation
+        {
+            public bool Completed;
+            public bool FeedbackWasActiveAtStart;
+            public bool FeedbackEnded;
+            public bool ResultChangedDuringFeedback;
+            public bool ShowAfterFeedback;
+            public bool SawExpectedText;
+            public bool SawRemoval;
+            public string ObservedText = "";
+            public float FeedbackEndedAtSeconds;
+            public float ShownAtSeconds;
+            public float VisibleSeconds;
+        }
 
         Vector3 _lastLoggedPosition;
         float _lastMoveLogTime;
@@ -33,6 +92,112 @@ namespace MoonlightMagicHouse
                 return;
             }
             Instance = this;
+        }
+
+        public static bool ValidateActivityResultTimingContract(out string detail)
+        {
+            int intermediateCompletionCount = 0;
+            int intermediateDurationCount = 0;
+            for (int i = 0; i < IntermediateActivityResults.Length; i++)
+            {
+                string result = IntermediateActivityResults[i];
+                if (MoonlightUI.IsCompletionResult(result)) intermediateCompletionCount++;
+                if (Mathf.Approximately(MoonlightUI.ActivityResultDurationSeconds(result),
+                        MoonlightUI.IntermediateActivityResultDurationSeconds))
+                    intermediateDurationCount++;
+            }
+
+            int finalCompletionCount = 0;
+            int finalDurationCount = 0;
+            for (int i = 0; i < FinalActivityResults.Length; i++)
+            {
+                string result = FinalActivityResults[i];
+                if (MoonlightUI.IsCompletionResult(result)) finalCompletionCount++;
+                if (Mathf.Approximately(MoonlightUI.ActivityResultDurationSeconds(result),
+                        MoonlightUI.FinalActivityResultDurationSeconds))
+                    finalDurationCount++;
+            }
+
+            int edgeCaseNonFinalCount = 0;
+            int edgeCaseDurationCount = 0;
+            for (int i = 0; i < NonFinalActivityResultEdgeCases.Length; i++)
+            {
+                string result = NonFinalActivityResultEdgeCases[i];
+                if (!MoonlightUI.IsCompletionResult(result)) edgeCaseNonFinalCount++;
+                if (Mathf.Approximately(MoonlightUI.ActivityResultDurationSeconds(result),
+                        MoonlightUI.IntermediateActivityResultDurationSeconds))
+                    edgeCaseDurationCount++;
+            }
+
+            bool nonScoredResultsUnchanged =
+                !MoonlightUI.IsCompletionResult("FED  /  +18 HUNGER") &&
+                !MoonlightUI.IsCompletionResult("DREAMING  /  +20 REST") &&
+                !MoonlightUI.IsCompletionResult("CUDDLED  /  +20 WARMTH  +5 WONDER  +8 XP");
+            detail = $"intermediateCompletion={intermediateCompletionCount}/" +
+                $"{IntermediateActivityResults.Length} intermediate2.8s=" +
+                $"{intermediateDurationCount}/{IntermediateActivityResults.Length} " +
+                $"finalCompletion={finalCompletionCount}/{FinalActivityResults.Length} " +
+                $"final5.6s={finalDurationCount}/{FinalActivityResults.Length} " +
+                $"edgeNonFinal={edgeCaseNonFinalCount}/" +
+                $"{NonFinalActivityResultEdgeCases.Length} edge2.8s={edgeCaseDurationCount}/" +
+                $"{NonFinalActivityResultEdgeCases.Length} " +
+                $"nonScoredUnchanged={nonScoredResultsUnchanged}";
+            return IntermediateActivityResults.Length == 15 &&
+                intermediateCompletionCount == 0 && intermediateDurationCount == 15 &&
+                FinalActivityResults.Length == 5 && finalCompletionCount == 5 &&
+                finalDurationCount == 5 && NonFinalActivityResultEdgeCases.Length == 6 &&
+                edgeCaseNonFinalCount == 6 && edgeCaseDurationCount == 6 &&
+                nonScoredResultsUnchanged;
+        }
+
+        IEnumerator ObserveContextResultVisibility(MoonlightUI ui,
+            MoonlightActionFeedback feedback, int shownCountBeforeResult,
+            string expectedText, float expectedDuration,
+            ContextResultVisibilityObservation observation)
+        {
+            int targetShownCount = shownCountBeforeResult + 1;
+            observation.FeedbackWasActiveAtStart =
+                feedback != null && feedback.IsPerformingAction;
+            float feedbackDeadline = Time.time + 6f;
+            while (feedback != null && feedback.IsPerformingAction &&
+                   Time.time < feedbackDeadline)
+            {
+                if (ui.ContextResultShownCountForQA != shownCountBeforeResult ||
+                    !string.IsNullOrEmpty(ui.ContextResultQAText))
+                    observation.ResultChangedDuringFeedback = true;
+                yield return null;
+            }
+            observation.FeedbackEnded = feedback == null || !feedback.IsPerformingAction;
+            observation.FeedbackEndedAtSeconds = Time.time;
+
+            float shownDeadline = Time.time + 0.75f;
+            while (ui.ContextResultShownCountForQA < targetShownCount &&
+                   Time.time < shownDeadline)
+                yield return null;
+            observation.ObservedText = ui.ContextResultQAText;
+            observation.SawExpectedText =
+                ui.ContextResultShownCountForQA == targetShownCount &&
+                !string.IsNullOrEmpty(observation.ObservedText) &&
+                observation.ObservedText == ui.LastContextResultShownTextForQA &&
+                observation.ObservedText.Contains(expectedText,
+                    System.StringComparison.Ordinal);
+            observation.ShownAtSeconds =
+                ui.LastContextResultShownAtSecondsForQA;
+            const float showAfterFeedbackTolerance = 0.01f;
+            observation.ShowAfterFeedback = observation.SawExpectedText &&
+                observation.ShownAtSeconds >=
+                    observation.FeedbackEndedAtSeconds - showAfterFeedbackTolerance;
+
+            float hiddenDeadline = Time.time + expectedDuration + 0.75f;
+            while (ui.LastContextResultHiddenShownCountForQA < targetShownCount &&
+                   Time.time < hiddenDeadline)
+                yield return null;
+            observation.SawRemoval =
+                ui.LastContextResultHiddenShownCountForQA == targetShownCount &&
+                string.IsNullOrEmpty(ui.ContextResultQAText);
+            observation.VisibleSeconds =
+                ui.LastContextResultVisibleDurationSecondsForQA;
+            observation.Completed = true;
         }
 
         IEnumerator Start()
@@ -393,6 +558,16 @@ namespace MoonlightMagicHouse
                 Application.Quit(20);
                 yield break;
             }
+
+            if (!ValidateActivityResultTimingContract(out string resultTimingDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-result-timing " +
+                    resultTimingDetail);
+                Application.Quit(146);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] activity-result-timing " +
+                $"{resultTimingDetail} marker={ActivityResultTimingMarker}");
 
             if (!MoonlightActivityStage.ValidateSurfaceDepthContract(out string surfaceDepthDetail))
             {
@@ -1635,6 +1810,9 @@ namespace MoonlightMagicHouse
                     System.StringComparison.OrdinalIgnoreCase));
             int completedActivities = 0;
             int verifiedPersistentStations = 0;
+            int busyGestureProbeCount = 0;
+            bool verifiedIntermediateResultVisibility = false;
+            bool verifiedFinalResultVisibility = false;
             var verifiedVisualSignatures = new System.Collections.Generic.HashSet<string>();
 
             for (int activityIndex = 0; activityIndex < activityKinds.Length; activityIndex++)
@@ -1853,12 +2031,22 @@ namespace MoonlightMagicHouse
                     }
                     Vector3 acceptedActionPosition = controller.transform.position;
                     var acceptedActionZone = spatialInteractor.CurrentZone;
+                    int resultTimingSelectionBeforeAccepted = -1;
+                    int resultShownCountBeforeAccepted = -1;
                     int resetSequenceBeforeAcceptedAction = touchJoystick != null
                         ? touchJoystick.ResetSequence
                         : -1;
                     Vector2 liveHoldHeldInput = new(0.72f, 0.38f);
                     if (expectIPadHud)
                         touchJoystick.ArmHeldInputForQA(liveHoldHeldInput);
+                    bool finalResultStep = step == zone.RequiredSteps - 1;
+                    float expectedResultDuration = finalResultStep
+                        ? MoonlightUI.FinalActivityResultDurationSeconds
+                        : MoonlightUI.IntermediateActivityResultDurationSeconds;
+                    bool observeActualResultVisibility =
+                        zone.Kind == MoonlightSpatialActionKind.Cook &&
+                        (step == 0 || finalResultStep);
+                    ContextResultVisibilityObservation resultVisibilityObservation = null;
                     bool verifyThisLiveHold = verifyLiveHoldRuntime &&
                         zone.SupportsLiveHoldReadiness;
                     bool acceptedActionStarted;
@@ -2061,6 +2249,12 @@ namespace MoonlightMagicHouse
                             Vector3.Distance(controller.transform.position,
                                 movementLockStartPosition) <= 0.001f &&
                             spatialInteractor.CurrentZone == acceptedActionZone;
+                        resultTimingSelectionBeforeAccepted = ui != null
+                            ? ui.ContextResultDurationSelectionCountForQA
+                            : -1;
+                        resultShownCountBeforeAccepted = ui != null
+                            ? ui.ContextResultShownCountForQA
+                            : -1;
                         pad.OnPointerUp(liveHoldPointer);
                         bool releaseCleanupPass = !pad.IsContextGestureMovementLockHeld &&
                             !controller.IsContextGestureMovementLocked;
@@ -2089,12 +2283,49 @@ namespace MoonlightMagicHouse
                     }
                     else
                     {
+                        resultTimingSelectionBeforeAccepted = ui != null
+                            ? ui.ContextResultDurationSelectionCountForQA
+                            : -1;
+                        resultShownCountBeforeAccepted = ui != null
+                            ? ui.ContextResultShownCountForQA
+                            : -1;
                         acceptedActionStarted = pad.SubmitSynthetic(expected, 0.95f);
                     }
+                    var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
+                    if (observeActualResultVisibility)
+                    {
+                        string expectedVisibleText = finalResultStep
+                            ? "MOONCAKES DECORATED"
+                            : "INGREDIENTS ADDED";
+                        resultVisibilityObservation = new ContextResultVisibilityObservation();
+                        StartCoroutine(ObserveContextResultVisibility(ui, feedback,
+                            resultShownCountBeforeAccepted, expectedVisibleText,
+                            expectedResultDuration, resultVisibilityObservation));
+                    }
                     yield return new WaitForSeconds(0.08f);
+                    bool resultDisplayBoundaryPass = ui != null &&
+                        resultTimingSelectionBeforeAccepted >= 0 &&
+                        ui.ContextResultDurationSelectionCountForQA ==
+                            resultTimingSelectionBeforeAccepted + 1 &&
+                        Mathf.Approximately(ui.LastContextResultDurationSecondsForQA,
+                            expectedResultDuration);
+                    if (!resultDisplayBoundaryPass)
+                    {
+                        Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-result-display-boundary " +
+                            $"action={zone.Kind} step={step + 1}/{zone.RequiredSteps} " +
+                            $"duration={(ui != null ? ui.LastContextResultDurationSecondsForQA : -1f):0.0}/" +
+                            $"{expectedResultDuration:0.0}s selection=" +
+                            $"{(ui != null ? ui.ContextResultDurationSelectionCountForQA : -1)}/" +
+                            $"{resultTimingSelectionBeforeAccepted + 1}");
+                        Application.Quit(147);
+                        yield break;
+                    }
+                    Debug.Log($"[MoonlightGameplayQA][PASS] activity-result-display-boundary " +
+                        $"action={zone.Kind} step={step + 1}/{zone.RequiredSteps} " +
+                        $"duration={ui.LastContextResultDurationSecondsForQA:0.0}s " +
+                        $"marker={ActivityResultDisplayBoundaryMarker}");
                     expectedSessionScoreTotal += zone.LastGestureScore;
                     float expectedSessionAverage = expectedSessionScoreTotal / (step + 1f);
-                    var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
                     if (zone.Kind == MoonlightSpatialActionKind.Care)
                     {
                         string expectedCareCue = MoonlightSpatialActionZone.CareCueForStep(step);
@@ -2181,9 +2412,11 @@ namespace MoonlightMagicHouse
                         Application.Quit(83);
                         yield break;
                     }
+                    busyGestureProbeCount++;
                     Debug.Log($"[MoonlightGameplayQA][PASS] busy-gesture action={zone.Kind} " +
                         $"step={step + 1} reason=\"{pad.LastRejectionReason}\" " +
                         $"heldMovementRetained={busyMovementRetained} " +
+                        $"count={busyGestureProbeCount}/20 " +
                         "marker=MOONLIGHT_BUSY_GESTURE_REJECTED");
                     if (exerciseBusyMovementRetention)
                         touchJoystick.ClearInputForQA();
@@ -3309,6 +3542,53 @@ namespace MoonlightMagicHouse
                         Application.Quit(38);
                         yield break;
                     }
+                    if (resultVisibilityObservation != null)
+                    {
+                        float observationDeadline = Time.time + expectedResultDuration + 1f;
+                        while (!resultVisibilityObservation.Completed &&
+                               Time.time < observationDeadline)
+                            yield return null;
+                        const float visibleDurationTolerance = 0.20f;
+                        bool visibleIntervalPass = resultVisibilityObservation.Completed &&
+                            resultVisibilityObservation.FeedbackWasActiveAtStart &&
+                            resultVisibilityObservation.FeedbackEnded &&
+                            !resultVisibilityObservation.ResultChangedDuringFeedback &&
+                            resultVisibilityObservation.ShowAfterFeedback &&
+                            resultVisibilityObservation.SawExpectedText &&
+                            resultVisibilityObservation.SawRemoval &&
+                            Mathf.Abs(resultVisibilityObservation.VisibleSeconds -
+                                expectedResultDuration) <= visibleDurationTolerance;
+                        if (!visibleIntervalPass)
+                        {
+                            Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-result-visible-interval " +
+                                $"action={zone.Kind} step={step + 1}/{zone.RequiredSteps} " +
+                                $"feedbackActiveAtStart=" +
+                                $"{resultVisibilityObservation.FeedbackWasActiveAtStart} " +
+                                $"feedbackEnded={resultVisibilityObservation.FeedbackEnded} " +
+                                $"premature={resultVisibilityObservation.ResultChangedDuringFeedback} " +
+                                $"showAfterFeedback={resultVisibilityObservation.ShowAfterFeedback} " +
+                                $"timestamps={resultVisibilityObservation.FeedbackEndedAtSeconds:0.000}/" +
+                                $"{resultVisibilityObservation.ShownAtSeconds:0.000} " +
+                                $"text=\"{resultVisibilityObservation.ObservedText.Replace('\n', '/')}\" " +
+                                $"expectedText={resultVisibilityObservation.SawExpectedText} " +
+                                $"removed={resultVisibilityObservation.SawRemoval} duration=" +
+                                $"{resultVisibilityObservation.VisibleSeconds:0.000}/" +
+                                $"{expectedResultDuration:0.000}+/-{visibleDurationTolerance:0.00}s");
+                            Application.Quit(149);
+                            yield break;
+                        }
+                        if (finalResultStep)
+                            verifiedFinalResultVisibility = true;
+                        else
+                            verifiedIntermediateResultVisibility = true;
+                        Debug.Log($"[MoonlightGameplayQA][PASS] activity-result-visible-interval " +
+                            $"action={zone.Kind} step={step + 1}/{zone.RequiredSteps} " +
+                            $"text=\"{resultVisibilityObservation.ObservedText.Replace('\n', '/')}\" " +
+                            $"feedbackEnd={resultVisibilityObservation.FeedbackEndedAtSeconds:0.000}s " +
+                            $"shownAt={resultVisibilityObservation.ShownAtSeconds:0.000}s " +
+                            $"duration={resultVisibilityObservation.VisibleSeconds:0.000}s " +
+                            $"marker={ActivityResultVisibleIntervalMarker}");
+                    }
                 }
 
                 if (zone.ProgressStep != 0)
@@ -3533,12 +3813,16 @@ namespace MoonlightMagicHouse
                     $"marker=MOONLIGHT_IPAD_CONTEXT_GESTURE_MOVEMENT_LOCK_6_OF_6_VERIFIED");
 
             if (completedActivities != 5 || verifiedPersistentStations != 5 ||
-                verifiedVisualSignatures.Count != 20)
+                verifiedVisualSignatures.Count != 20 || busyGestureProbeCount != 20 ||
+                !verifiedIntermediateResultVisibility || !verifiedFinalResultVisibility)
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] scored-activity-matrix " +
                     $"completedActivities={completedActivities}/5 " +
                     $"persistentStations={verifiedPersistentStations}/5 " +
-                    $"signatures={verifiedVisualSignatures.Count}/20");
+                    $"signatures={verifiedVisualSignatures.Count}/20 " +
+                    $"busyProbes={busyGestureProbeCount}/20 " +
+                    $"visibleIntervals={verifiedIntermediateResultVisibility}/" +
+                    $"{verifiedFinalResultVisibility}");
                 Application.Quit(101);
                 yield break;
             }
@@ -3546,6 +3830,9 @@ namespace MoonlightMagicHouse
                 $"completedActivities={completedActivities}/5 " +
                 $"persistentStations={verifiedPersistentStations}/5 " +
                 $"signatures={verifiedVisualSignatures.Count}/20 " +
+                $"busyProbes={busyGestureProbeCount}/20 " +
+                $"visibleIntervals={verifiedIntermediateResultVisibility}/" +
+                $"{verifiedFinalResultVisibility} " +
                 "marker=MOONLIGHT_FIVE_ACTIVITY_MATRIX_VERIFIED");
             if (audio.CuePlayCount < 23)
             {

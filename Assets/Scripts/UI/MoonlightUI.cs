@@ -113,6 +113,15 @@ namespace MoonlightMagicHouse
         }
         public bool VisibleTMPHUDLabelsActive =>
             VisibleTMPHUDLabelCount == RequiredVisibleTMPHUDLabelCount;
+        public float LastContextResultDurationSecondsForQA { get; private set; }
+        public int ContextResultDurationSelectionCountForQA { get; private set; }
+        public string LastContextResultShownTextForQA { get; private set; } = "";
+        public float LastContextResultShownAtSecondsForQA { get; private set; }
+        public float LastContextResultHiddenAtSecondsForQA { get; private set; }
+        public float LastContextResultVisibleDurationSecondsForQA { get; private set; }
+        public int ContextResultShownCountForQA { get; private set; }
+        public int ContextResultHiddenCountForQA { get; private set; }
+        public int LastContextResultHiddenShownCountForQA { get; private set; }
         public bool VisibleTMPHUDLabelsInsideSafeArea
         {
             get
@@ -473,7 +482,7 @@ namespace MoonlightMagicHouse
                 ? moonlight.GetComponent<MoonlightSpatialInteractor>()
                 : null;
             _resultZone = interactor != null ? interactor.CurrentZone : null;
-            resultLabel.text = "";
+            RemoveContextResultText();
             _resultRoutine = StartCoroutine(ShowContextResultAfterAction(text));
         }
 
@@ -1573,6 +1582,9 @@ namespace MoonlightMagicHouse
 
         IEnumerator ShowContextResultAfterAction(string text)
         {
+            float resultDuration = ActivityResultDurationSeconds(text);
+            LastContextResultDurationSecondsForQA = resultDuration;
+            ContextResultDurationSelectionCountForQA++;
             var moonlight = MoonlightGameManager.Instance?.moonlight;
             var feedback = moonlight != null
                 ? moonlight.GetComponent<MoonlightActionFeedback>()
@@ -1590,8 +1602,11 @@ namespace MoonlightMagicHouse
             {
                 resultLabel.text = _iPadLayoutActive ? FormatIPadResult(text) : text;
                 resultLabel.ForceMeshUpdate();
+                LastContextResultShownTextForQA = resultLabel.text;
+                LastContextResultShownAtSecondsForQA = Time.time;
+                ContextResultShownCountForQA++;
             }
-            float visibleUntil = Time.time + (IsCompletionResult(text) ? 5.6f : 2.8f);
+            float visibleUntil = Time.time + resultDuration;
             while (Time.time < visibleUntil && ResultZoneStillCurrent())
                 yield return null;
             ClearContextResult();
@@ -1612,14 +1627,34 @@ namespace MoonlightMagicHouse
             return $"{firstLine}\n{secondLine}";
         }
 
-        static bool IsCompletionResult(string text)
+        public const float IntermediateActivityResultDurationSeconds = 2.8f;
+        public const float FinalActivityResultDurationSeconds = 5.6f;
+
+        public static float ActivityResultDurationSeconds(string text) =>
+            IsCompletionResult(text)
+                ? FinalActivityResultDurationSeconds
+                : IntermediateActivityResultDurationSeconds;
+
+        public static bool IsCompletionResult(string text)
         {
             if (string.IsNullOrEmpty(text)) return false;
-            return text.Contains("DECORATED", StringComparison.Ordinal) ||
-                text.Contains("COMBO", StringComparison.Ordinal) ||
-                text.Contains("BLOOMED", StringComparison.Ordinal) ||
-                text.Contains("REMEMBERED", StringComparison.Ordinal) ||
-                text.Contains("MOON SPA COMPLETE", StringComparison.Ordinal);
+            return IsFinalActivityReceipt(text, "MOONCAKES DECORATED") ||
+                IsFinalActivityReceipt(text, "STAR BALL COMBO") ||
+                IsFinalActivityReceipt(text, "MOON GARDEN BLOOMED") ||
+                IsFinalActivityReceipt(text, "STORY REMEMBERED") ||
+                IsFinalActivityReceipt(text, "MOON SPA COMPLETE");
+        }
+
+        static bool IsFinalActivityReceipt(string text, string resultTitle)
+        {
+            const string separator = "  /  ";
+            string prefix = resultTitle + separator + "RUN ";
+            if (!text.StartsWith(prefix, StringComparison.Ordinal)) return false;
+
+            int rewardSeparator = text.IndexOf(separator, prefix.Length,
+                StringComparison.Ordinal);
+            return rewardSeparator > prefix.Length &&
+                rewardSeparator + separator.Length < text.Length;
         }
 
         bool ResultZoneStillCurrent()
@@ -1634,9 +1669,24 @@ namespace MoonlightMagicHouse
 
         void ClearContextResult()
         {
-            if (resultLabel != null) resultLabel.text = "";
+            RemoveContextResultText();
             _resultZone = null;
             _resultRoutine = null;
+        }
+
+        void RemoveContextResultText()
+        {
+            if (resultLabel == null) return;
+            if (!string.IsNullOrEmpty(resultLabel.text))
+            {
+                LastContextResultHiddenAtSecondsForQA = Time.time;
+                LastContextResultVisibleDurationSecondsForQA =
+                    LastContextResultHiddenAtSecondsForQA -
+                    LastContextResultShownAtSecondsForQA;
+                ContextResultHiddenCountForQA++;
+                LastContextResultHiddenShownCountForQA = ContextResultShownCountForQA;
+            }
+            resultLabel.text = "";
         }
     }
 }
