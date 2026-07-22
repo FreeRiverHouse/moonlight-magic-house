@@ -781,16 +781,37 @@ namespace MoonlightMagicHouse
                         $"action={expectedKind} visible={ui.IsIPadNavigationCueVisible} " +
                         $"marker={ui.NavigationCueQAMarker}");
                 int startStep = zone.ProgressStep;
-                pad.SubmitSynthetic(zone.RequiredGesture, 0.20f);
+                Vector2 rejectedHeldInput = new(0.58f, -0.44f);
+                int resetSequenceBeforeRejectedAction = touchJoystick != null
+                    ? touchJoystick.ResetSequence
+                    : -1;
+                if (expectIPadHud)
+                    touchJoystick.ArmHeldInputForQA(rejectedHeldInput);
+                bool lowScoreAccepted = pad.SubmitSynthetic(zone.RequiredGesture, 0.20f);
                 yield return new WaitForSeconds(0.15f);
-                if (zone.ProgressStep != startStep || zone.LastGesturePassed || audio.LastCueKey != "activity-try-again")
+                bool rejectedMovementRetained = !expectIPadHud ||
+                    (touchJoystick.ResetSequence == resetSequenceBeforeRejectedAction &&
+                     touchJoystick.IsTrackingPointer &&
+                     Vector2.Distance(touchJoystick.Value, rejectedHeldInput) <= 0.0001f &&
+                     touchJoystick.KnobAnchoredPosition.sqrMagnitude > 0.0001f &&
+                     Vector2.Distance(controller.TouchMove, rejectedHeldInput) <= 0.0001f);
+                if (lowScoreAccepted || zone.ProgressStep != startStep || zone.LastGesturePassed ||
+                    audio.LastCueKey != "activity-try-again" || !rejectedMovementRetained)
                 {
                     Debug.LogError($"[MoonlightGameplayQA][FAIL] fail-gesture advanced action={zone.Kind} " +
-                        $"step={zone.ProgressStep} cue={audio.LastCueKey}");
+                        $"accepted={lowScoreAccepted} step={zone.ProgressStep} cue={audio.LastCueKey} " +
+                        $"retained={rejectedMovementRetained} " +
+                        $"tracking={(touchJoystick != null && touchJoystick.IsTrackingPointer)} " +
+                        $"value={(touchJoystick != null ? touchJoystick.Value : Vector2.zero):F3} " +
+                        $"controller={controller.TouchMove:F3}");
                     Application.Quit(24);
                     yield break;
                 }
-                Debug.Log($"[MoonlightGameplayQA][PASS] fail-gesture action={zone.Kind} score={zone.LastGestureScore:0.00}");
+                Debug.Log($"[MoonlightGameplayQA][PASS] fail-gesture action={zone.Kind} " +
+                    $"score={zone.LastGestureScore:0.00} heldMovementRetained={rejectedMovementRetained} " +
+                    "marker=MOONLIGHT_REJECTED_ACTIVITY_MOVEMENT_RETAINED");
+                if (expectIPadHud)
+                    touchJoystick.ClearInputForQA();
 
                 for (int step = 0; step < zone.RequiredSteps; step++)
                 {
@@ -827,8 +848,48 @@ namespace MoonlightMagicHouse
                             $"fill={ui.ActivityProgressFill01:0.000} " +
                             $"gesture=\"{ui.GestureCommandQAMarker}\"");
                     }
-                    pad.SubmitSynthetic(expected, 0.95f);
+                    Vector3 acceptedActionPosition = controller.transform.position;
+                    var acceptedActionZone = spatialInteractor.CurrentZone;
+                    int resetSequenceBeforeAcceptedAction = touchJoystick != null
+                        ? touchJoystick.ResetSequence
+                        : -1;
+                    if (expectIPadHud)
+                        touchJoystick.ArmHeldInputForQA(new Vector2(0.72f, 0.38f));
+                    bool acceptedActionStarted = pad.SubmitSynthetic(expected, 0.95f);
                     yield return new WaitForSeconds(0.08f);
+                    var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
+                    if (expectIPadHud)
+                    {
+                        bool acceptedMovementNeutralized = acceptedActionStarted &&
+                            feedback != null && feedback.IsPerformingAction &&
+                            touchJoystick.ResetSequence == resetSequenceBeforeAcceptedAction + 1 &&
+                            touchJoystick.LastResetReason == "activity-accepted" &&
+                            touchJoystick.ActivityMovementNeutralizationQAMarker ==
+                                "MOONLIGHT_IPAD_ACTIVITY_MOVEMENT_NEUTRALIZED" &&
+                            touchJoystick.IsInputNeutral && !touchJoystick.IsTrackingPointer &&
+                            touchJoystick.Value.sqrMagnitude <= 0.0001f &&
+                            touchJoystick.KnobAnchoredPosition.sqrMagnitude <= 0.0001f &&
+                            controller.TouchMove.sqrMagnitude <= 0.0001f;
+                        if (!acceptedMovementNeutralized)
+                        {
+                            Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-movement-neutralized " +
+                                $"action={zone.Kind} step={step + 1} accepted={acceptedActionStarted} " +
+                                $"performing={(feedback != null && feedback.IsPerformingAction)} " +
+                                $"reset={touchJoystick.ResetSequence}/" +
+                                $"{resetSequenceBeforeAcceptedAction + 1} " +
+                                $"reason={touchJoystick.LastResetReason} tracking={touchJoystick.IsTrackingPointer} " +
+                                $"value={touchJoystick.Value:F3} knob={touchJoystick.KnobAnchoredPosition:F2} " +
+                                $"controller={controller.TouchMove:F3} " +
+                                $"marker={touchJoystick.ActivityMovementNeutralizationQAMarker}");
+                            Application.Quit(81);
+                            yield break;
+                        }
+                        Debug.Log($"[MoonlightGameplayQA][PASS] activity-movement-neutralized " +
+                            $"action={zone.Kind} step={step + 1} pointerReleased={!touchJoystick.IsTrackingPointer} " +
+                            $"value={touchJoystick.Value:F3} knob={touchJoystick.KnobAnchoredPosition:F2} " +
+                            $"controller={controller.TouchMove:F3} " +
+                            "marker=MOONLIGHT_IPAD_ACTIVITY_MOVEMENT_NEUTRALIZED");
+                    }
                     int acceptedProgress = zone.ProgressStep;
                     float inFlightProgressFill = ui != null ? ui.ActivityProgressFill01 : 0f;
                     float completedFill = step / (float)zone.RequiredSteps;
@@ -836,22 +897,41 @@ namespace MoonlightMagicHouse
                     bool inFlightFillPass = !expectIPadHud || ui == null ||
                         (inFlightProgressFill > completedFill &&
                          inFlightProgressFill < stepCeiling);
+                    int resetSequenceBeforeBusyAction = touchJoystick != null
+                        ? touchJoystick.ResetSequence
+                        : -1;
+                    Vector2 busyHeldInput = new(-0.64f, 0.42f);
+                    bool exerciseBusyMovementRetention = expectIPadHud && step > 0;
+                    if (exerciseBusyMovementRetention)
+                        touchJoystick.ArmHeldInputForQA(busyHeldInput);
                     bool acceptedWhileBusy = pad.SubmitSynthetic(expected, 0.95f);
+                    bool busyMovementRetained = !exerciseBusyMovementRetention ||
+                        (touchJoystick.ResetSequence == resetSequenceBeforeBusyAction &&
+                         touchJoystick.IsTrackingPointer &&
+                         Vector2.Distance(touchJoystick.Value, busyHeldInput) <= 0.0001f &&
+                         touchJoystick.KnobAnchoredPosition.sqrMagnitude > 0.0001f &&
+                         Vector2.Distance(controller.TouchMove, busyHeldInput) <= 0.0001f);
                     if (acceptedWhileBusy || !inFlightFillPass ||
                         zone.ProgressStep != acceptedProgress ||
-                        string.IsNullOrEmpty(pad.LastRejectionReason))
+                        string.IsNullOrEmpty(pad.LastRejectionReason) || !busyMovementRetained)
                     {
                         Debug.LogError($"[MoonlightGameplayQA][FAIL] busy-gesture action={zone.Kind} " +
                             $"step={step + 1} accepted={acceptedWhileBusy} progress={zone.ProgressStep} " +
                             $"fill={inFlightProgressFill:0.000} range={completedFill:0.000}-" +
                             $"{stepCeiling:0.000} " +
-                            $"reason=\"{pad.LastRejectionReason}\"");
-                        Application.Quit(54);
+                            $"reason=\"{pad.LastRejectionReason}\" retained={busyMovementRetained} " +
+                            $"tracking={(touchJoystick != null && touchJoystick.IsTrackingPointer)} " +
+                            $"value={(touchJoystick != null ? touchJoystick.Value : Vector2.zero):F3} " +
+                            $"controller={controller.TouchMove:F3}");
+                        Application.Quit(83);
                         yield break;
                     }
                     Debug.Log($"[MoonlightGameplayQA][PASS] busy-gesture action={zone.Kind} " +
                         $"step={step + 1} reason=\"{pad.LastRejectionReason}\" " +
+                        $"heldMovementRetained={busyMovementRetained} " +
                         "marker=MOONLIGHT_BUSY_GESTURE_REJECTED");
+                    if (exerciseBusyMovementRetention)
+                        touchJoystick.ClearInputForQA();
                     bool finalMasteryStep = step == zone.RequiredSteps - 1;
                     bool masteryStatePass = finalMasteryStep
                         ? zone.ActivitySessionAcceptedSteps == 0 &&
@@ -894,7 +974,7 @@ namespace MoonlightMagicHouse
                     if (expectIPadHud && ui != null)
                         Debug.Log($"[MoonlightGameplayQA][PASS] activity-room-navigation action={zone.Kind} " +
                             $"step={step + 1} marker={ui.RoomNavigationQAMarker}");
-                    var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
+                    feedback = moonlight.GetComponent<MoonlightActionFeedback>();
                     if (zone.Kind is MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
                         MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read)
                     {
@@ -1464,6 +1544,33 @@ namespace MoonlightMagicHouse
                            Time.time < deadline)
                         yield return null;
                     yield return new WaitForSeconds(0.12f);
+                    if (expectIPadHud)
+                    {
+                        float postCooldownDrift = Vector3.Distance(
+                            controller.transform.position, acceptedActionPosition);
+                        bool stableAfterCooldown = touchJoystick.IsInputNeutral &&
+                            !touchJoystick.IsTrackingPointer &&
+                            touchJoystick.Value.sqrMagnitude <= 0.0001f &&
+                            touchJoystick.KnobAnchoredPosition.sqrMagnitude <= 0.0001f &&
+                            controller.TouchMove.sqrMagnitude <= 0.0001f &&
+                            postCooldownDrift <= 0.001f &&
+                            spatialInteractor.CurrentZone == acceptedActionZone;
+                        if (!stableAfterCooldown)
+                        {
+                            Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-movement-post-cooldown " +
+                                $"action={zone.Kind} step={step + 1} drift={postCooldownDrift:0.0000} " +
+                                $"zone={spatialInteractor.CurrentZone?.DisplayName}/" +
+                                $"{acceptedActionZone?.DisplayName} tracking={touchJoystick.IsTrackingPointer} " +
+                                $"value={touchJoystick.Value:F3} knob={touchJoystick.KnobAnchoredPosition:F2} " +
+                                $"controller={controller.TouchMove:F3}");
+                            Application.Quit(82);
+                            yield break;
+                        }
+                        Debug.Log($"[MoonlightGameplayQA][PASS] activity-movement-post-cooldown " +
+                            $"action={zone.Kind} step={step + 1} drift={postCooldownDrift:0.0000} " +
+                            $"zone={spatialInteractor.CurrentZone.DisplayName} " +
+                            "marker=MOONLIGHT_IPAD_ACTIVITY_MOVEMENT_NEUTRALIZED");
+                    }
                     var releasedCamera = Camera.main != null
                         ? Camera.main.GetComponent<CameraController>()
                         : null;

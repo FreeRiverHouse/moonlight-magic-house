@@ -31,6 +31,16 @@ namespace MoonlightMagicHouse
         public float ResponseExponent => responseExponent;
         public float Radius => radius;
         public Vector2 TouchTargetSize => _rect != null ? _rect.rect.size : Vector2.zero;
+        public Vector2 KnobAnchoredPosition => knob != null ? knob.anchoredPosition : Vector2.zero;
+        public int ResetSequence { get; private set; }
+        public string LastResetReason { get; private set; } = "";
+        public bool IsInputNeutral => !IsTrackingPointer && _value.sqrMagnitude <= 0.0001f &&
+            KnobAnchoredPosition.sqrMagnitude <= 0.0001f &&
+            (_controller == null || _controller.TouchMove.sqrMagnitude <= 0.0001f);
+        public string ActivityMovementNeutralizationQAMarker =>
+            LastResetReason == "activity-accepted" && IsInputNeutral
+                ? "MOONLIGHT_IPAD_ACTIVITY_MOVEMENT_NEUTRALIZED"
+                : "MOONLIGHT_IPAD_ACTIVITY_MOVEMENT_NOT_NEUTRALIZED";
         public string ResponseQAMarker => radius >= 70f && deadZone >= 0.08f && deadZone <= 0.16f &&
             movementFloor >= 0.12f && movementFloor <= 0.18f && responseExponent < 1f &&
             TouchTargetSize.x >= 160f && TouchTargetSize.y >= 160f
@@ -59,6 +69,26 @@ namespace MoonlightMagicHouse
         {
             _controller = controller;
         }
+
+        public void ReleaseForAcceptedActivity()
+        {
+            EnsureController();
+            ResetInput("activity-accepted");
+        }
+
+        public void ArmHeldInputForQA(Vector2 value)
+        {
+            EnsureController();
+            value = Vector2.ClampMagnitude(value, 1f);
+            if (value.sqrMagnitude <= 0.0001f) value = Vector2.right * 0.75f;
+            _activePointer = int.MaxValue;
+            _value = value;
+            if (knob != null) knob.anchoredPosition = value * radius;
+            SetVisualState(true, value.magnitude);
+            _controller?.SetTouchMove(value);
+        }
+
+        public void ClearInputForQA() => ResetInput("qa-cleanup");
 
         public void OnPointerDown(PointerEventData eventData)
         {
@@ -113,8 +143,16 @@ namespace MoonlightMagicHouse
             if (knob) knob.anchoredPosition = Vector2.zero;
             SetVisualState(false, 0f);
             _controller?.SetTouchMove(Vector2.zero);
+            LastResetReason = reason;
+            ResetSequence++;
             if (hadInput)
                 Debug.Log($"[MoonlightNavigationQA] joystick-reset reason={reason}");
+        }
+
+        void EnsureController()
+        {
+            if (_controller == null)
+                _controller = FindAnyObjectByType<MoonlightPlayerController>();
         }
 
         void SetVisualState(bool active, float magnitude)

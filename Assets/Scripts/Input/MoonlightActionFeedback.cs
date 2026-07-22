@@ -27,6 +27,7 @@ namespace MoonlightMagicHouse
         Texture2D _particleTexture;
         MoonlightActivityStage _activityStage;
         CameraController _cameraController;
+        MoonlightTouchJoystick _touchJoystick;
         Vector3 _cameraFocusAnchor;
         Vector3 _actionContactPoint;
         Vector3 _actionPresentationDirection;
@@ -133,6 +134,13 @@ namespace MoonlightMagicHouse
                     $"reason=\"{InputBlockReason}\" remaining={CooldownRemaining:0.00}s");
                 return false;
             }
+
+            if (_touchJoystick == null)
+                _touchJoystick = FindAnyObjectByType<MoonlightTouchJoystick>();
+            if (_touchJoystick != null)
+                _touchJoystick.ReleaseForAcceptedActivity();
+            else
+                GetComponent<MoonlightPlayerController>()?.SetTouchMove(Vector2.zero);
 
             if (_cameraHoldRoutine != null)
             {
