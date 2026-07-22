@@ -9,6 +9,9 @@ namespace MoonlightMagicHouse
         public MoonlightSpatialActionZone NearestZone { get; private set; }
         public float CurrentDistance { get; private set; }
         public float NearestDistance { get; private set; } = float.MaxValue;
+        public Vector2 NearestZoneDirectionXZ { get; private set; }
+        public bool HasNavigationTarget => NearestZone != null && CurrentZone == null &&
+            NearestZoneDirectionXZ.sqrMagnitude > 0.999f;
 
         MoonlightCharacter _moonlight;
         MoonlightSpatialActionZone[] _zones;
@@ -80,6 +83,7 @@ namespace MoonlightMagicHouse
                 NearestZone = null;
                 CurrentDistance = float.MaxValue;
                 NearestDistance = float.MaxValue;
+                NearestZoneDirectionXZ = Vector2.zero;
                 return;
             }
             foreach (var zone in _zones)
@@ -99,6 +103,15 @@ namespace MoonlightMagicHouse
             NearestDistance = nearestDistance;
             CurrentZone = nearest != null && nearestDistance <= nearest.Radius ? nearest : null;
             CurrentDistance = CurrentZone != null ? nearestDistance : float.MaxValue;
+            if (nearest != null && nearestDistance > Mathf.Epsilon)
+            {
+                Vector3 offset = nearest.transform.position - transform.position;
+                NearestZoneDirectionXZ = new Vector2(offset.x, offset.z).normalized;
+            }
+            else
+            {
+                NearestZoneDirectionXZ = Vector2.zero;
+            }
         }
     }
 }

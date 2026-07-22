@@ -3118,8 +3118,15 @@ namespace MoonlightMagicHouse
             if (legacyActionText) legacyActionText.enabled = false;
             var actionBtnLabel = MakeTMPButtonLabel("ActionBtnLabel", actionBtn.transform, "ACTION", 24, Color.white);
 
+            bool useIPadLayout = MoonlightUI.ShouldUseIPadLayout();
             var joystick = MakeJoystick(btnPanel.transform);
-            joystick.gameObject.SetActive(MoonlightUI.ShouldUseIPadLayout());
+            joystick.gameObject.SetActive(useIPadLayout);
+            RectTransform navigationCueRoot = null;
+            RectTransform navigationChevron = null;
+            TMP_Text navigationLabel = null;
+            if (useIPadLayout)
+                (navigationCueRoot, navigationChevron, navigationLabel) =
+                    MakeIPadNavigationCue(btnPanel.transform);
 
             // Visual feedback: particle bursts on button click (finds Moonlight by name at click time)
             AttachBurst(feedBtn,   new Color(1.0f, 0.75f, 0.35f), 14);
@@ -3194,6 +3201,8 @@ namespace MoonlightMagicHouse
                 offlinePanel, sleepOvr,
                 feedMenu, contentGO.transform);
             ui.WireSpatialAction(actionBtn, actionBtnLabel, contextLabel, resultLabel);
+            ui.WireIPadNavigationCue(navigationCueRoot, navigationChevron, navigationLabel,
+                joystick.transform as RectTransform);
             joystick.Bind(FindAnyObjectByType<MoonlightPlayerController>());
             Debug.Log($"[MoonlightHUDQA] touch-joystick visible={joystick.gameObject.activeSelf} " +
                 $"marker={(joystick.gameObject.activeSelf ? "ipad-touch-navigation" : "desktop-keyboard-navigation")}");
@@ -3612,6 +3621,70 @@ namespace MoonlightMagicHouse
 
             var joystick = root.AddComponent<MoonlightTouchJoystick>();
             return joystick;
+        }
+
+        static (RectTransform root, RectTransform chevron, TMP_Text label)
+            MakeIPadNavigationCue(Transform parent)
+        {
+            var rootObject = new GameObject("IPadNavigationCue", typeof(RectTransform),
+                typeof(CanvasGroup));
+            rootObject.transform.SetParent(parent, false);
+            var root = rootObject.GetComponent<RectTransform>();
+            root.anchorMin = Vector2.zero;
+            root.anchorMax = Vector2.zero;
+            root.pivot = new Vector2(0.5f, 0.5f);
+            root.anchoredPosition = new Vector2(350f, 112f);
+            root.sizeDelta = new Vector2(196f, 104f);
+            var group = rootObject.GetComponent<CanvasGroup>();
+            group.interactable = false;
+            group.blocksRaycasts = false;
+
+            var chevronObject = new GameObject("DirectionChevron", typeof(RectTransform));
+            chevronObject.transform.SetParent(root, false);
+            var chevron = chevronObject.GetComponent<RectTransform>();
+            chevron.anchorMin = new Vector2(0.5f, 0.5f);
+            chevron.anchorMax = new Vector2(0.5f, 0.5f);
+            chevron.pivot = new Vector2(0.5f, 0.5f);
+            chevron.anchoredPosition = new Vector2(0f, 25f);
+            chevron.sizeDelta = new Vector2(48f, 36f);
+
+            MakeChevronStroke("LeftStroke", chevron, new Vector2(-8f, 1f), 40f);
+            MakeChevronStroke("RightStroke", chevron, new Vector2(8f, 1f), -40f);
+
+            var label = MakeTMPLabel("NavigationTargetLabel", root,
+                new Vector2(0f, -23f), new Vector2(196f, 48f), "", 18f, Color.white);
+            label.fontStyle = FontStyles.Bold;
+            label.alignment = TextAlignmentOptions.Center;
+            label.enableAutoSizing = true;
+            label.fontSizeMin = 13f;
+            label.fontSizeMax = 18f;
+            label.enableWordWrapping = false;
+            label.overflowMode = TextOverflowModes.Ellipsis;
+            label.characterSpacing = 0f;
+            label.raycastTarget = false;
+            var shadow = label.gameObject.AddComponent<Shadow>();
+            shadow.effectColor = new Color(0.03f, 0.04f, 0.06f, 0.92f);
+            shadow.effectDistance = new Vector2(1.5f, -1.5f);
+            shadow.useGraphicAlpha = true;
+
+            rootObject.SetActive(false);
+            return (root, chevron, label);
+        }
+
+        static void MakeChevronStroke(string name, Transform parent, Vector2 position, float angle)
+        {
+            var strokeObject = new GameObject(name);
+            strokeObject.transform.SetParent(parent, false);
+            var image = strokeObject.AddComponent<Image>();
+            image.color = new Color(0.42f, 0.86f, 1f, 0.96f);
+            image.raycastTarget = false;
+            var rect = strokeObject.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0.5f, 0.5f);
+            rect.anchorMax = new Vector2(0.5f, 0.5f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            rect.anchoredPosition = position;
+            rect.sizeDelta = new Vector2(26f, 6f);
+            rect.localRotation = Quaternion.Euler(0f, 0f, angle);
         }
 
         static void AttachBurst(Button btn, Color color, int count)

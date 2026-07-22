@@ -65,6 +65,10 @@ namespace MoonlightMagicHouse
         TMP_Text _iPadProgressLabel;
         Image _iPadProgressFill;
         GameObject _iPadProgressRoot;
+        RectTransform _iPadNavigationCueRoot;
+        RectTransform _iPadNavigationChevron;
+        TMP_Text _iPadNavigationLabel;
+        RectTransform _iPadJoystickRect;
         MoonlightGesturePad _gesturePad;
         bool _iPadLayoutActive;
         bool _roomNavigationLocked;
@@ -102,6 +106,48 @@ namespace MoonlightMagicHouse
             _iPadProgressRoot != null && _iPadProgressRoot.activeSelf
                 ? "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_READY"
                 : "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_HIDDEN";
+        public bool IsIPadNavigationCueVisible => _iPadNavigationCueRoot != null &&
+            _iPadNavigationCueRoot.gameObject.activeSelf;
+        public float NavigationCueAngleDegrees { get; private set; }
+        public Vector2 NavigationCueCameraRelativeDirection { get; private set; }
+        public string NavigationCueTargetName { get; private set; } = "";
+        public float NavigationCueTargetDistance { get; private set; } = float.MaxValue;
+        public float NavigationCueVisualAngleDegrees => _iPadNavigationChevron != null
+            ? Mathf.DeltaAngle(0f, _iPadNavigationChevron.localEulerAngles.z)
+            : float.NaN;
+        public Rect NavigationCueScreenRect => ScreenRect(_iPadNavigationCueRoot);
+        public Rect JoystickScreenRect => ScreenRect(_iPadJoystickRect);
+        public bool NavigationCueIsInsideSafeArea => ContainsRect(Screen.safeArea, NavigationCueScreenRect);
+        public bool NavigationCueDoesNotOverlapJoystick =>
+            !OverlapsWithPadding(NavigationCueScreenRect, JoystickScreenRect, 8f);
+        public bool NavigationCueGraphicsDoNotBlockRaycasts
+        {
+            get
+            {
+                if (_iPadNavigationCueRoot == null) return false;
+                foreach (var graphic in _iPadNavigationCueRoot.GetComponentsInChildren<Graphic>(true))
+                    if (graphic.raycastTarget) return false;
+                var group = _iPadNavigationCueRoot.GetComponent<CanvasGroup>();
+                return group != null && !group.blocksRaycasts && !group.interactable;
+            }
+        }
+        public string NavigationCueQAMarker
+        {
+            get
+            {
+                if (!IsIPadNavigationCueVisible) return "MOONLIGHT_IPAD_NAVIGATION_CUE_HIDDEN";
+                return NavigationCueIsInsideSafeArea && NavigationCueDoesNotOverlapJoystick &&
+                    NavigationCueGraphicsDoNotBlockRaycasts &&
+                    NavigationCueCameraRelativeDirection.sqrMagnitude > 0.999f &&
+                    !float.IsNaN(NavigationCueAngleDegrees) &&
+                    !float.IsInfinity(NavigationCueAngleDegrees) &&
+                    !float.IsNaN(NavigationCueVisualAngleDegrees) &&
+                    !string.IsNullOrEmpty(NavigationCueTargetName) &&
+                    NavigationCueTargetDistance < float.MaxValue
+                        ? "MOONLIGHT_IPAD_NAVIGATION_CUE_READY"
+                        : "MOONLIGHT_IPAD_NAVIGATION_CUE_INVALID";
+            }
+        }
         public string GestureCommandQAMarker => _gestureCommandMarker;
         public string ActivityPhaseQAMarker => _activityPhaseMarker;
         public Rect ActionTouchTargetScreenRect => ScreenRect(actionBtn != null
@@ -254,6 +300,19 @@ namespace MoonlightMagicHouse
             ApplyRoomNavigationState();
         }
 
+        public void WireIPadNavigationCue(RectTransform cueRoot, RectTransform chevron,
+            TMP_Text label, RectTransform joystickRect)
+        {
+            _iPadNavigationCueRoot = cueRoot;
+            _iPadNavigationChevron = chevron;
+            _iPadNavigationLabel = label;
+            _iPadJoystickRect = joystickRect;
+            if (_iPadNavigationCueRoot != null)
+                _iPadNavigationCueRoot.gameObject.SetActive(false);
+            if (_iPadLayoutActive)
+                RequestIPadLayoutReport();
+        }
+
         void Update()
         {
             RefreshContextAction();
@@ -306,6 +365,7 @@ namespace MoonlightMagicHouse
                 interactor.CurrentZone.Kind == activityStage.CurrentKind;
             bool busy = performing || coolingDown || presenting;
             RefreshRoomNavigationState(interactor, presenting, busy);
+            RefreshIPadNavigationCue(interactor, busy);
             _gesturePad?.SetGestureGuide(
                 interactor?.CurrentZone != null ? interactor.CurrentZone.RequiredGesture : MoonlightGestureKind.Tap,
                 _iPadLayoutActive && hasAction && !busy);
@@ -554,6 +614,98 @@ namespace MoonlightMagicHouse
             return pass;
         }
 
+        public static Vector2 CameraRelativeNavigationDirection(Vector2 worldDirectionXZ,
+            Vector2 cameraForwardXZ, Vector2 cameraRightXZ)
+        {
+            if (worldDirectionXZ.sqrMagnitude <= Mathf.Epsilon) return Vector2.zero;
+            worldDirectionXZ.Normalize();
+            cameraForwardXZ = cameraForwardXZ.sqrMagnitude > Mathf.Epsilon
+                ? cameraForwardXZ.normalized
+                : Vector2.up;
+            cameraRightXZ = cameraRightXZ.sqrMagnitude > Mathf.Epsilon
+                ? cameraRightXZ.normalized
+                : Vector2.right;
+            return new Vector2(Vector2.Dot(worldDirectionXZ, cameraRightXZ),
+                Vector2.Dot(worldDirectionXZ, cameraForwardXZ)).normalized;
+        }
+
+        public static float CameraRelativeNavigationAngle(Vector2 cameraRelativeDirection)
+        {
+            if (cameraRelativeDirection.sqrMagnitude <= Mathf.Epsilon) return 0f;
+            cameraRelativeDirection.Normalize();
+            return Mathf.Atan2(-cameraRelativeDirection.x, cameraRelativeDirection.y) * Mathf.Rad2Deg;
+        }
+
+        public static bool ShouldShowIPadNavigationCue(bool isIPadLayout, bool hasTarget, bool busy) =>
+            isIPadLayout && hasTarget && !busy;
+
+        public static bool ValidateIPadNavigationCueContract(out string detail)
+        {
+            Vector2 forward = CameraRelativeNavigationDirection(Vector2.up, Vector2.up, Vector2.right);
+            Vector2 right = CameraRelativeNavigationDirection(Vector2.right, Vector2.up, Vector2.right);
+            Vector2 back = CameraRelativeNavigationDirection(Vector2.down, Vector2.up, Vector2.right);
+            Vector2 left = CameraRelativeNavigationDirection(Vector2.left, Vector2.up, Vector2.right);
+            float forwardAngle = CameraRelativeNavigationAngle(forward);
+            float rightAngle = CameraRelativeNavigationAngle(right);
+            float backAngle = Mathf.Abs(CameraRelativeNavigationAngle(back));
+            float leftAngle = CameraRelativeNavigationAngle(left);
+            bool pass = ApproximatelyAngle(forwardAngle, 0f) &&
+                ApproximatelyAngle(rightAngle, -90f) && ApproximatelyAngle(backAngle, 180f) &&
+                ApproximatelyAngle(leftAngle, 90f) &&
+                Mathf.Approximately(forward.magnitude, 1f) && Mathf.Approximately(right.magnitude, 1f) &&
+                Mathf.Approximately(back.magnitude, 1f) && Mathf.Approximately(left.magnitude, 1f) &&
+                ShouldShowIPadNavigationCue(true, true, false) &&
+                !ShouldShowIPadNavigationCue(true, true, true) &&
+                !ShouldShowIPadNavigationCue(true, false, false) &&
+                !ShouldShowIPadNavigationCue(false, true, false);
+            detail = $"angles={forwardAngle:0}/{rightAngle:0}/{backAngle:0}/{leftAngle:0} " +
+                $"normalized={forward.magnitude:0.000}/{right.magnitude:0.000}/" +
+                $"{back.magnitude:0.000}/{left.magnitude:0.000} visibility=out-of-range-not-busy";
+            return pass;
+        }
+
+        static bool ApproximatelyAngle(float actual, float expected) =>
+            Mathf.Abs(Mathf.DeltaAngle(actual, expected)) <= 0.01f;
+
+        void RefreshIPadNavigationCue(MoonlightSpatialInteractor interactor, bool busy)
+        {
+            if (_iPadNavigationCueRoot == null) return;
+
+            bool hasTarget = interactor != null && interactor.HasNavigationTarget;
+            bool show = ShouldShowIPadNavigationCue(_iPadLayoutActive, hasTarget, busy);
+            if (hasTarget)
+            {
+                var cameraTransform = Camera.main != null ? Camera.main.transform : null;
+                Vector2 cameraForward = cameraTransform != null
+                    ? new Vector2(cameraTransform.forward.x, cameraTransform.forward.z)
+                    : Vector2.up;
+                Vector2 cameraRight = cameraTransform != null
+                    ? new Vector2(cameraTransform.right.x, cameraTransform.right.z)
+                    : Vector2.right;
+                NavigationCueCameraRelativeDirection = CameraRelativeNavigationDirection(
+                    interactor.NearestZoneDirectionXZ, cameraForward, cameraRight);
+                NavigationCueAngleDegrees = CameraRelativeNavigationAngle(
+                    NavigationCueCameraRelativeDirection);
+                NavigationCueTargetName = interactor.NearestZone.DisplayName;
+                NavigationCueTargetDistance = interactor.NearestDistance;
+                if (_iPadNavigationChevron != null)
+                    _iPadNavigationChevron.localRotation = Quaternion.Euler(0f, 0f,
+                        NavigationCueAngleDegrees);
+                if (_iPadNavigationLabel != null)
+                    _iPadNavigationLabel.text =
+                        $"{NavigationCueTargetName.ToUpperInvariant()}\n{NavigationCueTargetDistance:0.0}m";
+            }
+            else
+            {
+                NavigationCueCameraRelativeDirection = Vector2.zero;
+                NavigationCueAngleDegrees = 0f;
+                NavigationCueTargetName = "";
+                NavigationCueTargetDistance = float.MaxValue;
+            }
+
+            _iPadNavigationCueRoot.gameObject.SetActive(show);
+        }
+
         static void ConfigureActivityLabel(TMP_Text label, Vector2 position, Vector2 size,
             float fontSize, float minimumFontSize, float maximumFontSize, FontStyles style,
             Color color, bool stretch = false)
@@ -712,7 +864,11 @@ namespace MoonlightMagicHouse
                 $"touchMinimumPass={ActionTouchTargetMeetsIPadMinimum} insideSafeArea={ActionTouchTargetIsInsideSafeArea} " +
                 $"promptSafe={ActivityPromptIsInsideSafeArea} resultSafe={ActivityResultIsInsideSafeArea} " +
                 $"progressSafe={ActivityProgressIsInsideSafeArea} panelsSeparated={ActivityHUDPanelsDoNotOverlap} " +
-                $"promptCenterOffset={ActivityPromptCenterOffsetPixels:0.0}px");
+                $"promptCenterOffset={ActivityPromptCenterOffsetPixels:0.0}px " +
+                $"navigationCue={NavigationCueQAMarker} cueSafe={NavigationCueIsInsideSafeArea} " +
+                $"cueJoystickSeparated={NavigationCueDoesNotOverlapJoystick} " +
+                $"cueAngle={NavigationCueAngleDegrees:0.0} cueTarget={NavigationCueTargetName} " +
+                $"cueDistance={NavigationCueTargetDistance:0.0}m");
         }
 
         static Rect ScreenRect(RectTransform rect)

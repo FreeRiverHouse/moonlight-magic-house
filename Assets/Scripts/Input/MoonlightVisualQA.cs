@@ -349,12 +349,16 @@ namespace MoonlightMagicHouse
             var controller = FindAnyObjectByType<MoonlightPlayerController>();
             var rooms = FindAnyObjectByType<RoomManager>();
             var moonlight = FindAnyObjectByType<MoonlightCharacter>();
+            var spatialInteractor = moonlight != null
+                ? moonlight.GetComponent<MoonlightSpatialInteractor>()
+                : null;
             var ui = FindAnyObjectByType<MoonlightUI>();
             var pad = ui != null && ui.actionBtn != null
                 ? ui.actionBtn.GetComponent<MoonlightGesturePad>()
                 : null;
             var audio = AudioManager.Instance;
-            if (controller == null || rooms == null || moonlight == null || pad == null || audio == null)
+            if (controller == null || rooms == null || moonlight == null || spatialInteractor == null ||
+                pad == null || audio == null)
             {
                 Debug.LogError("[MoonlightGameplayQA][FAIL] gameplay controller/rooms/character/pad/audio missing");
                 Application.Quit(20);
@@ -379,6 +383,15 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-progress-feedback-contract " +
                 $"{progressFeedbackDetail} marker=MOONLIGHT_IPAD_PROGRESS_FEEDBACK_CONTRACT_VERIFIED");
+            if (!MoonlightUI.ValidateIPadNavigationCueContract(out string navigationCueDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-navigation-cue-contract " +
+                    navigationCueDetail);
+                Application.Quit(79);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-navigation-cue-contract " +
+                $"{navigationCueDetail} marker=MOONLIGHT_IPAD_NAVIGATION_CUE_CONTRACT_VERIFIED");
             if (!MoonlightUI.ValidateActivityPhaseFeedbackContract(out string phaseFeedbackDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-activity-phase-feedback " +
@@ -486,8 +499,63 @@ namespace MoonlightMagicHouse
             var touchJoystick = FindAnyObjectByType<MoonlightTouchJoystick>();
             if (expectIPadHud)
             {
+                var activeNavigationZones = FindObjectsByType<MoonlightSpatialActionZone>(
+                        FindObjectsSortMode.None)
+                    .Where(candidate => candidate != null && candidate.gameObject.activeInHierarchy)
+                    .ToArray();
+                Rect navigationBounds = controller.RoomBounds;
+                var navigationCandidates = new[]
+                {
+                    new Vector3(Mathf.Lerp(navigationBounds.xMin, navigationBounds.xMax, 0.2f), 0f,
+                        Mathf.Lerp(navigationBounds.yMin, navigationBounds.yMax, 0.2f)),
+                    new Vector3(Mathf.Lerp(navigationBounds.xMin, navigationBounds.xMax, 0.8f), 0f,
+                        Mathf.Lerp(navigationBounds.yMin, navigationBounds.yMax, 0.2f)),
+                    new Vector3(Mathf.Lerp(navigationBounds.xMin, navigationBounds.xMax, 0.2f), 0f,
+                        Mathf.Lerp(navigationBounds.yMin, navigationBounds.yMax, 0.8f)),
+                    new Vector3(Mathf.Lerp(navigationBounds.xMin, navigationBounds.xMax, 0.8f), 0f,
+                        Mathf.Lerp(navigationBounds.yMin, navigationBounds.yMax, 0.8f))
+                };
+                Vector3 navigationTestPosition = navigationCandidates.FirstOrDefault(candidate =>
+                    activeNavigationZones.All(zone => Vector2.Distance(
+                        new Vector2(candidate.x, candidate.z),
+                        new Vector2(zone.transform.position.x, zone.transform.position.z)) >
+                        zone.Radius + 0.35f));
+                bool hasExplicitOutOfRangePosition = activeNavigationZones.Length > 0 &&
+                    navigationTestPosition != Vector3.zero;
+                if (hasExplicitOutOfRangePosition)
+                {
+                    controller.TeleportTo(navigationTestPosition, navigationBounds);
+                    yield return new WaitForSeconds(0.65f);
+                }
                 Canvas.ForceUpdateCanvases();
                 yield return new WaitForEndOfFrame();
+                var cameraTransform = Camera.main != null ? Camera.main.transform : null;
+                Vector2 expectedCameraDirection = cameraTransform != null
+                    ? MoonlightUI.CameraRelativeNavigationDirection(
+                        spatialInteractor.NearestZoneDirectionXZ,
+                        new Vector2(cameraTransform.forward.x, cameraTransform.forward.z),
+                        new Vector2(cameraTransform.right.x, cameraTransform.right.z))
+                    : Vector2.zero;
+                float expectedNavigationAngle =
+                    MoonlightUI.CameraRelativeNavigationAngle(expectedCameraDirection);
+                bool navigationCuePass = hasExplicitOutOfRangePosition &&
+                    spatialInteractor.HasNavigationTarget &&
+                    Mathf.Abs(spatialInteractor.NearestZoneDirectionXZ.magnitude - 1f) <= 0.001f &&
+                    ui.IsIPadNavigationCueVisible && ui.NavigationCueIsInsideSafeArea &&
+                    ui.NavigationCueDoesNotOverlapJoystick &&
+                    ui.NavigationCueGraphicsDoNotBlockRaycasts &&
+                    ui.NavigationCueCameraRelativeDirection.sqrMagnitude >= 0.999f &&
+                    Vector2.Distance(ui.NavigationCueCameraRelativeDirection,
+                        expectedCameraDirection) <= 0.001f &&
+                    !float.IsNaN(ui.NavigationCueAngleDegrees) &&
+                    !float.IsInfinity(ui.NavigationCueAngleDegrees) &&
+                    Mathf.Abs(Mathf.DeltaAngle(ui.NavigationCueAngleDegrees,
+                        expectedNavigationAngle)) <= 0.1f &&
+                    Mathf.Abs(Mathf.DeltaAngle(ui.NavigationCueVisualAngleDegrees,
+                        expectedNavigationAngle)) <= 0.1f &&
+                    ui.NavigationCueTargetName == spatialInteractor.NearestZone.DisplayName &&
+                    Approximately(ui.NavigationCueTargetDistance, spatialInteractor.NearestDistance) &&
+                    ui.NavigationCueQAMarker == "MOONLIGHT_IPAD_NAVIGATION_CUE_READY";
                 bool layoutPass = ui.IsIPadHUDLayoutActive &&
                     ui.HUDLayoutQAMarker == "ipad-activity-focus-v3" &&
                     ui.ActionTouchTargetMeetsIPadMinimum &&
@@ -500,6 +568,7 @@ namespace MoonlightMagicHouse
                     pad.CoordinateQAMarker == "MOONLIGHT_GESTURE_COORDINATES_ISOTROPIC" &&
                     touchJoystick != null && touchJoystick.gameObject.activeInHierarchy &&
                     touchJoystick.ResponseQAMarker == "MOONLIGHT_IPAD_JOYSTICK_RESPONSE_READY" &&
+                    navigationCuePass &&
                     ui.IsRoomNavigationVisible && !ui.IsRoomNavigationLocked;
                 if (!layoutPass)
                 {
@@ -512,6 +581,16 @@ namespace MoonlightMagicHouse
                         $"gestureCoordinates={pad.CoordinateQAMarker} gestureSurface={pad.TouchSurfaceSize} " +
                         $"touchJoystick={(touchJoystick != null && touchJoystick.gameObject.activeInHierarchy)} " +
                         $"joystickMarker={(touchJoystick != null ? touchJoystick.ResponseQAMarker : "missing")} " +
+                        $"explicitOutOfRange={hasExplicitOutOfRangePosition} " +
+                        $"navigationTarget={spatialInteractor.HasNavigationTarget} " +
+                        $"direction={spatialInteractor.NearestZoneDirectionXZ:F3} " +
+                        $"cueVisible={ui.IsIPadNavigationCueVisible} cueSafe={ui.NavigationCueIsInsideSafeArea} " +
+                        $"cueSeparated={ui.NavigationCueDoesNotOverlapJoystick} " +
+                        $"cueRaycasts={ui.NavigationCueGraphicsDoNotBlockRaycasts} " +
+                        $"cueAngle={ui.NavigationCueAngleDegrees:0.0}/" +
+                        $"{ui.NavigationCueVisualAngleDegrees:0.0}/{expectedNavigationAngle:0.0} " +
+                        $"cueTarget={ui.NavigationCueTargetName}/{ui.NavigationCueTargetDistance:0.0}m " +
+                        $"cueMarker={ui.NavigationCueQAMarker} " +
                         $"promptOffset={ui.ActivityPromptCenterOffsetPixels:0.0} " +
                         $"roomNav={ui.RoomNavigationQAMarker}");
                     Application.Quit(42);
@@ -523,6 +602,12 @@ namespace MoonlightMagicHouse
                     $"gestureCoordinates={pad.CoordinateQAMarker} gestureSurface={pad.TouchSurfaceSize} " +
                     $"touchJoystick={touchJoystick.gameObject.activeInHierarchy} " +
                     $"joystick={touchJoystick.ResponseQAMarker} size={touchJoystick.TouchTargetSize} " +
+                    $"navigationDirection={spatialInteractor.NearestZoneDirectionXZ:F3} " +
+                    $"cueRect={ui.NavigationCueScreenRect} " +
+                    $"cueAngle={ui.NavigationCueAngleDegrees:0.0}/" +
+                    $"{ui.NavigationCueVisualAngleDegrees:0.0}/{expectedNavigationAngle:0.0} " +
+                    $"cueTarget={ui.NavigationCueTargetName}/{ui.NavigationCueTargetDistance:0.0}m " +
+                    $"cueMarker={ui.NavigationCueQAMarker} " +
                     $"promptOffset={ui.ActivityPromptCenterOffsetPixels:0.0} " +
                     $"roomNav={ui.RoomNavigationQAMarker} " +
                     "marker=MOONLIGHT_IPAD_HUD_VERIFIED");
@@ -680,6 +765,21 @@ namespace MoonlightMagicHouse
                 int rewardCoins = moonlight.coins;
                 controller.TeleportTo(zone.transform.position, controller.RoomBounds);
                 yield return new WaitForSeconds(0.65f);
+                if (expectIPadHud && (spatialInteractor.HasNavigationTarget ||
+                    ui.IsIPadNavigationCueVisible ||
+                    ui.NavigationCueQAMarker != "MOONLIGHT_IPAD_NAVIGATION_CUE_HIDDEN"))
+                {
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-navigation-cue-in-range " +
+                        $"action={expectedKind} current={spatialInteractor.CurrentZone?.DisplayName} " +
+                        $"hasTarget={spatialInteractor.HasNavigationTarget} " +
+                        $"visible={ui.IsIPadNavigationCueVisible} marker={ui.NavigationCueQAMarker}");
+                    Application.Quit(80);
+                    yield break;
+                }
+                if (expectIPadHud)
+                    Debug.Log($"[MoonlightGameplayQA][PASS] ipad-navigation-cue-in-range " +
+                        $"action={expectedKind} visible={ui.IsIPadNavigationCueVisible} " +
+                        $"marker={ui.NavigationCueQAMarker}");
                 int startStep = zone.ProgressStep;
                 pad.SubmitSynthetic(zone.RequiredGesture, 0.20f);
                 yield return new WaitForSeconds(0.15f);
