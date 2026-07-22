@@ -47,6 +47,7 @@ namespace MoonlightMagicHouse
         float _lastYaw;
         bool _wasMoving;
         bool _wasPerformingAction;
+        bool _modalInputLocked;
         CapsuleCollider _capsule;
         readonly Collider[] _overlaps = new Collider[24];
         Vector3 _lastSafePosition;
@@ -56,6 +57,10 @@ namespace MoonlightMagicHouse
         public Vector2 TouchMove => _touchMove;
         public float BaseMoveSpeed => moveSpeed;
         public bool IsIPadSprinting { get; private set; }
+        public bool IsModalInputLocked => _modalInputLocked;
+        public string ModalInputLockQAMarker => _modalInputLocked
+            ? "MOONLIGHT_STORY_MODAL_INPUT_LOCKED"
+            : "MOONLIGHT_STORY_MODAL_INPUT_RELEASED";
         public float CurrentMoveSpeed => moveSpeed *
             (IsIPadSprinting ? IPadSprintSpeedMultiplier : 1f);
         public string IPadSprintQAMarker => ValidateIPadSprintRuntimeContract(out _)
@@ -136,6 +141,15 @@ namespace MoonlightMagicHouse
 
         void Update()
         {
+            if (_modalInputLocked)
+            {
+                ClearTouchMovementState();
+                if (_idleBobber != null) _idleBobber.enabled = true;
+                _wasMoving = false;
+                RouteLocomotion(0f, false);
+                return;
+            }
+
             var actionFeedback = GetComponent<MoonlightActionFeedback>();
             bool performingAction = actionFeedback != null && actionFeedback.IsPerformingAction;
             if (performingAction)
@@ -187,6 +201,11 @@ namespace MoonlightMagicHouse
 
         public void SetTouchMove(Vector2 move)
         {
+            if (_modalInputLocked)
+            {
+                ClearTouchMovementState();
+                return;
+            }
             var actionFeedback = GetComponent<MoonlightActionFeedback>();
             if (actionFeedback != null && actionFeedback.IsPerformingAction)
             {
@@ -209,6 +228,31 @@ namespace MoonlightMagicHouse
             SetIPadSprinting(false);
             RouteLocomotion(0f, false);
         }
+
+        public void SetModalInputLocked(bool locked)
+        {
+            if (_modalInputLocked == locked) return;
+            _modalInputLocked = locked;
+            ClearTouchMovementState();
+            if (locked)
+            {
+                _wasMoving = false;
+                if (_idleBobber != null) _idleBobber.enabled = true;
+            }
+            Debug.Log($"[MoonlightStoryQA] modal-input locked={locked} " +
+                $"marker={ModalInputLockQAMarker}");
+        }
+
+        public static bool ValidateStoryModalInputContract(out string detail)
+        {
+            bool keyboardBlocked = ShouldBlockMovementForModal(true);
+            bool touchBlocked = ShouldBlockMovementForModal(true);
+            bool restored = !ShouldBlockMovementForModal(false);
+            detail = $"keyboardBlocked={keyboardBlocked} touchBlocked={touchBlocked} restored={restored}";
+            return keyboardBlocked && touchBlocked && restored;
+        }
+
+        static bool ShouldBlockMovementForModal(bool modalInputLocked) => modalInputLocked;
 
         public void SetProcessedTouchSprintForQA(Vector2 move)
         {

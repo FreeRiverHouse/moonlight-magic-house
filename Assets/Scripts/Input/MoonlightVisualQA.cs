@@ -550,6 +550,42 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] activity-reward-receipt " +
                 $"{rewardReceiptDetail} " +
                 "marker=MOONLIGHT_ACTIVITY_REWARD_RECEIPT_CONTRACT_VERIFIED");
+            if (!LibraryRoom.TryLoadAuthoredStories(out AuthoredStoryPage[] storyPages,
+                    out string storyDataDetail) || storyPages.Length != 10)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] story-data-contract {storyDataDetail}");
+                Application.Quit(110);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] story-data-contract {storyDataDetail} " +
+                $"marker={LibraryRoom.StoryDataReadyMarker}");
+            if (!StoryPageUI.ValidateStaticContract(out string storyUIContractDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] story-ui-contract {storyUIContractDetail}");
+                Application.Quit(111);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] story-ui-contract {storyUIContractDetail} " +
+                $"markers={StoryPageUI.TimingMarker},{StoryPageUI.SafeAreaMarker}," +
+                $"{StoryPageUI.NonOverflowMarker}");
+            if (!MoonlightPlayerController.ValidateStoryModalInputContract(
+                    out string storyModalDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] story-modal-contract {storyModalDetail}");
+                Application.Quit(112);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] story-modal-contract {storyModalDetail} " +
+                $"marker={StoryPageUI.ModalLockMarker}");
+            if (!MoonlightSpatialActionZone.ValidateReadStoryRewardContract(
+                    out string storyRewardDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] story-reward-contract {storyRewardDetail}");
+                Application.Quit(113);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] story-reward-contract {storyRewardDetail} " +
+                $"marker={StoryPageUI.RewardPathMarker}");
             if (!MoonlightSpatialActionZone.ValidateCareSequenceContract(
                     out string careSequenceDetail))
             {
@@ -2288,6 +2324,69 @@ namespace MoonlightMagicHouse
                     Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-loop action={zone.Kind} step={zone.ProgressStep}");
                     Application.Quit(26);
                     yield break;
+                }
+                if (expectedKind == MoonlightSpatialActionKind.Read)
+                {
+                    StoryPageUI storyUI = StoryPageUI.Instance;
+                    float storyDeadline = Time.time + 8f;
+                    while (storyUI != null && !storyUI.IsOpen && Time.time < storyDeadline)
+                        yield return null;
+
+                    bool storyRevealPass = storyUI != null && storyUI.DataReady &&
+                        storyUI.LoadedPageCount == 10 && storyUI.CompletedReadLoopCount == 1 &&
+                        storyUI.RevealedPageCount == 1 && storyUI.PendingRevealCount == 0 &&
+                        storyUI.RevealCountIsExact && storyUI.RevealTimingIsValid &&
+                        !string.IsNullOrWhiteSpace(storyUI.CurrentTitle) &&
+                        !string.IsNullOrWhiteSpace(storyUI.CurrentBody) &&
+                        storyUI.UsesTMPVisibleTypography && storyUI.BodyUsesScrolling &&
+                        storyUI.VisibleTextDoesNotOverflow && storyUI.IsInsideSafeArea &&
+                        storyUI.ModalInputAndNavigationLocked && storyUI.CurrentModalHasZeroDrift &&
+                        zone.LastStoryRevealQueueAccepted &&
+                        zone.LastStoryRevealRewardPathUnchanged &&
+                        zone.StoryRevealRewardQAMarker == StoryPageUI.RewardPathMarker;
+                    if (!storyRevealPass)
+                    {
+                        Debug.LogError($"[MoonlightGameplayQA][FAIL] story-reveal-runtime " +
+                            $"present={(storyUI != null)} open={(storyUI != null && storyUI.IsOpen)} " +
+                            $"loaded={(storyUI != null ? storyUI.LoadedPageCount : 0)} " +
+                            $"completed={(storyUI != null ? storyUI.CompletedReadLoopCount : 0)} " +
+                            $"revealed={(storyUI != null ? storyUI.RevealedPageCount : 0)} " +
+                            $"pending={(storyUI != null ? storyUI.PendingRevealCount : 0)} " +
+                            $"queueTiming={(storyUI != null ? storyUI.LastQueueToRevealSeconds : 0f):0.000} " +
+                            $"presentationTiming={(storyUI != null ? storyUI.LastPresentationToRevealSeconds : 0f):0.000} " +
+                            $"safe={(storyUI != null && storyUI.IsInsideSafeArea)} " +
+                            $"nonOverflow={(storyUI != null && storyUI.VisibleTextDoesNotOverflow)} " +
+                            $"modal={(storyUI != null && storyUI.ModalInputAndNavigationLocked)} " +
+                            $"zeroDrift={(storyUI != null && storyUI.CurrentModalHasZeroDrift)} " +
+                            $"reward={zone.StoryRevealRewardQAMarker}");
+                        Application.Quit(114);
+                        yield break;
+                    }
+                    Debug.Log($"[MoonlightGameplayQA][PASS] story-reveal-runtime " +
+                        $"loaded={storyUI.LoadedPageCount} completed={storyUI.CompletedReadLoopCount} " +
+                        $"revealed={storyUI.RevealedPageCount} queueElapsed={storyUI.LastQueueToRevealSeconds:0.000}s " +
+                        $"presentationElapsed={storyUI.LastPresentationToRevealSeconds:0.000}s " +
+                        $"titleChars={storyUI.CurrentTitle.Length} bodyChars={storyUI.CurrentBody.Length} " +
+                        $"markers={LibraryRoom.StoryDataReadyMarker},{StoryPageUI.RevealCountMarker}," +
+                        $"{StoryPageUI.TimingMarker},{StoryPageUI.SafeAreaMarker}," +
+                        $"{StoryPageUI.NonOverflowMarker},{StoryPageUI.ModalLockMarker}," +
+                        $"{StoryPageUI.ZeroDriftMarker},{StoryPageUI.RewardPathMarker}");
+
+                    storyUI.Close();
+                    yield return null;
+                    if (!storyUI.LastCloseRestoredWithoutDrift)
+                    {
+                        Debug.LogError($"[MoonlightGameplayQA][FAIL] story-modal-restore " +
+                            $"playerDrift={storyUI.LastModalPlayerDrift:0.000000} " +
+                            $"xpDrift={storyUI.LastModalXPDrift} coinDrift={storyUI.LastModalCoinDrift} " +
+                            $"controllerLocked={controller.IsModalInputLocked}");
+                        Application.Quit(115);
+                        yield break;
+                    }
+                    Debug.Log($"[MoonlightGameplayQA][PASS] story-modal-restore " +
+                        $"playerDrift={storyUI.LastModalPlayerDrift:0.000000} " +
+                        $"xpDrift={storyUI.LastModalXPDrift} coinDrift={storyUI.LastModalCoinDrift} " +
+                        $"marker={StoryPageUI.ZeroDriftMarker}");
                 }
                 if (expectedKind == MoonlightSpatialActionKind.Care && verifiedCareContacts.Count != 4)
                 {

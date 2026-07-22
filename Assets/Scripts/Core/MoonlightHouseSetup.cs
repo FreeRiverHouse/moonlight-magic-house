@@ -82,11 +82,17 @@ namespace MoonlightMagicHouse
             var rm = CreateRooms();
             if (PhotorealMode)
                 new GameObject("MoonlightSceneDirector").AddComponent<MoonlightSceneDirector>();
-            rm.BindPlayer(mlGO.GetComponent<MoonlightPlayerController>());
+            var playerController = mlGO.GetComponent<MoonlightPlayerController>();
+            rm.BindPlayer(playerController);
 
             var (uiGO, ui) = CreateUI();
             var roomNavigation = CreateRoomNavigation(uiGO.transform, rm);
             ui.WireRoomNavigation(roomNavigation);
+            var storyPageUI = uiGO.AddComponent<StoryPageUI>();
+            storyPageUI.BuildRuntime(uiGO.transform, roomNavigation, playerController);
+            Debug.Log($"[MoonlightStoryQA] runtime-overlay built={storyPageUI != null} " +
+                $"loaded={storyPageUI.LoadedPageCount} dataReady={storyPageUI.DataReady} " +
+                "marker=MOONLIGHT_STORY_RUNTIME_OVERLAY_READY");
 
             // GameManager ties everything together
             var gmGO = new GameObject("MoonlightGameManager");

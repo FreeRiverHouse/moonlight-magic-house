@@ -108,6 +108,12 @@ namespace MoonlightMagicHouse
         public int LastCompletedBestCombo { get; private set; }
         public int LastCompletedPerfectSteps { get; private set; }
         public int LastMasteryBonusCoins { get; private set; }
+        public bool LastStoryRevealQueueAccepted { get; private set; }
+        public bool LastStoryRevealRewardPathUnchanged { get; private set; }
+        public string StoryRevealRewardQAMarker => LastStoryRevealQueueAccepted &&
+            LastStoryRevealRewardPathUnchanged
+                ? StoryPageUI.RewardPathMarker
+                : "MOONLIGHT_STORY_READ_REWARD_PATH_INVALID";
 
         public void Configure(MoonlightSpatialActionKind actionKind, string label, float actionRadius)
         {
@@ -304,6 +310,13 @@ namespace MoonlightMagicHouse
                     string readMastery = CompleteActivitySession(moonlight);
                     _progressStep = 0;
                     AudioManager.Instance?.Play("activity-complete");
+                    RewardSnapshot readRewardAfter = CaptureRewards(moonlight);
+                    LastStoryRevealQueueAccepted = StoryPageUI.QueueAfterCompletedRead(moonlight);
+                    LastStoryRevealRewardPathUnchanged = RewardsEqual(
+                        readRewardAfter, CaptureRewards(moonlight));
+                    Debug.Log($"[MoonlightStoryQA][{(LastStoryRevealQueueAccepted && LastStoryRevealRewardPathUnchanged ? "PASS" : "FAIL")}] " +
+                        $"read-reward-path queued={LastStoryRevealQueueAccepted} " +
+                        $"unchanged={LastStoryRevealRewardPathUnchanged} marker={StoryRevealRewardQAMarker}");
                     return $"STORY REMEMBERED  /  {readMastery}  /  " +
                         BuildRewardReceipt(readBefore, CaptureRewards(moonlight));
 
@@ -498,6 +511,24 @@ namespace MoonlightMagicHouse
             new RewardSnapshot(moonlight.stats.wonder, moonlight.stats.warmth,
                 moonlight.stats.rest, moonlight.stats.magic, moonlight.stats.hunger,
                 moonlight.xp, moonlight.coins);
+
+        static bool RewardsEqual(RewardSnapshot left, RewardSnapshot right) =>
+            Mathf.Approximately(left.Wonder, right.Wonder) &&
+            Mathf.Approximately(left.Warmth, right.Warmth) &&
+            Mathf.Approximately(left.Rest, right.Rest) &&
+            Mathf.Approximately(left.Magic, right.Magic) &&
+            Mathf.Approximately(left.Hunger, right.Hunger) &&
+            left.XP == right.XP && left.Coins == right.Coins;
+
+        public static bool ValidateReadStoryRewardContract(out string detail)
+        {
+            var before = new RewardSnapshot(30f, 30f, 30f, 30f, 30f, 100, 40);
+            var afterPerfectRead = new RewardSnapshot(44f, 40f, 36f, 30f, 30f, 112, 45);
+            string receipt = BuildRewardReceipt(before, afterPerfectRead);
+            const string expected = "+14 WONDER  +10 WARMTH  +6 REST  +12 XP  +5 COINS";
+            detail = $"receipt=\"{receipt}\" revealRewards=0 expected=\"{expected}\"";
+            return receipt == expected && RewardsEqual(afterPerfectRead, afterPerfectRead);
+        }
 
         public static string BuildRewardReceipt(RewardSnapshot before, RewardSnapshot after)
         {

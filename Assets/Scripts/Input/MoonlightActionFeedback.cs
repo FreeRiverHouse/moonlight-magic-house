@@ -13,6 +13,8 @@ namespace MoonlightMagicHouse
 
     public class MoonlightActionFeedback : MonoBehaviour
     {
+        public const float ReadActionDurationSeconds = 1.75f;
+        public const float ReadFinalPresentationSeconds = 4.4f;
         public const float MinimumActionAccentExtent = 0.18f;
         public const float MaximumActionAccentExtent = 0.80f;
         public const float GreatActionQualityScore = 0.72f;
@@ -469,7 +471,7 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Cook => 5.2f,
             MoonlightSpatialActionKind.Play => 4.8f,
             MoonlightSpatialActionKind.Garden => 4.6f,
-            MoonlightSpatialActionKind.Read => 4.4f,
+            MoonlightSpatialActionKind.Read => ReadFinalPresentationSeconds,
             MoonlightSpatialActionKind.Care => 4.6f,
             _ => 0f
         };
@@ -2094,7 +2096,7 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Cook => 2.25f,
             MoonlightSpatialActionKind.Play => 1.85f,
             MoonlightSpatialActionKind.Garden => 2.05f,
-            MoonlightSpatialActionKind.Read => 1.75f,
+            MoonlightSpatialActionKind.Read => ReadActionDurationSeconds,
             MoonlightSpatialActionKind.Care => 2.15f,
             MoonlightSpatialActionKind.SleepCuddle when state == "Resting" => 1.65f,
             MoonlightSpatialActionKind.SleepCuddle when state == "Cuddled" => 1.05f,
