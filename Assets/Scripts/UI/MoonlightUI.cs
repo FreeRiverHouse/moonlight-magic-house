@@ -664,8 +664,17 @@ namespace MoonlightMagicHouse
                 string gesture = CompactGestureCommand(zone.RequiredGesture);
                 if (contextLabel != null)
                     contextLabel.text = $"{zone.DisplayName.ToUpperInvariant()}  /  {action}";
-                actionBtnLabel.text = $"{gesture}\n{action}";
-                _gestureCommandMarker = $"{gesture} {action}";
+                if (_gesturePad != null && _gesturePad.IsLiveHoldReadinessActive)
+                {
+                    actionBtnLabel.text = LiveHoldReadinessLabel(
+                        _gesturePad.LiveHoldScore, zone.PassingScore);
+                    _gestureCommandMarker = actionBtnLabel.text;
+                }
+                else
+                {
+                    actionBtnLabel.text = $"{gesture}\n{action}";
+                    _gestureCommandMarker = $"{gesture} {action}";
+                }
                 _activityPhaseMarker = "";
             }
             else
@@ -681,7 +690,7 @@ namespace MoonlightMagicHouse
             {
                 _iPadProgressRoot.SetActive(showProgress);
                 if (showProgress && _iPadProgressLabel != null)
-                    _iPadProgressLabel.text = $"{Mathf.Clamp(step, 1, requiredSteps)}/{requiredSteps}";
+                    _iPadProgressLabel.text = ActivityProgressLabel(step, requiredSteps);
                 SetIPadProgressFill(showProgress ? progressFill : 0f,
                     zone != null ? ActionColor(zone, false) : new Color(0.42f, 0.86f, 1f, 0.96f));
             }
@@ -705,6 +714,21 @@ namespace MoonlightMagicHouse
             float total = Mathf.Clamp(completedSteps, 0, requiredSteps) +
                 (completedSteps < requiredSteps ? Mathf.Clamp01(activeStepProgress) : 0f);
             return Mathf.Clamp01(total / requiredSteps);
+        }
+
+        public static string LiveHoldReadinessLabel(float score, float passingScore)
+        {
+            score = Mathf.Clamp01(score);
+            if (score < Mathf.Clamp01(passingScore))
+                return $"HOLD {Mathf.RoundToInt(score * 100f)}%";
+            return MoonlightActionFeedback.ActionQualityTierFor(score)
+                .ToString().ToUpperInvariant();
+        }
+
+        public static string ActivityProgressLabel(int step, int requiredSteps)
+        {
+            requiredSteps = Mathf.Max(1, requiredSteps);
+            return $"{Mathf.Clamp(step, 1, requiredSteps)}/{requiredSteps}";
         }
 
         public static bool ValidateIPadProgressFeedbackContract(out string detail)
@@ -1171,7 +1195,8 @@ namespace MoonlightMagicHouse
                 Refresh(MoonlightGameManager.Instance.moonlight);
         }
 
-        public void ExecuteContextGesture(MoonlightGestureKind gesture, float score)
+        public void ExecuteContextGesture(MoonlightGestureKind gesture, float score,
+            bool acceptedHapticAlreadyPlayed = false)
         {
             var moonlight = MoonlightGameManager.Instance?.moonlight;
             var interactor = moonlight != null
@@ -1180,7 +1205,8 @@ namespace MoonlightMagicHouse
             if (interactor == null || interactor.CurrentZone == null) return;
 
             var zone = interactor.CurrentZone;
-            string result = zone.ExecuteGesture(moonlight, gesture, score);
+            string result = zone.ExecuteGesture(moonlight, gesture, score,
+                acceptedHapticAlreadyPlayed);
             if (zone.LastGesturePassed && zone.RequiredSteps > 1)
                 SetRoomNavigationLocked(true);
             MoonlightVisualQA.Instance?.LogContextAction(zone, moonlight.transform.position, result);

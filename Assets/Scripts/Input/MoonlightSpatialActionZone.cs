@@ -16,6 +16,8 @@ namespace MoonlightMagicHouse
 
     public class MoonlightSpatialActionZone : MonoBehaviour
     {
+        public const float DefaultPassingScore = 0.58f;
+
         public readonly struct RewardSnapshot
         {
             public readonly float Wonder;
@@ -42,7 +44,7 @@ namespace MoonlightMagicHouse
         [SerializeField] MoonlightSpatialActionKind kind;
         [SerializeField] float radius = 1.25f;
         [SerializeField] string displayName;
-        [SerializeField, Range(0.35f, 0.9f)] float passingScore = 0.58f;
+        [SerializeField, Range(0.35f, 0.9f)] float passingScore = DefaultPassingScore;
         int _progressStep;
         float _sessionScoreTotal;
         int _sessionAcceptedSteps;
@@ -53,6 +55,7 @@ namespace MoonlightMagicHouse
         public MoonlightSpatialActionKind Kind => kind;
         public float Radius => radius;
         public string DisplayName => string.IsNullOrEmpty(displayName) ? kind.ToString() : displayName;
+        public float PassingScore => passingScore;
         public int ProgressStep => _progressStep;
         public int RequiredSteps => kind switch
         {
@@ -94,6 +97,8 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Care => CareGestureForStep(_progressStep),
             _ => MoonlightGestureKind.Tap
         };
+        public bool SupportsLiveHoldReadiness =>
+            IsLiveHoldReadinessStep(kind, _progressStep, RequiredGesture);
         public float LastGestureScore { get; private set; }
         public bool LastGesturePassed { get; private set; }
         public string LastCueKey { get; private set; } = "";
@@ -169,7 +174,8 @@ namespace MoonlightMagicHouse
         public string Execute(MoonlightCharacter moonlight)
             => ExecuteGesture(moonlight, RequiredGesture, 1f);
 
-        public string ExecuteGesture(MoonlightCharacter moonlight, MoonlightGestureKind gesture, float score)
+        public string ExecuteGesture(MoonlightCharacter moonlight, MoonlightGestureKind gesture,
+            float score, bool acceptedHapticAlreadyPlayed = false)
         {
             if (moonlight == null) return "Moonlight is not ready yet.";
             var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
@@ -200,7 +206,8 @@ namespace MoonlightMagicHouse
             switch (kind)
             {
                 case MoonlightSpatialActionKind.Cook:
-                    if (!TryBeginFeedback(feedback, "Cooking")) return feedback.InputBlockReason;
+                    if (!TryBeginFeedback(feedback, "Cooking", acceptedHapticAlreadyPlayed))
+                        return feedback.InputBlockReason;
                     RecordSuccessfulGesture();
                     LastCueKey = _progressStep switch
                     {
@@ -364,7 +371,8 @@ namespace MoonlightMagicHouse
             return "Moonlight looks around the room.";
         }
 
-        bool TryBeginFeedback(MoonlightActionFeedback feedback, string state)
+        bool TryBeginFeedback(MoonlightActionFeedback feedback, string state,
+            bool acceptedHapticAlreadyPlayed = false)
         {
             bool isScoredActivity = RequiredSteps > 1;
             bool began = isScoredActivity
@@ -378,12 +386,17 @@ namespace MoonlightMagicHouse
             }
 
             LastGesturePassed = true;
-            // The scored activity owns this pulse for every step. Completion
-            // methods suppress their legacy pulse to avoid duplicate feedback.
-            if (isScoredActivity)
+            // Live Hold readiness can own this pulse before release. Completion
+            // methods also suppress their legacy pulse to avoid duplicate feedback.
+            if (isScoredActivity && !acceptedHapticAlreadyPlayed)
                 feedback.PlayActionQualityHaptic();
             return true;
         }
+
+        public static bool IsLiveHoldReadinessStep(MoonlightSpatialActionKind actionKind,
+            int progressStep, MoonlightGestureKind gesture) =>
+            actionKind == MoonlightSpatialActionKind.Cook && progressStep == 2 &&
+            gesture == MoonlightGestureKind.Hold;
 
         public static string GestureInstruction(MoonlightGestureKind gesture) => gesture switch
         {

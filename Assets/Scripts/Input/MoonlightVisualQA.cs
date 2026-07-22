@@ -481,6 +481,17 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] gesture-recognizer {recognizerDetail} " +
                 "marker=MOONLIGHT_GESTURE_RECOGNIZER_VERIFIED");
+            if (!MoonlightGesturePad.ValidateLiveHoldReadinessStaticContract(
+                    out string liveHoldReadinessDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-live-hold-readiness " +
+                    liveHoldReadinessDetail);
+                Application.Quit(106);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-live-hold-readiness " +
+                $"{liveHoldReadinessDetail} " +
+                "marker=MOONLIGHT_IPAD_LIVE_HOLD_STATIC_CONTRACT_VERIFIED");
             if (!MoonlightGesturePad.ValidateIPadCoordinateContract(out string coordinateDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] gesture-coordinates {coordinateDetail}");
