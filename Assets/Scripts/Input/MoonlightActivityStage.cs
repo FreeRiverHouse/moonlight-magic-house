@@ -38,6 +38,14 @@ namespace MoonlightMagicHouse
         const float CookDecorMaximumX = 0.75f;
         const float CookDecorMinimumZ = -0.18f;
         const float CookDecorMaximumZ = 0.42f;
+        const float ReadPageMaximumX = 0.28f;
+        const float ReadPageMaximumZ = 0.22f;
+        const float ReadBookmarkMinimumX = -0.19f;
+        const float ReadBookmarkMaximumX = 0.29f;
+        const float ReadBookmarkMinimumZ = -0.38f;
+        const float ReadBookmarkMaximumZ = 0.02f;
+        const float ReadFinishMinimumIntensity = 1f;
+        const float ReadFinishMaximumIntensity = 1.85f;
         static readonly Vector3 CookDecorParkedPosition = new(-0.43f, 0.72f, 0.30f);
         static readonly Vector3[] GardenWateringCanBasePositions =
         {
@@ -63,6 +71,12 @@ namespace MoonlightMagicHouse
         public const int GardenRendererBudget = 48;
         public const int GardenMaterialBudget = 28;
         public const int GardenLightBudget = 1;
+        public const int ReadRendererBudget = 48;
+        public const int ReadMaterialBudget = 28;
+        public const int ReadLightBudget = 1;
+        public const float ReadMinimumLightIntensity = ActivityLightBaseIntensity;
+        public const int RequiredReadStageRendererCount = 19;
+        public const int RequiredReadStageMaterialCount = 7;
         public const string CookAddChoreographyReadyMarker =
             "MOONLIGHT_COOK_ADD_CHOREOGRAPHY_READY";
         public const string CookStirChoreographyReadyMarker =
@@ -155,6 +169,7 @@ namespace MoonlightMagicHouse
         int _requiredSteps = 1;
         float _playProgress;
         float _gardenProgress;
+        float _readProgress;
         MoonlightGestureSample _gestureSample;
 
         public bool IsVisible => _root != null;
@@ -514,6 +529,83 @@ namespace MoonlightMagicHouse
         public int AuthoredReadingNookColliderCount { get; private set; }
         public int AuthoredReadingNookLightCount { get; private set; }
         public Vector3 AuthoredReadingNookBoundsSize { get; private set; }
+        public float ReadProgress => _readProgress;
+        public bool ReadGestureSampleReady =>
+            CurrentKind == MoonlightSpatialActionKind.Read &&
+            _gestureSample.PointCount == MoonlightGestureSample.ResampledPointCount &&
+            _gestureSample.HasSevenFiniteNormalizedPoints;
+        public Vector2 ReadActualOpeningAngles => ReadCoverAngles();
+        public Vector2 ReadExpectedOpeningAngles => EvaluateReadOpeningAngles(
+            CurrentStep == 0 ? _readProgress : 1f, _gestureSample);
+        public bool ReadOpeningTransformAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Read && CurrentStep == 0 &&
+            ReadOpeningTransformsMatch();
+        public bool ReadPageTurnTransformAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Read && CurrentStep == 1 &&
+            ReadPageTransformsMatch();
+        public Vector3 ReadActualPrimaryPagePosition =>
+            _pageFlips != null && _pageFlips.Length > 0 && _pageFlips[0] != null
+                ? _pageFlips[0].localPosition
+                : new Vector3(float.NaN, float.NaN, float.NaN);
+        public Vector3 ReadExpectedPrimaryPagePosition => EvaluateReadPagePosition(
+            Mathf.Repeat(_readProgress * 1.6f, 1f), _gestureSample);
+        public bool ReadBookmarkTransformAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Read && CurrentStep == 2 &&
+            ReadBookmarkTransformMatches();
+        public Vector3 ReadActualBookmarkPosition => _bookmark != null
+            ? _bookmark.localPosition
+            : new Vector3(float.NaN, float.NaN, float.NaN);
+        public Vector3 ReadExpectedBookmarkPosition =>
+            EvaluateReadBookmarkPosition(_readProgress, _gestureSample);
+        public bool ReadFinishTransformAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Read && CurrentStep == 3 &&
+            ReadFinishTransformsMatch();
+        public bool ReadCurrentStepTransformAgreement => CurrentStep switch
+        {
+            0 => ReadOpeningTransformAgreement,
+            1 => ReadPageTurnTransformAgreement,
+            2 => ReadBookmarkTransformAgreement,
+            3 => ReadFinishTransformAgreement,
+            _ => false
+        };
+        public float ReadFinishIntensityMultiplier =>
+            EvaluateReadFinishIntensity(_gestureSample);
+        public float ReadActualLightIntensity => _activityLight != null
+            ? _activityLight.intensity
+            : float.NaN;
+        public float ReadExpectedLightIntensity => EvaluateReadLightTarget(
+            _readProgress, CurrentStep, _gestureSample);
+        public int ReadActualFinishMoteCount => CountActiveReadMotes();
+        public int ReadExpectedFinishMoteCount =>
+            EvaluateReadFinishMoteCount(_gestureSample);
+        public int ReadStageRendererCount => CountReadStageRenderers();
+        public int ReadStageUniqueMaterialCount => CountReadStageUniqueMaterials();
+        public bool ReadBudgetReady => CurrentKind == MoonlightSpatialActionKind.Read &&
+            ReadStageRendererCount == RequiredReadStageRendererCount &&
+            ReadStageUniqueMaterialCount == RequiredReadStageMaterialCount &&
+            ActiveRendererCount > 0 && ActiveRendererCount <= ReadRendererBudget &&
+            ActiveUniqueMaterialCount > 0 &&
+            ActiveUniqueMaterialCount <= ReadMaterialBudget &&
+            ActiveLightCount == ReadLightBudget;
+        public bool ReadRuntimeContractReady => ReadGestureSampleReady &&
+            ReadCurrentStepTransformAgreement && ReadBudgetReady;
+        public string ReadBudgetEvidence =>
+            $"activeRenderers={ActiveRendererCount}/{ReadRendererBudget} " +
+            $"activeMaterials={ActiveUniqueMaterialCount}/{ReadMaterialBudget} " +
+            $"stageRenderers={ReadStageRendererCount}/{RequiredReadStageRendererCount} " +
+            $"stageMaterials={ReadStageUniqueMaterialCount}/{RequiredReadStageMaterialCount} " +
+            $"lights={ActiveLightCount}/{ReadLightBudget}";
+        public string ReadTransformEvidence => CurrentStep switch
+        {
+            0 => $"opening={ReadActualOpeningAngles:F3}/{ReadExpectedOpeningAngles:F3}",
+            1 => $"page0={ReadActualPrimaryPagePosition:F3}/" +
+                $"{ReadExpectedPrimaryPagePosition:F3}",
+            2 => $"bookmark={ReadActualBookmarkPosition:F3}/" +
+                $"{ReadExpectedBookmarkPosition:F3}",
+            3 => $"motes={ReadActualFinishMoteCount}/{ReadExpectedFinishMoteCount} " +
+                $"light={ReadActualLightIntensity:0.000}/{ReadExpectedLightIntensity:0.000}",
+            _ => "inactive"
+        };
         public bool HasAuthoredCareStation => _authoredCareStation != null &&
             !UsesProceduralCareStationFallback;
         public bool UsesProceduralCareStationFallback { get; private set; }
@@ -654,6 +746,8 @@ namespace MoonlightMagicHouse
                     Mathf.Sin(t * Mathf.PI) * ActivityLightPulseIntensity;
                 if (CurrentKind == MoonlightSpatialActionKind.Garden && CurrentStep == 3)
                     intensity *= EvaluateGardenBloomIntensity(_gestureSample);
+                else if (CurrentKind == MoonlightSpatialActionKind.Read && CurrentStep == 3)
+                    intensity = EvaluateReadLightTarget(t, CurrentStep, _gestureSample);
                 _activityLight.intensity = intensity;
             }
 
@@ -858,6 +952,7 @@ namespace MoonlightMagicHouse
             _gestureSample = default;
             _playProgress = 0f;
             _gardenProgress = 0f;
+            _readProgress = 0f;
             _blocks = null;
             _playProps = null;
             _starDetails = null;
@@ -3491,21 +3586,515 @@ namespace MoonlightMagicHouse
             AddActivityLight(new Color(0.94f, 0.76f, 0.42f));
         }
 
+        public static Vector2 EvaluateReadOpeningAngles(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float eased = Mathf.Sin(t * Mathf.PI * 0.5f);
+            Vector2 start = sample.HasSevenFiniteNormalizedPoints
+                ? sample.Start
+                : new Vector2(-0.46f, 0f);
+            Vector2 displacement = sample.HasSevenFiniteNormalizedPoints
+                ? sample.Displacement
+                : new Vector2(0.92f, 0f);
+            float directionalSignal = Mathf.Clamp(displacement.x + start.x * 0.65f,
+                -1f, 1f);
+            float gestureAmount = Mathf.Clamp01(
+                Mathf.Clamp01(sample.Score) * 0.35f +
+                Mathf.Clamp01(displacement.magnitude) * 0.35f +
+                Mathf.Abs(start.x) * 0.30f);
+            float amount = Mathf.Lerp(0.55f, 1f, gestureAmount);
+            float left = 4f + 8f * eased * amount * (1f - directionalSignal * 0.35f);
+            float right = 4f + 8f * eased * amount * (1f + directionalSignal * 0.35f);
+            return new Vector2(Mathf.Clamp(left, 4f, 14f),
+                -Mathf.Clamp(right, 4f, 14f));
+        }
+
+        public static Vector3 EvaluateReadPagePosition(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            Vector2 gesturePoint = ReadSamplePoint(sample, t);
+            float arc = Mathf.Max(0f, Mathf.Sin(t * Mathf.PI));
+            float pathAmount = sample.HasSevenFiniteNormalizedPoints
+                ? Mathf.Clamp01(sample.DisplacementMagnitude)
+                : 0.92f;
+            return new Vector3(
+                Mathf.Clamp(gesturePoint.x * 0.50f, -ReadPageMaximumX, ReadPageMaximumX),
+                0.50f + arc * Mathf.Lerp(0.10f, 0.20f, pathAmount),
+                Mathf.Clamp(gesturePoint.y * 0.30f, -ReadPageMaximumZ, ReadPageMaximumZ));
+        }
+
+        public static Vector3 EvaluateReadPageEuler(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            Vector2 gesturePoint = ReadSamplePoint(sample, t);
+            float direction = ReadTraversalDirection(sample);
+            float turn = direction >= 0f
+                ? Mathf.Lerp(180f, 0f, t)
+                : Mathf.Lerp(0f, 180f, t);
+            return new Vector3(-Mathf.Max(0f, Mathf.Sin(t * Mathf.PI)) * 8f, turn,
+                Mathf.Clamp(gesturePoint.y * 18f, -18f, 18f));
+        }
+
+        public static Vector3 EvaluateReadBookmarkPosition(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            Vector2 gesturePoint = ReadSamplePoint(sample, t);
+            float arc = Mathf.Max(0f, Mathf.Sin(t * Mathf.PI));
+            return new Vector3(
+                Mathf.Clamp(0.05f + gesturePoint.x * 0.24f,
+                    ReadBookmarkMinimumX, ReadBookmarkMaximumX),
+                0.49f + arc * 0.015f,
+                Mathf.Clamp(-0.18f + gesturePoint.y * 0.20f,
+                    ReadBookmarkMinimumZ, ReadBookmarkMaximumZ));
+        }
+
+        public static Vector3 EvaluateReadBookmarkEuler(float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            Vector2 gesturePoint = ReadSamplePoint(sample, t);
+            Vector2 from = ReadSamplePoint(sample, Mathf.Max(0f, t - 0.025f));
+            Vector2 to = ReadSamplePoint(sample, Mathf.Min(1f, t + 0.025f));
+            Vector2 tangent = to - from;
+            float yaw = tangent.sqrMagnitude > 0.000001f
+                ? Mathf.Atan2(tangent.x, tangent.y) * Mathf.Rad2Deg
+                : 0f;
+            return new Vector3(0f, Mathf.Clamp(yaw, -180f, 180f),
+                Mathf.Clamp(gesturePoint.x * 10f, -10f, 10f));
+        }
+
+        public static float EvaluateReadFinishIntensity(MoonlightGestureSample sample)
+        {
+            float score = Mathf.Clamp01(IsFinite(sample.Score) ? sample.Score : 0f);
+            float duration = Mathf.Clamp(IsFinite(sample.Duration) ? sample.Duration : 0f,
+                0f, 8f);
+            float durationResponse = Mathf.InverseLerp(0.25f, 1.25f, duration);
+            return ReadFinishMinimumIntensity + score * 0.55f + durationResponse * 0.30f;
+        }
+
+        public static float EvaluateReadLightTarget(float progress, int step,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float target = ActivityLightBaseIntensity +
+                Mathf.Sin(t * Mathf.PI) * ActivityLightPulseIntensity;
+            if (Mathf.Clamp(step, 0, 3) == 3)
+                target *= EvaluateReadFinishIntensity(sample);
+            return Mathf.Max(ActivityLightBaseIntensity, target);
+        }
+
+        public static int EvaluateReadFinishMoteCount(MoonlightGestureSample sample)
+        {
+            float response = Mathf.InverseLerp(ReadFinishMinimumIntensity,
+                ReadFinishMaximumIntensity, EvaluateReadFinishIntensity(sample));
+            return Mathf.Clamp(Mathf.RoundToInt(Mathf.Lerp(4f, 9f, response)), 4, 9);
+        }
+
+        public static Vector3 EvaluateReadFinishMotePosition(int moteIndex, float progress,
+            MoonlightGestureSample sample)
+        {
+            int index = Mathf.Clamp(moteIndex, 0, 8);
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float score = Mathf.Clamp01(IsFinite(sample.Score) ? sample.Score : 0f);
+            float durationResponse = Mathf.InverseLerp(0.25f, 1.25f,
+                Mathf.Clamp(IsFinite(sample.Duration) ? sample.Duration : 0f, 0f, 8f));
+            float phase = Mathf.Repeat(t * Mathf.Lerp(0.90f, 1.25f, durationResponse) +
+                index * 0.13f, 1f);
+            float angle = index * Mathf.PI * 2f / 9f +
+                t * Mathf.PI * Mathf.Lerp(0.55f, 1f, score);
+            float radius = 0.24f + index * 0.02f + score * 0.04f;
+            return new Vector3(Mathf.Cos(angle) * radius,
+                0.60f + phase * Mathf.Lerp(0.34f, 0.58f, durationResponse),
+                Mathf.Sin(angle) * radius);
+        }
+
+        public static float EvaluateReadFinishMoteScale(int moteIndex, float progress,
+            MoonlightGestureSample sample)
+        {
+            int index = Mathf.Clamp(moteIndex, 0, 8);
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            float durationResponse = Mathf.InverseLerp(0.25f, 1.25f,
+                Mathf.Clamp(IsFinite(sample.Duration) ? sample.Duration : 0f, 0f, 8f));
+            float phase = Mathf.Repeat(t * Mathf.Lerp(0.90f, 1.25f, durationResponse) +
+                index * 0.13f, 1f);
+            return (0.016f + Mathf.Sin(phase * Mathf.PI) * 0.032f) *
+                EvaluateReadFinishIntensity(sample);
+        }
+
+        public static bool ValidateGestureResponsiveReadContract(out string detail)
+        {
+            MoonlightGestureSample leftOpen = ReadLineSample(
+                new Vector2(-0.80f, -0.05f), new Vector2(-0.40f, 0.05f), 0.85f, 0.45f);
+            MoonlightGestureSample rightOpen = ReadLineSample(
+                new Vector2(0.80f, -0.05f), new Vector2(0.40f, 0.05f), 0.85f, 0.45f);
+            MoonlightGestureSample compact = ReadLineSample(
+                new Vector2(-0.10f, 0f), new Vector2(0.10f, 0f), 0.55f, 0.45f);
+            MoonlightGestureSample broad = ReadTraceSample(0.80f, false, 0.95f, 0.80f);
+            MoonlightGestureSample reverse = ReadTraceSample(0.80f, true, 0.95f, 0.80f);
+            MoonlightGestureSample narrow = ReadTraceSample(0.20f, false, 0.95f, 0.80f);
+            MoonlightGestureSample lowScore = ReadTraceSample(0.60f, false, 0.20f, 0.70f);
+            MoonlightGestureSample highScore = ReadTraceSample(0.60f, false, 0.95f, 0.70f);
+            MoonlightGestureSample shortHold = ReadTraceSample(0.60f, false, 0.70f, 0.30f);
+            MoonlightGestureSample longHold = ReadTraceSample(0.60f, false, 0.70f, 1.20f);
+
+            Vector2 leftAngles = EvaluateReadOpeningAngles(1f, leftOpen);
+            Vector2 rightAngles = EvaluateReadOpeningAngles(1f, rightOpen);
+            Vector2 compactAngles = EvaluateReadOpeningAngles(1f, compact);
+            Vector2 broadAngles = EvaluateReadOpeningAngles(1f, broad);
+            float compactOpening = compactAngles.x - compactAngles.y;
+            float broadOpening = broadAngles.x - broadAngles.y;
+            float openingDirectionDelta = leftAngles.x - rightAngles.x;
+            bool openingDirection = openingDirectionDelta > 0.50f &&
+                (-rightAngles.y) - (-leftAngles.y) > 0.50f &&
+                Mathf.Abs(leftAngles.x + rightAngles.y) <= 0.001f &&
+                Mathf.Abs(leftAngles.y + rightAngles.x) <= 0.001f;
+            bool openingAmount = broadOpening > compactOpening + 3f;
+
+            bool pageReversal = true;
+            bool bookmarkReversal = true;
+            bool bookmarkOrientationReversal = true;
+            bool finiteAndBounded = true;
+            MoonlightGestureSample[] samples =
+            {
+                leftOpen, rightOpen, compact, broad, reverse, narrow,
+                lowScore, highScore, shortHold, longHold
+            };
+            for (int i = 0; i <= 40; i++)
+            {
+                float t = i / 40f;
+                pageReversal &= Vector3.Distance(EvaluateReadPagePosition(t, broad),
+                        EvaluateReadPagePosition(1f - t, reverse)) <= 0.0001f &&
+                    Vector3.Distance(EvaluateReadPageEuler(t, broad),
+                        EvaluateReadPageEuler(1f - t, reverse)) <= 0.0001f;
+                bookmarkReversal &= Vector3.Distance(EvaluateReadBookmarkPosition(t, broad),
+                    EvaluateReadBookmarkPosition(1f - t, reverse)) <= 0.0001f;
+                Vector3 bookmarkEuler = EvaluateReadBookmarkEuler(t, broad);
+                Vector3 reversedBookmarkEuler = EvaluateReadBookmarkEuler(1f - t, reverse);
+                float bookmarkYawDelta = Mathf.Abs(Mathf.DeltaAngle(
+                    bookmarkEuler.y, reversedBookmarkEuler.y));
+                Vector3 bookmarkAxis = Quaternion.Euler(bookmarkEuler) * Vector3.forward;
+                Vector3 reversedBookmarkAxis =
+                    Quaternion.Euler(reversedBookmarkEuler) * Vector3.forward;
+                // Reversal flips the path tangent by 180 degrees. The ribbon is symmetric
+                // along that axis, so opposite longitudinal vectors are visually equivalent.
+                bookmarkOrientationReversal &=
+                    Mathf.Abs(bookmarkYawDelta - 180f) <= 0.001f &&
+                    Mathf.Abs(bookmarkEuler.z - reversedBookmarkEuler.z) <= 0.001f &&
+                    Vector3.Dot(bookmarkAxis, reversedBookmarkAxis) <= -0.9999f;
+                foreach (MoonlightGestureSample sample in samples)
+                {
+                    finiteAndBounded &= ReadOpeningIsFiniteAndBounded(
+                            EvaluateReadOpeningAngles(t, sample)) &&
+                        ReadPageIsFiniteAndBounded(EvaluateReadPagePosition(t, sample)) &&
+                        ReadPageEulerIsFiniteAndBounded(EvaluateReadPageEuler(t, sample)) &&
+                        ReadBookmarkIsFiniteAndBounded(
+                            EvaluateReadBookmarkPosition(t, sample)) &&
+                        ReadBookmarkEulerIsFiniteAndBounded(
+                            EvaluateReadBookmarkEuler(t, sample));
+                    for (int mote = 0; mote < 9; mote++)
+                    {
+                        Vector3 motePosition = EvaluateReadFinishMotePosition(mote, t, sample);
+                        float moteScale = EvaluateReadFinishMoteScale(mote, t, sample);
+                        finiteAndBounded &= IsFinite(motePosition) &&
+                            Mathf.Abs(motePosition.x) <= 0.45f &&
+                            motePosition.y >= 0.60f && motePosition.y <= 1.18f &&
+                            Mathf.Abs(motePosition.z) <= 0.45f && IsFinite(moteScale) &&
+                            moteScale >= 0.01f && moteScale <= 0.09f;
+                    }
+                    float finishMultiplier = EvaluateReadFinishIntensity(sample);
+                    float lightTarget = EvaluateReadLightTarget(t, 3, sample);
+                    finiteAndBounded &= IsFinite(finishMultiplier) &&
+                        finishMultiplier >= ReadFinishMinimumIntensity &&
+                        finishMultiplier <= ReadFinishMaximumIntensity &&
+                        IsFinite(lightTarget) && lightTarget >= ActivityLightBaseIntensity &&
+                        lightTarget <= 1.58f;
+                }
+            }
+            finiteAndBounded &= ReadPageIsFiniteAndBounded(
+                    EvaluateReadPagePosition(float.NaN, broad)) &&
+                ReadBookmarkIsFiniteAndBounded(
+                    EvaluateReadBookmarkPosition(float.PositiveInfinity, broad));
+
+            float narrowPageSpan = ReadPathSpan(narrow, true, true);
+            float broadPageSpan = ReadPathSpan(broad, true, true);
+            float narrowBookmarkSpan = ReadPathSpan(narrow, false, true);
+            float broadBookmarkSpan = ReadPathSpan(broad, false, true);
+            bool pathSpan = broadPageSpan > narrowPageSpan + 0.30f &&
+                broadBookmarkSpan > narrowBookmarkSpan + 0.20f;
+            float scoreDelta = EvaluateReadFinishIntensity(highScore) -
+                EvaluateReadFinishIntensity(lowScore);
+            float durationDelta = EvaluateReadFinishIntensity(longHold) -
+                EvaluateReadFinishIntensity(shortHold);
+            int lowMotes = EvaluateReadFinishMoteCount(lowScore);
+            int highMotes = EvaluateReadFinishMoteCount(highScore);
+            int shortMotes = EvaluateReadFinishMoteCount(shortHold);
+            int longMotes = EvaluateReadFinishMoteCount(longHold);
+            bool finishResponse = scoreDelta >= 0.40f && durationDelta >= 0.25f &&
+                highMotes >= lowMotes + 2 && longMotes >= shortMotes + 1 &&
+                EvaluateReadFinishIntensity(default) >= 1f &&
+                EvaluateReadLightTarget(1f, 3, default) >= ActivityLightBaseIntensity;
+
+            detail = $"points={broad.PointCount} openingDirection=" +
+                $"{openingDirection}/{openingDirectionDelta:0.000}deg " +
+                $"openingAmount={compactOpening:0.00}/{broadOpening:0.00} " +
+                $"reversals={pageReversal}/{bookmarkReversal}/" +
+                $"orientation={bookmarkOrientationReversal} " +
+                $"pageSpan={narrowPageSpan:0.000}/{broadPageSpan:0.000} " +
+                $"bookmarkSpan={narrowBookmarkSpan:0.000}/{broadBookmarkSpan:0.000} " +
+                $"scoreDelta={scoreDelta:0.000} motes={lowMotes}/{highMotes} " +
+                $"durationDelta={durationDelta:0.000} motes={shortMotes}/{longMotes} " +
+                $"finiteBounds={finiteAndBounded} " +
+                $"stageObjects={RequiredReadStageRendererCount}renderers/" +
+                $"{RequiredReadStageMaterialCount}materials lights={ReadLightBudget}";
+            return broad.HasSevenFiniteNormalizedPoints &&
+                reverse.HasSevenFiniteNormalizedPoints && openingDirection && openingAmount &&
+                pageReversal && bookmarkReversal && bookmarkOrientationReversal && pathSpan &&
+                finishResponse && finiteAndBounded && ReadRendererBudget == 48 &&
+                ReadMaterialBudget == 28 && ReadLightBudget == 1 &&
+                RequiredReadStageRendererCount == 19 &&
+                RequiredReadStageMaterialCount == 7;
+        }
+
+        static Vector2 ReadSamplePoint(MoonlightGestureSample sample, float progress)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            return sample.HasSevenFiniteNormalizedPoints
+                ? InterpolateSamplePoint(sample, t)
+                : new Vector2(Mathf.Lerp(-0.46f, 0.46f, t), 0f);
+        }
+
+        static float ReadTraversalDirection(MoonlightGestureSample sample)
+        {
+            if (!sample.HasSevenFiniteNormalizedPoints) return 1f;
+            Vector2 displacement = sample.Displacement;
+            float primary = Mathf.Abs(displacement.x) >= Mathf.Abs(displacement.y)
+                ? displacement.x
+                : displacement.y;
+            return Mathf.Abs(primary) > 0.0001f ? Mathf.Sign(primary) : 1f;
+        }
+
+        static MoonlightGestureSample ReadLineSample(Vector2 start, Vector2 end,
+            float score, float duration)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++)
+                points[i] = Vector2.Lerp(start, end, i / (float)(points.Length - 1));
+            return MoonlightGestureSample.Create(score, duration, points);
+        }
+
+        static MoonlightGestureSample ReadTraceSample(float scale, bool reverse,
+            float score, float duration)
+        {
+            Vector2[] shape =
+            {
+                new(-1f, -0.55f), new(-0.58f, 0.35f), new(-0.24f, -0.25f),
+                new(0.05f, 0.72f), new(0.34f, -0.42f), new(0.68f, 0.28f),
+                new(1f, 0.58f)
+            };
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++)
+            {
+                int source = reverse ? points.Length - 1 - i : i;
+                points[i] = shape[source] * scale;
+            }
+            return MoonlightGestureSample.Create(score, duration, points);
+        }
+
+        static float ReadPathSpan(MoonlightGestureSample sample, bool page, bool xAxis)
+        {
+            float minimum = float.PositiveInfinity;
+            float maximum = float.NegativeInfinity;
+            for (int i = 0; i <= 40; i++)
+            {
+                Vector3 point = page
+                    ? EvaluateReadPagePosition(i / 40f, sample)
+                    : EvaluateReadBookmarkPosition(i / 40f, sample);
+                float coordinate = xAxis ? point.x : point.z;
+                minimum = Mathf.Min(minimum, coordinate);
+                maximum = Mathf.Max(maximum, coordinate);
+            }
+            return maximum - minimum;
+        }
+
+        static bool ReadOpeningIsFiniteAndBounded(Vector2 angles) =>
+            IsFinite(angles.x) && IsFinite(angles.y) &&
+            angles.x >= 4f && angles.x <= 14f &&
+            angles.y <= -4f && angles.y >= -14f;
+
+        static bool ReadPageIsFiniteAndBounded(Vector3 point) => IsFinite(point) &&
+            Mathf.Abs(point.x) <= ReadPageMaximumX && point.y >= 0.50f &&
+            point.y <= 0.70f && Mathf.Abs(point.z) <= ReadPageMaximumZ;
+
+        static bool ReadPageEulerIsFiniteAndBounded(Vector3 euler) => IsFinite(euler) &&
+            euler.x >= -8f && euler.x <= 0f && euler.y >= 0f && euler.y <= 180f &&
+            Mathf.Abs(euler.z) <= 26f;
+
+        static bool ReadBookmarkIsFiniteAndBounded(Vector3 point) => IsFinite(point) &&
+            point.x >= ReadBookmarkMinimumX && point.x <= ReadBookmarkMaximumX &&
+            point.y >= 0.49f && point.y <= 0.505f &&
+            point.z >= ReadBookmarkMinimumZ && point.z <= ReadBookmarkMaximumZ;
+
+        static bool ReadBookmarkEulerIsFiniteAndBounded(Vector3 euler) => IsFinite(euler) &&
+            Mathf.Abs(euler.x) <= 0.0001f && Mathf.Abs(euler.y) <= 180f &&
+            Mathf.Abs(euler.z) <= 10f;
+
+        Vector2 ReadCoverAngles()
+        {
+            if (_bookProps == null || _bookProps.Length < 5 || _bookProps[1] == null ||
+                _bookProps[2] == null)
+                return new Vector2(float.NaN, float.NaN);
+            return new Vector2(SignedLocalZ(_bookProps[1]), SignedLocalZ(_bookProps[2]));
+        }
+
+        bool ReadOpeningTransformsMatch()
+        {
+            if (_bookProps == null || _bookProps.Length < 5) return false;
+            Vector2 expected = ReadExpectedOpeningAngles;
+            Vector2 actual = ReadActualOpeningAngles;
+            float openingProgress = Mathf.Clamp01(_readProgress);
+            float expectedLeftStack = Mathf.Clamp(expected.x + openingProgress, 4f, 15f);
+            float expectedRightStack = Mathf.Clamp(expected.y - openingProgress, -15f, -4f);
+            return IsFinite(actual.x) && IsFinite(actual.y) &&
+                Mathf.Abs(actual.x - expected.x) <= 0.001f &&
+                Mathf.Abs(actual.y - expected.y) <= 0.001f &&
+                _bookProps[3] != null && _bookProps[4] != null &&
+                Mathf.Abs(SignedLocalZ(_bookProps[3]) - expectedLeftStack) <= 0.001f &&
+                Mathf.Abs(SignedLocalZ(_bookProps[4]) - expectedRightStack) <= 0.001f;
+        }
+
+        bool ReadPageTransformsMatch()
+        {
+            if (_pageFlips == null || _pageFlips.Length != 4) return false;
+            for (int i = 0; i < _pageFlips.Length; i++)
+            {
+                Transform page = _pageFlips[i];
+                if (page == null || !page.gameObject.activeSelf) return false;
+                float phase = Mathf.Repeat(_readProgress * 1.6f + i * 0.22f, 1f);
+                Vector3 expectedPosition = EvaluateReadPagePosition(phase, _gestureSample) +
+                    Vector3.up * (i * 0.006f);
+                Quaternion expectedRotation = Quaternion.Euler(
+                    EvaluateReadPageEuler(phase, _gestureSample));
+                if (Vector3.Distance(page.localPosition, expectedPosition) > 0.001f ||
+                    Quaternion.Angle(page.localRotation, expectedRotation) > 0.01f)
+                    return false;
+            }
+            return true;
+        }
+
+        bool ReadBookmarkTransformMatches()
+        {
+            if (_bookmark == null || !_bookmark.gameObject.activeSelf) return false;
+            Vector3 expectedPosition = EvaluateReadBookmarkPosition(_readProgress, _gestureSample);
+            Quaternion expectedRotation = Quaternion.Euler(
+                EvaluateReadBookmarkEuler(_readProgress, _gestureSample));
+            return Vector3.Distance(_bookmark.localPosition, expectedPosition) <= 0.001f &&
+                Quaternion.Angle(_bookmark.localRotation, expectedRotation) <= 0.01f;
+        }
+
+        bool ReadFinishTransformsMatch()
+        {
+            if (_readMotes == null || _readMotes.Length != 9 || _activityLight == null)
+                return false;
+            int expectedCount = EvaluateReadFinishMoteCount(_gestureSample);
+            for (int i = 0; i < _readMotes.Length; i++)
+            {
+                Transform mote = _readMotes[i];
+                bool expectedActive = i < expectedCount;
+                if (mote == null || mote.gameObject.activeSelf != expectedActive) return false;
+                if (!expectedActive) continue;
+                Vector3 expectedPosition = EvaluateReadFinishMotePosition(
+                    i, _readProgress, _gestureSample);
+                Vector3 expectedScale = Vector3.one * EvaluateReadFinishMoteScale(
+                    i, _readProgress, _gestureSample);
+                if (Vector3.Distance(mote.localPosition, expectedPosition) > 0.001f ||
+                    Vector3.Distance(mote.localScale, expectedScale) > 0.001f)
+                    return false;
+            }
+            return CountActiveReadMotes() == expectedCount &&
+                IsFinite(_activityLight.intensity) &&
+                Mathf.Abs(_activityLight.intensity - ReadExpectedLightIntensity) <= 0.001f &&
+                _activityLight.intensity >= ActivityLightBaseIntensity;
+        }
+
+        int CountActiveReadMotes()
+        {
+            int count = 0;
+            if (_readMotes == null) return count;
+            for (int i = 0; i < _readMotes.Length; i++)
+                if (_readMotes[i] != null && _readMotes[i].gameObject.activeSelf) count++;
+            return count;
+        }
+
+        int CountReadStageRenderers()
+        {
+            int count = CountDirectRenderers(_bookProps) + CountDirectRenderers(_pageFlips) +
+                CountDirectRenderers(_readMotes);
+            if (_bookmark != null && _bookmark.GetComponent<Renderer>() != null) count++;
+            return count;
+        }
+
+        int CountReadStageUniqueMaterials()
+        {
+            var materialIds = new HashSet<int>();
+            AddDirectMaterialIds(_bookProps, materialIds);
+            AddDirectMaterialIds(_pageFlips, materialIds);
+            AddDirectMaterialIds(_readMotes, materialIds);
+            if (_bookmark != null)
+            {
+                Renderer renderer = _bookmark.GetComponent<Renderer>();
+                if (renderer != null && renderer.sharedMaterial != null)
+                    materialIds.Add(renderer.sharedMaterial.GetInstanceID());
+            }
+            return materialIds.Count;
+        }
+
+        static int CountDirectRenderers(Transform[] transforms)
+        {
+            int count = 0;
+            if (transforms == null) return count;
+            for (int i = 0; i < transforms.Length; i++)
+                if (transforms[i] != null && transforms[i].GetComponent<Renderer>() != null)
+                    count++;
+            return count;
+        }
+
+        static void AddDirectMaterialIds(Transform[] transforms, HashSet<int> materialIds)
+        {
+            if (transforms == null) return;
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                if (transforms[i] == null) continue;
+                Renderer renderer = transforms[i].GetComponent<Renderer>();
+                if (renderer != null && renderer.sharedMaterial != null)
+                    materialIds.Add(renderer.sharedMaterial.GetInstanceID());
+            }
+        }
+
+        static float SignedLocalZ(Transform target) =>
+            target != null ? Mathf.DeltaAngle(0f, target.localEulerAngles.z) : float.NaN;
+
         void UpdateRead(float t)
         {
             if (_pageFlips == null || _readMotes == null) return;
 
             int step = Mathf.Clamp(CurrentStep, 0, 3);
+            _readProgress = t;
 
             if (_bookProps != null)
             {
-                float open = step == 0
-                    ? Mathf.Sin(Mathf.Clamp01(t * 2.2f) * Mathf.PI * 0.5f)
-                    : 1f;
-                _bookProps[1].localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(4f, 11f, open));
-                _bookProps[2].localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(-4f, -11f, open));
-                _bookProps[3].localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(4f, 12f, open));
-                _bookProps[4].localRotation = Quaternion.Euler(0f, 0f, Mathf.Lerp(-4f, -12f, open));
+                Vector2 openingAngles = EvaluateReadOpeningAngles(step == 0 ? t : 1f,
+                    _gestureSample);
+                float openingProgress = step == 0 ? Mathf.Clamp01(t) : 1f;
+                _bookProps[1].localRotation = Quaternion.Euler(0f, 0f, openingAngles.x);
+                _bookProps[2].localRotation = Quaternion.Euler(0f, 0f, openingAngles.y);
+                _bookProps[3].localRotation = Quaternion.Euler(0f, 0f,
+                    Mathf.Clamp(openingAngles.x + openingProgress, 4f, 15f));
+                _bookProps[4].localRotation = Quaternion.Euler(0f, 0f,
+                    Mathf.Clamp(openingAngles.y - openingProgress, -15f, -4f));
             }
 
             for (int i = 0; i < _pageFlips.Length; i++)
@@ -3515,26 +4104,43 @@ namespace MoonlightMagicHouse
                 if (!showPage) continue;
                 float phase = Mathf.Repeat(t * 1.6f + i * 0.22f, 1f);
                 float turn = Mathf.Sin(phase * Mathf.PI);
-                _pageFlips[i].localPosition = new Vector3(Mathf.Lerp(0.20f, -0.20f, phase),
-                    0.50f + turn * 0.18f + i * 0.006f, 0f);
+                _pageFlips[i].localPosition = EvaluateReadPagePosition(phase, _gestureSample) +
+                    Vector3.up * (i * 0.006f);
                 _pageFlips[i].localScale = new Vector3(Mathf.Lerp(0.36f, 0.26f, turn), 0.012f, 0.50f);
-                _pageFlips[i].localRotation = Quaternion.Euler(0f, Mathf.Lerp(0f, 180f, phase), Mathf.Lerp(-10f, 10f, phase));
+                _pageFlips[i].localRotation = Quaternion.Euler(
+                    EvaluateReadPageEuler(phase, _gestureSample));
             }
 
             if (_bookmark != null)
             {
-                float trace = step == 2 ? 0.07f : 0.025f;
-                _bookmark.localPosition = new Vector3(0.05f + Mathf.Sin(t * Mathf.PI * 2f) * trace,
-                    0.49f, -0.18f);
-                _bookmark.localRotation = Quaternion.Euler(0f, 0f,
-                    -5f + Mathf.Sin(t * Mathf.PI * (step == 2 ? 6f : 3f)) * (step == 2 ? 9f : 4f));
+                if (step == 2)
+                {
+                    _bookmark.localPosition = EvaluateReadBookmarkPosition(t, _gestureSample);
+                    _bookmark.localRotation = Quaternion.Euler(
+                        EvaluateReadBookmarkEuler(t, _gestureSample));
+                }
+                else
+                {
+                    _bookmark.localPosition = new Vector3(0.05f, 0.49f, -0.18f);
+                    _bookmark.localRotation = Quaternion.Euler(0f, 0f, -5f);
+                }
             }
 
             for (int i = 0; i < _readMotes.Length; i++)
             {
-                bool showMote = step >= 2 || (step == 0 && i < 3);
+                int finishMoteCount = EvaluateReadFinishMoteCount(_gestureSample);
+                bool showMote = step == 3 ? i < finishMoteCount :
+                    step == 2 || (step == 0 && i < 3);
                 _readMotes[i].gameObject.SetActive(showMote);
                 if (!showMote) continue;
+                if (step == 3)
+                {
+                    _readMotes[i].localPosition = EvaluateReadFinishMotePosition(
+                        i, t, _gestureSample);
+                    _readMotes[i].localScale = Vector3.one * EvaluateReadFinishMoteScale(
+                        i, t, _gestureSample);
+                    continue;
+                }
                 float phase = Mathf.Repeat(t * (step == 3 ? 1.15f : 0.72f) + i * 0.13f, 1f);
                 float angle = i * Mathf.PI * 2f / _readMotes.Length + t * Mathf.PI * (step == 2 ? 1.8f : 0.8f);
                 float radius = step == 2 ? 0.22f + i * 0.018f : 0.28f + i * 0.025f;

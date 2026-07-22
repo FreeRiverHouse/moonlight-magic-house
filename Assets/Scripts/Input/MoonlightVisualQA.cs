@@ -21,6 +21,14 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_ACTIVITY_RESULT_DISPLAY_BOUNDARY_VERIFIED";
         public const string ActivityResultVisibleIntervalMarker =
             "MOONLIGHT_ACTIVITY_RESULT_VISIBLE_INTERVAL_VERIFIED";
+        public const string GestureReadStaticContractMarker =
+            "MOONLIGHT_GESTURE_READ_STATIC_CONTRACT_VERIFIED";
+        public const string GestureReadStaticContractFailureMarker =
+            "MOONLIGHT_GESTURE_READ_STATIC_CONTRACT_FAILED";
+        public const string GestureReadRuntimeContractMarker =
+            "MOONLIGHT_GESTURE_READ_RUNTIME_CONTRACT_VERIFIED";
+        public const string GestureReadRuntimeContractFailureMarker =
+            "MOONLIGHT_GESTURE_READ_RUNTIME_CONTRACT_FAILED";
 
         static readonly string[] IntermediateActivityResults =
         {
@@ -697,6 +705,17 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] gesture-garden-contract " +
                 $"sample=({gestureSampleDetail}) garden=({responsiveGardenDetail}) " +
                 "marker=MOONLIGHT_GESTURE_GARDEN_STATIC_CONTRACT_VERIFIED");
+            if (!MoonlightActivityStage.ValidateGestureResponsiveReadContract(
+                    out string responsiveReadDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] gesture-read-contract " +
+                    $"{responsiveReadDetail} marker={GestureReadStaticContractFailureMarker}");
+                Application.Quit(152);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] gesture-read-contract " +
+                $"sample=({gestureSampleDetail}) read=({responsiveReadDetail}) " +
+                $"marker={GestureReadStaticContractMarker}");
             if (!MoonlightGesturePad.ValidateLiveHoldReadinessStaticContract(
                     out string liveHoldReadinessDetail))
             {
@@ -3232,6 +3251,68 @@ namespace MoonlightMagicHouse
                         }
                         else if (zone.Kind == MoonlightSpatialActionKind.Read)
                         {
+                            bool readSampleEqualityPass = pad != null &&
+                                pad.LastSample.HasSevenFiniteNormalizedPoints &&
+                                zone.LastGestureSample.HasSevenFiniteNormalizedPoints &&
+                                feedback.ActiveGestureSample.HasSevenFiniteNormalizedPoints &&
+                                stage.ReadGestureSampleReady &&
+                                pad.LastSample.ContentEquals(zone.LastGestureSample) &&
+                                zone.LastGestureSample.ContentEquals(
+                                    feedback.ActiveGestureSample) &&
+                                feedback.ActiveGestureSample.ContentEquals(
+                                    stage.ActiveGestureSample);
+                            bool readGestureKindPass = step switch
+                            {
+                                0 => expected == MoonlightGestureKind.Tap,
+                                1 => expected == MoonlightGestureKind.Swipe,
+                                2 => expected == MoonlightGestureKind.Circle,
+                                _ => expected == MoonlightGestureKind.Hold
+                            };
+                            bool readFinishPass = step != 3 ||
+                                (stage.ReadFinishIntensityMultiplier >= 1f &&
+                                 stage.ReadActualLightIntensity >=
+                                     MoonlightActivityStage.ReadMinimumLightIntensity &&
+                                 Mathf.Abs(stage.ReadActualLightIntensity -
+                                     stage.ReadExpectedLightIntensity) <= 0.001f &&
+                                 stage.ReadActualFinishMoteCount ==
+                                     stage.ReadExpectedFinishMoteCount);
+                            bool unchangedReadBudgets =
+                                MoonlightActivityStage.ReadRendererBudget == 48 &&
+                                MoonlightActivityStage.ReadMaterialBudget == 28 &&
+                                MoonlightActivityStage.ReadLightBudget == 1 &&
+                                MoonlightActivityStage.RequiredReadStageRendererCount == 19 &&
+                                MoonlightActivityStage.RequiredReadStageMaterialCount == 7 &&
+                                stage.ReadBudgetReady;
+                            bool gestureReadRuntimePass = readSampleEqualityPass &&
+                                readGestureKindPass && stage.ReadRuntimeContractReady &&
+                                readFinishPass && unchangedReadBudgets;
+                            if (!gestureReadRuntimePass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                    "gesture-read-runtime " +
+                                    $"step={step + 1}/4 sampleEquality={readSampleEqualityPass} " +
+                                    $"padPoints={(pad != null ? pad.LastSample.PointCount : 0)} " +
+                                    $"zonePoints={zone.LastGestureSample.PointCount} " +
+                                    $"feedbackPoints={feedback.ActiveGestureSample.PointCount} " +
+                                    $"stagePoints={stage.ActiveGestureSample.PointCount} " +
+                                    $"kind={expected}/{readGestureKindPass} " +
+                                    $"transform={stage.ReadCurrentStepTransformAgreement} " +
+                                    $"evidence=({stage.ReadTransformEvidence}) " +
+                                    $"finish={readFinishPass} multiplier=" +
+                                    $"{stage.ReadFinishIntensityMultiplier:0.000} " +
+                                    $"budget=({stage.ReadBudgetEvidence}) " +
+                                    $"marker={GestureReadRuntimeContractFailureMarker}");
+                                Application.Quit(153);
+                                yield break;
+                            }
+                            Debug.Log("[MoonlightGameplayQA][PASS] gesture-read-runtime " +
+                                $"step={step + 1}/4 points={stage.ActiveGestureSample.PointCount} " +
+                                $"sampleEquality={readSampleEqualityPass} gesture={expected} " +
+                                $"transform=({stage.ReadTransformEvidence}) " +
+                                $"multiplier={stage.ReadFinishIntensityMultiplier:0.000} " +
+                                $"budget=({stage.ReadBudgetEvidence}) " +
+                                $"marker={GestureReadRuntimeContractMarker}");
+
                             bool authoredReadPass = stage.HasAuthoredReadingNook &&
                                 stage.AuthoredReadingNookRendererCount >= 18 &&
                                 stage.AuthoredReadingNookRendererCount <= 24 &&
