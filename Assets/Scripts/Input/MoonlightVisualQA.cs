@@ -402,6 +402,17 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] activity-surface-depth-contract " +
                 $"{surfaceDepthDetail} marker=MOONLIGHT_ACTIVITY_SURFACE_DEPTH_CONTRACT_VERIFIED");
+            if (!MoonlightActivityStage.ValidateCookChoreographyContract(
+                    out string cookChoreographyDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] cook-choreography-contract " +
+                    cookChoreographyDetail);
+                Application.Quit(105);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] cook-choreography-contract " +
+                $"{cookChoreographyDetail} " +
+                "marker=MOONLIGHT_COOK_CHOREOGRAPHY_CONTRACT_VERIFIED");
             if (!MoonlightUI.ValidateIPadProgressFeedbackContract(out string progressFeedbackDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-progress-feedback-contract " +
@@ -1729,6 +1740,66 @@ namespace MoonlightMagicHouse
                                 $"colliders={stage.AuthoredCookWorkbenchColliderCount} " +
                                 $"lights={stage.AuthoredCookWorkbenchLightCount} " +
                                 "marker=MOONLIGHT_AUTHORED_COOK_WORKBENCH_READY");
+
+                            string expectedCookPhase = MoonlightActivityStage.CookPhaseName(step);
+                            int expectedMotionProps =
+                                MoonlightActivityStage.CookPhaseMinimumMotionPropCount(step);
+                            int expectedVisibleMotionProps =
+                                MoonlightActivityStage.CookPhaseMinimumVisibleMotionPropCount(step);
+                            string expectedCookMarker =
+                                MoonlightActivityStage.CookPhaseReadyMarker(step);
+                            bool cookProgressValid =
+                                !float.IsNaN(stage.CookCurrentPhaseProgress) &&
+                                !float.IsInfinity(stage.CookCurrentPhaseProgress) &&
+                                stage.CookCurrentPhaseProgress > 0f &&
+                                stage.CookCurrentPhaseProgress <= 1f;
+                            bool cookChoreographyPass = stage.HasCompleteCookChoreography &&
+                                stage.CookChoreographyReadyMask ==
+                                    MoonlightActivityStage.CookRequiredPhaseMask &&
+                                stage.CookCurrentPhaseName == expectedCookPhase &&
+                                cookProgressValid &&
+                                stage.CookCurrentPhaseMotionPropCount == expectedMotionProps &&
+                                stage.CookCurrentPhaseVisibleMotionPropCount >=
+                                    expectedVisibleMotionProps &&
+                                stage.CookCurrentPhaseMotionReady &&
+                                stage.CookCurrentPhaseStateReady &&
+                                (step != 2 || stage.CookBakeDoorClearancePass) &&
+                                stage.CookBudgetReady &&
+                                stage.CookPhaseQAMarker == expectedCookMarker;
+                            if (!cookChoreographyPass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] cook-choreography-live " +
+                                    $"step={step + 1}/{MoonlightActivityStage.CookPhaseCount} " +
+                                    $"phase={stage.CookCurrentPhaseName}/{expectedCookPhase} " +
+                                    $"mask=0x{stage.CookChoreographyReadyMask:X}/" +
+                                    $"0x{MoonlightActivityStage.CookRequiredPhaseMask:X} " +
+                                    $"motionProps={stage.CookCurrentPhaseMotionPropCount}/" +
+                                    $"{expectedMotionProps} visibleMotionProps=" +
+                                    $"{stage.CookCurrentPhaseVisibleMotionPropCount}/" +
+                                    $">={expectedVisibleMotionProps} " +
+                                    $"motionReady={stage.CookCurrentPhaseMotionReady} " +
+                                    $"progress={stage.CookCurrentPhaseProgress:0.000} " +
+                                    $"motionEvidence=({stage.CookCurrentPhaseMotionEvidence}) " +
+                                    $"stateReady={stage.CookCurrentPhaseStateReady} " +
+                                    $"doorClear={stage.CookBakeDoorClearancePass} " +
+                                    $"budgetReady={stage.CookBudgetReady} " +
+                                    $"budget=({stage.CookBudgetEvidence}) " +
+                                    $"marker={stage.CookPhaseQAMarker}/{expectedCookMarker}");
+                                Application.Quit(106);
+                                yield break;
+                            }
+                            Debug.Log("[MoonlightGameplayQA][PASS] cook-choreography-live " +
+                                $"step={step + 1}/{MoonlightActivityStage.CookPhaseCount} " +
+                                $"phase={stage.CookCurrentPhaseName} " +
+                                $"mask=0x{stage.CookChoreographyReadyMask:X} " +
+                                $"motionProps={stage.CookCurrentPhaseMotionPropCount} " +
+                                $"visibleMotionProps={stage.CookCurrentPhaseVisibleMotionPropCount} " +
+                                $"motionReady={stage.CookCurrentPhaseMotionReady} " +
+                                $"motionEvidence=({stage.CookCurrentPhaseMotionEvidence}) " +
+                                $"stateReady={stage.CookCurrentPhaseStateReady} " +
+                                $"doorClear={stage.CookBakeDoorClearancePass} " +
+                                $"budget=({stage.CookBudgetEvidence}) " +
+                                $"marker={stage.CookPhaseQAMarker}");
                         }
                         else if (zone.Kind == MoonlightSpatialActionKind.Play)
                         {

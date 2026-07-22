@@ -13,6 +13,29 @@ namespace MoonlightMagicHouse
         const float ActivityLightBaseIntensity = 0.32f;
         const float ActivityLightPulseIntensity = 0.53f;
         const float CareFinalLingerSeconds = 4.6f;
+        const float BakeLoadStart = 0.08f;
+        const float BakeLoadEnd = 0.32f;
+        const float BakeDoorCloseStart = 0.34f;
+        const float BakeDoorCloseEnd = 0.46f;
+        const float BakeDoorReopenStart = 0.58f;
+        const float BakeDoorReopenEnd = 0.66f;
+        const float BakeExtractStart = 0.68f;
+        const float BakeExtractEnd = 0.92f;
+        public const int CookPhaseCount = 4;
+        public const int CookRequiredPhaseMask = (1 << CookPhaseCount) - 1;
+        public const int CookRendererBudget = 36;
+        public const int CookMaterialBudget = 24;
+        public const int CookLightBudget = 1;
+        public const string CookAddChoreographyReadyMarker =
+            "MOONLIGHT_COOK_ADD_CHOREOGRAPHY_READY";
+        public const string CookStirChoreographyReadyMarker =
+            "MOONLIGHT_COOK_STIR_CHOREOGRAPHY_READY";
+        public const string CookBakeChoreographyReadyMarker =
+            "MOONLIGHT_COOK_BAKE_CHOREOGRAPHY_READY";
+        public const string CookPresentChoreographyReadyMarker =
+            "MOONLIGHT_COOK_PRESENT_CHOREOGRAPHY_READY";
+        public const string CookChoreographyIncompleteMarker =
+            "MOONLIGHT_COOK_CHOREOGRAPHY_INCOMPLETE";
 
         enum ActivitySurfaceProfile
         {
@@ -29,7 +52,11 @@ namespace MoonlightMagicHouse
         readonly Dictionary<MaterialKey, Material> _materialCache = new();
         readonly HashSet<ActivitySurfaceProfile> _configuredSurfaceProfiles = new();
         readonly List<Renderer> _renderers = new();
+        readonly List<Material> _sharedMaterialBuffer = new();
+        readonly List<Light> _stageLights = new();
+        readonly List<Light> _lightBuffer = new();
         readonly HashSet<int> _gardenMagicFlowerMaterialIds = new();
+        bool _cookBakeDoorClearancePass = true;
         int[] _activeMaterialIds = System.Array.Empty<int>();
         GameObject _root;
         Transform _bowl;
@@ -135,6 +162,136 @@ namespace MoonlightMagicHouse
         public int AuthoredCookWorkbenchMaterialCount { get; private set; }
         public int AuthoredCookWorkbenchColliderCount { get; private set; }
         public int AuthoredCookWorkbenchLightCount { get; private set; }
+        public int CookChoreographyReadyMask { get; private set; }
+        public bool HasCompleteCookChoreography =>
+            CookChoreographyReadyMask == CookRequiredPhaseMask;
+        public string CookCurrentPhaseName { get; private set; } = "inactive";
+        public float CookCurrentPhaseProgress { get; private set; }
+        public int CookCurrentPhaseMotionPropCount { get; private set; }
+        public int CookCurrentPhaseVisibleMotionPropCount { get; private set; }
+        public bool CookCurrentPhaseMotionReady { get; private set; }
+        public bool CookCurrentPhaseStateReady { get; private set; }
+        public bool CookBakeDoorClearancePass => _cookBakeDoorClearancePass;
+        public string CookCurrentPhaseMotionEvidence =>
+            $"phase={CookCurrentPhaseName} progress={CookCurrentPhaseProgress:0.000} " +
+            $"matched={CookCurrentPhaseMotionPropCount}/" +
+            $"{CookPhaseMinimumMotionPropCount(CurrentStep)} visible=" +
+            $"{CookCurrentPhaseVisibleMotionPropCount}/" +
+            $"{CookPhaseMinimumVisibleMotionPropCount(CurrentStep)} " +
+            $"doorClear={_cookBakeDoorClearancePass}";
+        public bool CookBudgetReady => CurrentKind == MoonlightSpatialActionKind.Cook &&
+            ActiveRendererCount > 0 && ActiveRendererCount <= CookRendererBudget &&
+            ActiveUniqueMaterialCount > 0 && ActiveUniqueMaterialCount <= CookMaterialBudget &&
+            ActiveLightCount == CookLightBudget;
+        public string CookBudgetEvidence =>
+            $"renderers={ActiveRendererCount}/{CookRendererBudget} " +
+            $"materials={ActiveUniqueMaterialCount}/{CookMaterialBudget} " +
+            $"lights={ActiveLightCount}/{CookLightBudget}";
+        public string CookPhaseQAMarker =>
+            CookCurrentPhaseMotionReady && CookCurrentPhaseStateReady && CookBudgetReady
+                ? CookPhaseReadyMarker(CurrentStep)
+                : CookChoreographyIncompleteMarker;
+
+        public static int CookPhaseMinimumMotionPropCount(int phaseIndex) => phaseIndex switch
+        {
+            0 => 9,
+            1 => 5,
+            2 => 15,
+            3 => 20,
+            _ => 0
+        };
+
+        public static int CookPhaseMinimumVisibleMotionPropCount(int phaseIndex) => phaseIndex switch
+        {
+            0 => 6,
+            1 => 5,
+            2 => 10,
+            3 => 12,
+            _ => 0
+        };
+
+        public static string CookPhaseName(int phaseIndex) => phaseIndex switch
+        {
+            0 => "add-pour",
+            1 => "stir-circle",
+            2 => "bake-rise",
+            3 => "decorate-present",
+            _ => "inactive"
+        };
+
+        public static string CookPhaseReadyMarker(int phaseIndex) => phaseIndex switch
+        {
+            0 => CookAddChoreographyReadyMarker,
+            1 => CookStirChoreographyReadyMarker,
+            2 => CookBakeChoreographyReadyMarker,
+            3 => CookPresentChoreographyReadyMarker,
+            _ => CookChoreographyIncompleteMarker
+        };
+
+        public static bool ValidateCookChoreographyContract(out string detail)
+        {
+            int configuredPhaseMask = 0;
+            int totalMotionProps = 0;
+            for (int phase = 0; phase < CookPhaseCount; phase++)
+            {
+                int motionProps = CookPhaseMinimumMotionPropCount(phase);
+                if (motionProps > 0 && CookPhaseName(phase) != "inactive")
+                    configuredPhaseMask |= 1 << phase;
+                totalMotionProps += motionProps;
+            }
+
+            bool phaseCountsPass = CookPhaseMinimumMotionPropCount(0) == 9 &&
+                CookPhaseMinimumMotionPropCount(1) == 5 &&
+                CookPhaseMinimumMotionPropCount(2) == 15 &&
+                CookPhaseMinimumMotionPropCount(3) == 20 &&
+                CookPhaseMinimumVisibleMotionPropCount(0) == 6 &&
+                CookPhaseMinimumVisibleMotionPropCount(1) == 5 &&
+                CookPhaseMinimumVisibleMotionPropCount(2) == 10 &&
+                CookPhaseMinimumVisibleMotionPropCount(3) == 12;
+            bool bakeTimingPass = 0f <= BakeLoadStart && BakeLoadStart < BakeLoadEnd &&
+                BakeLoadEnd <= BakeDoorCloseStart &&
+                BakeDoorCloseStart < BakeDoorCloseEnd &&
+                BakeDoorCloseEnd < BakeDoorReopenStart &&
+                BakeDoorReopenStart < BakeDoorReopenEnd &&
+                BakeDoorReopenEnd <= BakeExtractStart &&
+                BakeExtractStart < BakeExtractEnd && BakeExtractEnd <= 1f;
+            bool exactBakeTimingPass =
+                Mathf.Approximately(BakeLoadStart, 0.08f) &&
+                Mathf.Approximately(BakeLoadEnd, 0.32f) &&
+                Mathf.Approximately(BakeDoorCloseStart, 0.34f) &&
+                Mathf.Approximately(BakeDoorCloseEnd, 0.46f) &&
+                Mathf.Approximately(BakeDoorReopenStart, 0.58f) &&
+                Mathf.Approximately(BakeDoorReopenEnd, 0.66f) &&
+                Mathf.Approximately(BakeExtractStart, 0.68f) &&
+                Mathf.Approximately(BakeExtractEnd, 0.92f);
+            bool fullBakeClearancePass = true;
+            for (int sample = 0; sample <= 100; sample++)
+            {
+                float progress = sample / 100f;
+                if (IsBakeTrayCrossingDoor(progress) && BakeDoorOpen(progress) < 0.999f)
+                {
+                    fullBakeClearancePass = false;
+                    break;
+                }
+            }
+            bool pass = CookPhaseCount == 4 && configuredPhaseMask == CookRequiredPhaseMask &&
+                phaseCountsPass && totalMotionProps == 49 && bakeTimingPass &&
+                exactBakeTimingPass && fullBakeClearancePass &&
+                CookRendererBudget > 0 && CookRendererBudget <= 36 &&
+                CookMaterialBudget > 0 && CookMaterialBudget <= 24 && CookLightBudget == 1;
+            detail = $"phases={CookPhaseCount} mask=0x{configuredPhaseMask:X}/0x{CookRequiredPhaseMask:X} " +
+                $"motionProps={CookPhaseMinimumMotionPropCount(0)}," +
+                $"{CookPhaseMinimumMotionPropCount(1)}," +
+                $"{CookPhaseMinimumMotionPropCount(2)}," +
+                $"{CookPhaseMinimumMotionPropCount(3)} total={totalMotionProps} " +
+                $"visibleMinimums={CookPhaseMinimumVisibleMotionPropCount(0)}," +
+                $"{CookPhaseMinimumVisibleMotionPropCount(1)}," +
+                $"{CookPhaseMinimumVisibleMotionPropCount(2)}," +
+                $"{CookPhaseMinimumVisibleMotionPropCount(3)} timing={bakeTimingPass} " +
+                $"exactTiming={exactBakeTimingPass} fullDoorClearance={fullBakeClearancePass} " +
+                $"budgets={CookRendererBudget}r/{CookMaterialBudget}m/{CookLightBudget}l";
+            return pass;
+        }
         public bool HasAuthoredPlayArena => _authoredPlayArena != null;
         public int AuthoredPlayArenaRendererCount { get; private set; }
         public int AuthoredPlayArenaMaterialCount { get; private set; }
@@ -251,6 +408,7 @@ namespace MoonlightMagicHouse
             else if (kind == MoonlightSpatialActionKind.Read) BuildReadStage();
             else if (kind == MoonlightSpatialActionKind.Care) BuildCareStage();
 
+            RefreshStageLights();
             UpdateStage(kind, 0f);
         }
 
@@ -466,6 +624,9 @@ namespace MoonlightMagicHouse
             _materialCache.Clear();
             _configuredSurfaceProfiles.Clear();
             _renderers.Clear();
+            _sharedMaterialBuffer.Clear();
+            _stageLights.Clear();
+            _lightBuffer.Clear();
             _root = null;
             _bowl = null;
             _bowlRim = null;
@@ -485,6 +646,14 @@ namespace MoonlightMagicHouse
             AuthoredCookWorkbenchMaterialCount = 0;
             AuthoredCookWorkbenchColliderCount = 0;
             AuthoredCookWorkbenchLightCount = 0;
+            CookChoreographyReadyMask = 0;
+            CookCurrentPhaseName = "inactive";
+            CookCurrentPhaseProgress = 0f;
+            CookCurrentPhaseMotionPropCount = 0;
+            CookCurrentPhaseVisibleMotionPropCount = 0;
+            CookCurrentPhaseMotionReady = false;
+            CookCurrentPhaseStateReady = false;
+            _cookBakeDoorClearancePass = true;
             _ball = null;
             _blocks = null;
             _playProps = null;
@@ -683,6 +852,7 @@ namespace MoonlightMagicHouse
             _decorateProps[3].localRotation = Quaternion.Euler(0f, 22f, 0f);
             SetActive(_decorateProps, false);
 
+            RefreshCookChoreographyConfiguration();
             AddActivityLight(new Color(1f, 0.72f, 0.34f));
         }
 
@@ -752,9 +922,19 @@ namespace MoonlightMagicHouse
 
         void UpdateCook(float t)
         {
-            if (_ingredients == null || _steam == null || _cookies == null || _cookieDetails == null) return;
+            if (_ingredients == null || _steam == null || _cookies == null || _cookieDetails == null)
+            {
+                CookCurrentPhaseMotionReady = false;
+                CookCurrentPhaseStateReady = false;
+                return;
+            }
 
             int step = Mathf.Clamp(CurrentStep, 0, 3);
+            CookCurrentPhaseName = CookPhaseName(step);
+            CookCurrentPhaseProgress = t;
+            CookCurrentPhaseMotionPropCount = 0;
+            CookCurrentPhaseVisibleMotionPropCount = 0;
+            CookCurrentPhaseMotionReady = false;
             SetActive(_ovenProps, step == 2);
             SetActive(_decorateProps, step == 3);
             SetActive(_servingProps, step >= 2);
@@ -768,9 +948,60 @@ namespace MoonlightMagicHouse
                 _cookProps[3].gameObject.SetActive(step == 1);
             }
 
+            if (_activityLight != null)
+            {
+                _activityLight.color = step switch
+                {
+                    0 => new Color(1f, 0.76f, 0.38f),
+                    1 => new Color(0.48f, 0.90f, 0.84f),
+                    2 => new Color(1f, 0.48f, 0.20f),
+                    _ => new Color(1f, 0.58f, 0.72f)
+                };
+            }
+
+            if (_bowl != null)
+            {
+                float stirRock = step == 1 ? Mathf.Sin(t * Mathf.PI * 6f) * 2.5f : 0f;
+                _bowl.localPosition = new Vector3(0f, 0.50f, 0f);
+                _bowl.localRotation = Quaternion.Euler(0f, step == 1 ? -t * 38f : 0f, stirRock);
+            }
+            if (_bowlRim != null)
+            {
+                _bowlRim.localPosition = new Vector3(0f, 0.64f, 0f);
+                _bowlRim.localRotation = Quaternion.Euler(0f, step == 1 ? -t * 38f : 0f,
+                    step == 1 ? Mathf.Sin(t * Mathf.PI * 6f) * 2.5f : 0f);
+            }
+
+            if (_cookProps != null && _cookProps.Length >= 4)
+            {
+                if (step == 0)
+                {
+                    float addSettle = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t * 1.4f));
+                    float cardLift = addSettle * 0.05f +
+                        Mathf.Sin(Mathf.Clamp01(t * 1.8f) * Mathf.PI) * 0.035f;
+                    _cookProps[1].localPosition = new Vector3(-0.55f, 0.62f + cardLift, -0.18f);
+                    _cookProps[1].localRotation = Quaternion.Euler(
+                        72f - addSettle * 8f - cardLift * 90f, 0f, -8f);
+                    float cupTip = addSettle * 20f +
+                        Mathf.Sin(Mathf.Clamp01(t * 1.35f) * Mathf.PI) * 28f;
+                    _cookProps[2].localPosition = new Vector3(0.58f - cupTip * 0.0025f,
+                        0.55f + addSettle * 0.04f + Mathf.Sin(t * Mathf.PI) * 0.05f, -0.19f);
+                    _cookProps[2].localRotation = Quaternion.Euler(0f, 0f, -6f - cupTip);
+                }
+                else if (step == 1)
+                {
+                    float tap = Mathf.Sin(t * Mathf.PI * 4f);
+                    _cookProps[3].localPosition = new Vector3(0.22f, 0.61f + Mathf.Max(0f, tap) * 0.08f,
+                        0.30f);
+                    _cookProps[3].localRotation = Quaternion.Euler(72f, t * 120f, -42f + tap * 8f);
+                }
+            }
+
             if (_servingProps != null && _servingProps.Length >= 4)
             {
-                float present = step == 3 ? Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t * 2.2f)) : 0f;
+                float present = step == 3
+                    ? Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t - 0.68f) * 3.125f))
+                    : 0f;
                 Vector3 trayCenter = Vector3.Lerp(new Vector3(0.45f, 0.46f, 0.18f),
                     new Vector3(0.16f, 0.60f, 0.12f), present);
                 _servingProps[0].localPosition = trayCenter;
@@ -781,13 +1012,27 @@ namespace MoonlightMagicHouse
                 _servingProps[3].localPosition = trayCenter + new Vector3(0f, -0.075f, 0f);
                 _servingProps[3].localScale = Vector3.Lerp(new Vector3(0.40f, 0.035f, 0.30f),
                     new Vector3(0.52f, 0.055f, 0.36f), present);
+
+                if (step == 2)
+                {
+                    trayCenter = BakeTrayCenter(t);
+                    _servingProps[0].localPosition = trayCenter;
+                    _servingProps[1].localPosition = trayCenter + new Vector3(-0.48f, 0.02f, 0f);
+                    _servingProps[2].localPosition = trayCenter + new Vector3(0.48f, 0.02f, 0f);
+                    _servingProps[3].localPosition = trayCenter + new Vector3(0f, -0.075f, 0f);
+                }
             }
             if (_batter != null)
             {
                 _batter.gameObject.SetActive(step <= 1 && (step != 0 || t > 0.20f));
                 float batterPulse = step == 1 ? 1f + Mathf.Sin(t * Mathf.PI * 8f) * 0.08f : 1f;
-                float batterSize = step == 0 ? Mathf.Lerp(0.16f, 0.46f, t) : 0.49f * batterPulse;
-                _batter.localPosition = new Vector3(0f, 0.65f + (step == 1 ? Mathf.Sin(t * Mathf.PI * 6f) * 0.025f : 0f), 0f);
+                float batterSize = step == 0
+                    ? Mathf.Lerp(0.16f, 0.46f, t)
+                    : Mathf.Lerp(0.49f, 0.53f, t) * batterPulse;
+                _batter.localPosition = new Vector3(step == 1 ? t * 0.02f : 0f,
+                    0.65f + (step == 1
+                        ? t * 0.015f + Mathf.Sin(t * Mathf.PI * 6f) * 0.025f
+                        : 0f), 0f);
                 _batter.localScale = new Vector3(batterSize, 0.055f * batterPulse, batterSize);
             }
 
@@ -808,15 +1053,24 @@ namespace MoonlightMagicHouse
                 bool showPrep = step == 0;
                 _ingredients[i].gameObject.SetActive(showPrep);
                 bool hasPourStream = _pourStreams != null && i < _pourStreams.Length && _pourStreams[i] != null;
-                if (hasPourStream) _pourStreams[i].gameObject.SetActive(showPrep && t > 0.16f && t < 0.86f);
-                if (!showPrep) continue;
+                if (!showPrep)
+                {
+                    if (hasPourStream) _pourStreams[i].gameObject.SetActive(false);
+                    continue;
+                }
 
-                float phase = Mathf.Clamp01(t * 2.2f - i * 0.20f);
+                float phase = Mathf.Clamp01((t - i * 0.12f) * 1.72f);
+                if (hasPourStream)
+                    _pourStreams[i].gameObject.SetActive(phase > 0.08f && phase < 0.92f);
                 float angle = i * Mathf.PI * 0.67f;
                 Vector3 start = new Vector3(-0.64f + i * 0.64f, 1.10f + (i % 2) * 0.16f,
                     i == 1 ? -0.20f : 0.18f);
-                _ingredients[i].localPosition = Vector3.Lerp(start, new Vector3(0f, 0.67f, 0f), phase);
+                Vector3 ingredientPosition = Vector3.Lerp(start, new Vector3(0f, 0.67f, 0f), phase);
+                ingredientPosition.y += Mathf.Sin(phase * Mathf.PI) * (0.10f + i * 0.025f);
+                _ingredients[i].localPosition = ingredientPosition;
                 _ingredients[i].localScale = Vector3.one * Mathf.Lerp(0.15f, 0.035f, phase);
+                _ingredients[i].localRotation = Quaternion.Euler(phase * 120f,
+                    phase * (160f + i * 35f), i * 18f);
 
                 if (hasPourStream)
                 {
@@ -839,13 +1093,45 @@ namespace MoonlightMagicHouse
                 _steam[i].localScale = new Vector3(0.07f + i * 0.015f, 0.19f, 0.07f) * scale;
             }
 
+            if (_ovenProps != null && _ovenProps.Length >= 4 && step == 2)
+            {
+                float doorOpen = BakeDoorOpen(t);
+                _ovenProps[1].localPosition = new Vector3(-0.48f, 0.61f - doorOpen * 0.055f,
+                    -0.035f + doorOpen * 0.035f);
+                _ovenProps[1].localRotation = Quaternion.Euler(-doorOpen * 42f, 0f, 0f);
+                _ovenProps[2].localRotation = Quaternion.Euler(90f, t * 210f, 0f);
+                _ovenProps[3].localRotation = Quaternion.Euler(90f, -t * 165f, 0f);
+                float ovenBreath = 1f + t * 0.015f +
+                    Mathf.Sin(Mathf.Clamp01(t) * Mathf.PI * 5f) * 0.025f;
+                _ovenProps[0].localScale = new Vector3(0.44f, 0.34f, 0.30f) * ovenBreath;
+            }
+
+            if (_cookProps != null && _cookProps.Length >= 1 && _cookProps[0] != null && step == 2)
+            {
+                float roll = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t * 1.35f));
+                _cookProps[0].localPosition = new Vector3(Mathf.Lerp(-0.52f, 0.28f, roll),
+                    0.54f + roll * 0.04f + Mathf.Sin(t * Mathf.PI) * 0.08f, 0.24f);
+                _cookProps[0].localRotation = Quaternion.Euler(88f, t * 260f, 70f);
+            }
+
             for (int i = 0; i < _cookies.Length; i++)
             {
                 float reveal = step == 2 ? Mathf.Clamp01((t - 0.18f - i * 0.08f) * 5f) : step == 3 ? 1f : 0f;
                 _cookies[i].gameObject.SetActive(reveal > 0f);
-                Vector3 bakePosition = new Vector3(0.20f + i * 0.25f, 0.51f, 0.12f + (i % 2) * 0.12f);
-                Vector3 decorPosition = new Vector3(-0.08f + i * 0.24f, 0.66f,
+                Vector3 bakeTrayCenter = _servingProps != null && _servingProps.Length > 0
+                    ? _servingProps[0].localPosition
+                    : new Vector3(0.34f, 0.51f, 0.15f);
+                Vector3 bakePosition = bakeTrayCenter + new Vector3(-0.24f + i * 0.24f,
+                    0.035f + Mathf.Sin(reveal * Mathf.PI) * 0.06f, i == 1 ? -0.08f : 0.07f);
+                float present = step == 3
+                    ? Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t - 0.68f) * 3.125f))
+                    : 0f;
+                Vector3 workingDecorPosition = new Vector3(0.20f + i * 0.24f, 0.53f,
+                    i == 1 ? 0.10f : 0.24f);
+                Vector3 finalDecorPosition = new Vector3(-0.08f + i * 0.24f, 0.66f,
                     i == 1 ? 0.02f : 0.20f);
+                Vector3 decorPosition = Vector3.Lerp(workingDecorPosition,
+                    finalDecorPosition, present);
                 Vector3 cookiePosition = Vector3.Lerp(bakePosition, decorPosition, step == 3 ? Mathf.Clamp01(t * 3f) : 0f);
                 _cookies[i].localPosition = cookiePosition;
                 _cookies[i].localScale = Vector3.Lerp(new Vector3(0.16f, 0.035f, 0.16f),
@@ -857,7 +1143,9 @@ namespace MoonlightMagicHouse
                 {
                     int detailIndex = i * 3 + mark;
                     if (detailIndex >= _cookieDetails.Length || _cookieDetails[detailIndex] == null) continue;
-                    float decorReveal = step == 3 ? Mathf.Clamp01((t - 0.18f - detailIndex * 0.025f) * 5f) : reveal;
+                    float decorReveal = step == 3
+                        ? Mathf.Clamp01((t - 0.18f - detailIndex * 0.025f) * 5f)
+                        : 0f;
                     _cookieDetails[detailIndex].gameObject.SetActive(decorReveal > 0.65f);
                     _cookieDetails[detailIndex].localPosition = cookiePosition
                         + new Vector3(-0.055f + mark * 0.055f, step == 3 ? 0.050f : 0.028f,
@@ -875,7 +1163,11 @@ namespace MoonlightMagicHouse
                     new Vector3(Mathf.Lerp(-0.35f, 0.30f, t), 0.91f + squeeze, 0.16f),
                     new Vector3(-0.43f, 0.72f, 0.30f), 1f - working);
                 _decorateProps[0].localRotation = Quaternion.Euler(22f, t * 120f, 34f - squeeze * 80f);
-                _decorateProps[1].localPosition = new Vector3(0.67f, 0.58f, -0.16f);
+                float sprinklePass = Mathf.Sin(Mathf.Clamp01((t - 0.18f) * 2.2f) * Mathf.PI);
+                _decorateProps[1].localPosition = new Vector3(0.67f - sprinklePass * 0.34f,
+                    0.58f + sprinklePass * 0.22f, -0.16f + sprinklePass * 0.22f);
+                _decorateProps[1].localRotation = Quaternion.Euler(0f, t * 110f,
+                    -sprinklePass * 38f);
                 _decorateProps[2].localPosition = Vector3.Lerp(
                     new Vector3(Mathf.Sin(t * Mathf.PI * 6f) * 0.08f,
                         0.84f + Mathf.Abs(Mathf.Sin(t * Mathf.PI * 3f)) * 0.11f, 0.18f),
@@ -884,8 +1176,479 @@ namespace MoonlightMagicHouse
                     0.09f + Mathf.Sin(t * Mathf.PI * 5f) * 0.025f, 0.12f, 1f - working);
                 _decorateProps[3].localPosition = new Vector3(0.16f, 0.585f, 0.39f);
                 _decorateProps[3].localScale = new Vector3(0.48f, 0.020f, 0.045f)
-                    * (1f + Mathf.Sin(t * Mathf.PI * 5f) * 0.10f);
+                    * Mathf.Lerp(0.25f, 1f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t * 2.4f)))
+                    * (1f + Mathf.Sin(t * Mathf.PI * 5f) * 0.06f * working);
             }
+
+            CookCurrentPhaseMotionPropCount = CountCookPhaseMotionMatches(step, t);
+            CookCurrentPhaseVisibleMotionPropCount = CountCookVisibleMotionProps(step);
+            if (step == 2 && IsBakeTrayCrossingDoor(t) && BakeDoorOpen(t) < 0.999f)
+                _cookBakeDoorClearancePass = false;
+            CookCurrentPhaseMotionReady = t >= 0.20f &&
+                (CookChoreographyReadyMask & (1 << step)) != 0 &&
+                CookCurrentPhaseMotionPropCount == CookPhaseMinimumMotionPropCount(step) &&
+                CookCurrentPhaseVisibleMotionPropCount >=
+                    CookPhaseMinimumVisibleMotionPropCount(step) &&
+                (step != 2 || _cookBakeDoorClearancePass);
+            CookCurrentPhaseStateReady = ValidateCookPhaseState(step, t);
+        }
+
+        int CountCookVisibleMotionProps(int step)
+        {
+            int count = 0;
+            void Count(Transform item)
+            {
+                if (IsActive(item)) count++;
+            }
+            void CountAll(Transform[] items)
+            {
+                if (items == null) return;
+                for (int i = 0; i < items.Length; i++) Count(items[i]);
+            }
+
+            if (step == 0)
+            {
+                CountAll(_ingredients);
+                CountAll(_pourStreams);
+                Count(_batter);
+                if (_cookProps != null && _cookProps.Length >= 3)
+                {
+                    Count(_cookProps[1]);
+                    Count(_cookProps[2]);
+                }
+            }
+            else if (step == 1)
+            {
+                Count(_bowl);
+                Count(_bowlRim);
+                Count(_batter);
+                Count(_whisk);
+                if (_cookProps != null && _cookProps.Length >= 4) Count(_cookProps[3]);
+            }
+            else if (step == 2)
+            {
+                CountAll(_servingProps);
+                CountAll(_ovenProps);
+                CountAll(_steam);
+                CountAll(_cookies);
+                if (_cookProps != null && _cookProps.Length >= 1) Count(_cookProps[0]);
+            }
+            else if (step == 3)
+            {
+                CountAll(_servingProps);
+                CountAll(_decorateProps);
+                CountAll(_cookies);
+                CountAll(_cookieDetails);
+            }
+            return count;
+        }
+
+        void RefreshCookChoreographyConfiguration()
+        {
+            CookChoreographyReadyMask = 0;
+            if (AllAssigned(_ingredients, 3) && AllAssigned(_pourStreams, 3) &&
+                _batter != null && _cookProps != null && _cookProps.Length >= 3 &&
+                _cookProps[1] != null && _cookProps[2] != null)
+                CookChoreographyReadyMask |= 1 << 0;
+            if (_whisk != null && _batter != null && _bowl != null && _bowlRim != null &&
+                _cookProps != null && _cookProps.Length >= 4 && _cookProps[3] != null)
+                CookChoreographyReadyMask |= 1 << 1;
+            if (AllAssigned(_servingProps, 4) && AllAssigned(_ovenProps, 4) &&
+                AllAssigned(_steam, 3) && AllAssigned(_cookies, 3) &&
+                _cookProps != null && _cookProps.Length >= 1 && _cookProps[0] != null)
+                CookChoreographyReadyMask |= 1 << 2;
+            if (AllAssigned(_servingProps, 4) && AllAssigned(_decorateProps, 4) &&
+                AllAssigned(_cookies, 3) && AllAssigned(_cookieDetails, 9))
+                CookChoreographyReadyMask |= 1 << 3;
+        }
+
+        int CountCookPhaseMotionMatches(int step, float t) => step switch
+        {
+            0 => CountCookAddMotionMatches(t),
+            1 => CountCookStirMotionMatches(t),
+            2 => CountCookBakeMotionMatches(t),
+            3 => CountCookPresentMotionMatches(t),
+            _ => 0
+        };
+
+        int CountCookAddMotionMatches(float t)
+        {
+            int matches = 0;
+            for (int i = 0; i < 3; i++)
+            {
+                float phase = CookIngredientPhase(t, i);
+                float angle = i * Mathf.PI * 0.67f;
+                Vector3 start = CookIngredientStart(i);
+                Vector3 ingredientPosition = Vector3.Lerp(start, new Vector3(0f, 0.67f, 0f), phase);
+                ingredientPosition.y += Mathf.Sin(phase * Mathf.PI) * (0.10f + i * 0.025f);
+                if (TransformMatches(_ingredients[i], true, ingredientPosition,
+                        Quaternion.Euler(phase * 120f, phase * (160f + i * 35f), i * 18f),
+                        Vector3.one * Mathf.Lerp(0.15f, 0.035f, phase)))
+                    matches++;
+
+                Vector3 streamTop = Vector3.Lerp(start, new Vector3(0f, 0.95f, 0f), phase);
+                if (TransformMatches(_pourStreams[i], phase > 0.08f && phase < 0.92f,
+                        Vector3.Lerp(streamTop, new Vector3(0f, 0.85f, 0f), 0.5f),
+                        Quaternion.Euler(0f, angle * Mathf.Rad2Deg, 12f + i * 8f),
+                        new Vector3(0.030f, Mathf.Lerp(0.34f, 0.08f, phase), 0.030f)))
+                    matches++;
+            }
+
+            float addSettle = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t * 1.4f));
+            float cardLift = addSettle * 0.05f +
+                Mathf.Sin(Mathf.Clamp01(t * 1.8f) * Mathf.PI) * 0.035f;
+            if (TransformMatches(_cookProps[1], true,
+                    new Vector3(-0.55f, 0.62f + cardLift, -0.18f),
+                    Quaternion.Euler(72f - addSettle * 8f - cardLift * 90f, 0f, -8f),
+                    new Vector3(0.34f, 0.025f, 0.24f)))
+                matches++;
+            float cupTip = addSettle * 20f +
+                Mathf.Sin(Mathf.Clamp01(t * 1.35f) * Mathf.PI) * 28f;
+            if (TransformMatches(_cookProps[2], true,
+                    new Vector3(0.58f - cupTip * 0.0025f,
+                        0.55f + addSettle * 0.04f + Mathf.Sin(t * Mathf.PI) * 0.05f, -0.19f),
+                    Quaternion.Euler(0f, 0f, -6f - cupTip),
+                    new Vector3(0.14f, 0.16f, 0.14f)))
+                matches++;
+            float batterSize = Mathf.Lerp(0.16f, 0.46f, t);
+            if (TransformMatches(_batter, t > 0.20f, new Vector3(0f, 0.65f, 0f),
+                    Quaternion.identity, new Vector3(batterSize, 0.055f, batterSize)))
+                matches++;
+            return matches;
+        }
+
+        int CountCookStirMotionMatches(float t)
+        {
+            int matches = 0;
+            float stirRock = Mathf.Sin(t * Mathf.PI * 6f) * 2.5f;
+            Quaternion bowlRotation = Quaternion.Euler(0f, -t * 38f, stirRock);
+            if (TransformMatches(_bowl, true, new Vector3(0f, 0.50f, 0f), bowlRotation,
+                    new Vector3(0.62f, 0.20f, 0.62f)))
+                matches++;
+            if (TransformMatches(_bowlRim, true, new Vector3(0f, 0.64f, 0f), bowlRotation,
+                    new Vector3(0.65f, 0.035f, 0.65f)))
+                matches++;
+
+            float batterPulse = 1f + Mathf.Sin(t * Mathf.PI * 8f) * 0.08f;
+            float batterSize = Mathf.Lerp(0.49f, 0.53f, t) * batterPulse;
+            if (TransformMatches(_batter, true,
+                    new Vector3(t * 0.02f,
+                        0.65f + t * 0.015f + Mathf.Sin(t * Mathf.PI * 6f) * 0.025f, 0f),
+                    Quaternion.identity,
+                    new Vector3(batterSize, 0.055f * batterPulse, batterSize)))
+                matches++;
+
+            float whiskAngle = t * Mathf.PI * 12f;
+            if (TransformMatches(_whisk, true,
+                    new Vector3(Mathf.Cos(whiskAngle) * 0.16f, 0.94f,
+                        Mathf.Sin(whiskAngle) * 0.12f),
+                    Quaternion.Euler(18f, t * 900f, -22f),
+                    new Vector3(0.07f, 0.40f, 0.07f)))
+                matches++;
+            float tap = Mathf.Sin(t * Mathf.PI * 4f);
+            if (TransformMatches(_cookProps[3], true,
+                    new Vector3(0.22f, 0.61f + Mathf.Max(0f, tap) * 0.08f, 0.30f),
+                    Quaternion.Euler(72f, t * 120f, -42f + tap * 8f),
+                    new Vector3(0.035f, 0.32f, 0.035f)))
+                matches++;
+            return matches;
+        }
+
+        int CountCookBakeMotionMatches(float t)
+        {
+            int matches = 0;
+            Vector3 trayCenter = BakeTrayCenter(t);
+            matches += CountTrayMotionMatches(trayCenter,
+                new Vector3(0.82f, 0.030f, 0.50f),
+                new Vector3(0.40f, 0.035f, 0.30f));
+
+            float doorOpen = BakeDoorOpen(t);
+            float ovenBreath = 1f + t * 0.015f +
+                Mathf.Sin(Mathf.Clamp01(t) * Mathf.PI * 5f) * 0.025f;
+            if (TransformMatches(_ovenProps[0], true, new Vector3(-0.48f, 0.59f, -0.20f),
+                    Quaternion.identity, new Vector3(0.44f, 0.34f, 0.30f) * ovenBreath))
+                matches++;
+            if (TransformMatches(_ovenProps[1], true,
+                    new Vector3(-0.48f, 0.61f - doorOpen * 0.055f,
+                        -0.035f + doorOpen * 0.035f),
+                    Quaternion.Euler(-doorOpen * 42f, 0f, 0f),
+                    new Vector3(0.30f, 0.16f, 0.025f)))
+                matches++;
+            if (TransformMatches(_ovenProps[2], true, new Vector3(-0.58f, 0.75f, -0.03f),
+                    Quaternion.Euler(90f, t * 210f, 0f),
+                    new Vector3(0.045f, 0.020f, 0.045f)))
+                matches++;
+            if (TransformMatches(_ovenProps[3], true, new Vector3(-0.39f, 0.75f, -0.03f),
+                    Quaternion.Euler(90f, -t * 165f, 0f),
+                    new Vector3(0.045f, 0.020f, 0.045f)))
+                matches++;
+
+            for (int i = 0; i < 3; i++)
+            {
+                float phase = Mathf.Repeat(t * 2.3f + i * 0.31f, 1f);
+                float scale = Mathf.Lerp(0.90f, 0.10f, phase);
+                if (TransformMatches(_steam[i], t > 0.16f,
+                        new Vector3(
+                            -0.48f + Mathf.Sin(phase * Mathf.PI * 2f + i) * (0.10f + i * 0.025f),
+                            0.73f + phase * 0.82f,
+                            -0.08f + Mathf.Cos(phase * Mathf.PI * 2f + i) * (0.06f + i * 0.018f)),
+                        Quaternion.identity,
+                        new Vector3(0.07f + i * 0.015f, 0.19f, 0.07f) * scale))
+                    matches++;
+
+                float reveal = CookCookieReveal(2, t, i);
+                Vector3 cookiePosition = trayCenter + new Vector3(-0.24f + i * 0.24f,
+                    0.035f + Mathf.Sin(reveal * Mathf.PI) * 0.06f,
+                    i == 1 ? -0.08f : 0.07f);
+                if (TransformMatches(_cookies[i], reveal > 0f, cookiePosition,
+                        Quaternion.Euler(0f, 24f + i * 32f, 0f),
+                        Vector3.Lerp(new Vector3(0.16f, 0.035f, 0.16f),
+                            new Vector3(0.19f, 0.045f, 0.19f), 0f) * reveal))
+                    matches++;
+            }
+
+            float roll = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t * 1.35f));
+            if (TransformMatches(_cookProps[0], true,
+                    new Vector3(Mathf.Lerp(-0.52f, 0.28f, roll),
+                        0.54f + roll * 0.04f + Mathf.Sin(t * Mathf.PI) * 0.08f, 0.24f),
+                    Quaternion.Euler(88f, t * 260f, 70f),
+                    new Vector3(0.055f, 0.42f, 0.055f)))
+                matches++;
+            return matches;
+        }
+
+        int CountCookPresentMotionMatches(float t)
+        {
+            int matches = 0;
+            float present = CookPresentProgress(t);
+            Vector3 trayCenter = Vector3.Lerp(new Vector3(0.45f, 0.46f, 0.18f),
+                new Vector3(0.16f, 0.60f, 0.12f), present);
+            matches += CountTrayMotionMatches(trayCenter,
+                Vector3.Lerp(new Vector3(0.82f, 0.030f, 0.50f),
+                    new Vector3(0.92f, 0.035f, 0.58f), present),
+                Vector3.Lerp(new Vector3(0.40f, 0.035f, 0.30f),
+                    new Vector3(0.52f, 0.055f, 0.36f), present));
+
+            float working = 1f - present;
+            float squeeze = Mathf.Sin(t * Mathf.PI * 4f) * 0.08f * working;
+            if (TransformMatches(_decorateProps[0], true,
+                    Vector3.Lerp(new Vector3(Mathf.Lerp(-0.35f, 0.30f, t),
+                            0.91f + squeeze, 0.16f),
+                        new Vector3(-0.43f, 0.72f, 0.30f), 1f - working),
+                    Quaternion.Euler(22f, t * 120f, 34f - squeeze * 80f),
+                    new Vector3(0.10f, 0.34f, 0.10f)))
+                matches++;
+            float sprinklePass = Mathf.Sin(Mathf.Clamp01((t - 0.18f) * 2.2f) * Mathf.PI);
+            if (TransformMatches(_decorateProps[1], true,
+                    new Vector3(0.67f - sprinklePass * 0.34f,
+                        0.58f + sprinklePass * 0.22f, -0.16f + sprinklePass * 0.22f),
+                    Quaternion.Euler(0f, t * 110f, -sprinklePass * 38f),
+                    new Vector3(0.12f, 0.16f, 0.12f)))
+                matches++;
+            if (TransformMatches(_decorateProps[2], true,
+                    Vector3.Lerp(new Vector3(Mathf.Sin(t * Mathf.PI * 6f) * 0.08f,
+                            0.84f + Mathf.Abs(Mathf.Sin(t * Mathf.PI * 3f)) * 0.11f, 0.18f),
+                        new Vector3(0.16f, 0.735f, 0.02f), 1f - working),
+                    Quaternion.identity,
+                    Vector3.one * Mathf.Lerp(
+                        0.09f + Mathf.Sin(t * Mathf.PI * 5f) * 0.025f, 0.12f, 1f - working)))
+                matches++;
+            if (TransformMatches(_decorateProps[3], true,
+                    new Vector3(0.16f, 0.585f, 0.39f), Quaternion.Euler(0f, 22f, 0f),
+                    new Vector3(0.48f, 0.020f, 0.045f) *
+                    Mathf.Lerp(0.25f, 1f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t * 2.4f))) *
+                    (1f + Mathf.Sin(t * Mathf.PI * 5f) * 0.06f * working)))
+                matches++;
+
+            for (int i = 0; i < 3; i++)
+            {
+                Vector3 bakePosition = trayCenter + new Vector3(-0.24f + i * 0.24f,
+                    0.035f, i == 1 ? -0.08f : 0.07f);
+                Vector3 decorPosition = Vector3.Lerp(
+                    new Vector3(0.20f + i * 0.24f, 0.53f, i == 1 ? 0.10f : 0.24f),
+                    new Vector3(-0.08f + i * 0.24f, 0.66f, i == 1 ? 0.02f : 0.20f),
+                    present);
+                Vector3 cookiePosition = Vector3.Lerp(bakePosition, decorPosition,
+                    Mathf.Clamp01(t * 3f));
+                Vector3 cookieScale = Vector3.Lerp(new Vector3(0.16f, 0.035f, 0.16f),
+                    new Vector3(0.19f, 0.045f, 0.19f), Mathf.Clamp01(t * 3f)) *
+                    (1f + Mathf.Sin(t * Mathf.PI * 4f + i) * 0.05f);
+                if (TransformMatches(_cookies[i], true, cookiePosition,
+                        Quaternion.Euler(0f, 24f + i * 32f + t * 65f, 0f), cookieScale))
+                    matches++;
+
+                for (int mark = 0; mark < 3; mark++)
+                {
+                    int detailIndex = i * 3 + mark;
+                    float decorReveal = CookDetailReveal(t, detailIndex);
+                    if (TransformMatches(_cookieDetails[detailIndex], decorReveal > 0.65f,
+                            cookiePosition + new Vector3(-0.055f + mark * 0.055f, 0.050f, 0f),
+                            Quaternion.Euler(0f, 24f + i * 32f, 0f),
+                            new Vector3(0.05f, 0.012f, 0.012f) * decorReveal))
+                        matches++;
+                }
+            }
+            return matches;
+        }
+
+        int CountTrayMotionMatches(Vector3 trayCenter, Vector3 trayScale, Vector3 footScale)
+        {
+            int matches = 0;
+            if (TransformMatches(_servingProps[0], true, trayCenter, Quaternion.identity, trayScale))
+                matches++;
+            if (TransformMatches(_servingProps[1], true,
+                    trayCenter + new Vector3(-0.48f, 0.02f, 0f), Quaternion.identity,
+                    new Vector3(0.16f, 0.025f, 0.10f)))
+                matches++;
+            if (TransformMatches(_servingProps[2], true,
+                    trayCenter + new Vector3(0.48f, 0.02f, 0f), Quaternion.identity,
+                    new Vector3(0.16f, 0.025f, 0.10f)))
+                matches++;
+            if (TransformMatches(_servingProps[3], true,
+                    trayCenter + new Vector3(0f, -0.075f, 0f), Quaternion.identity, footScale))
+                matches++;
+            return matches;
+        }
+
+        bool ValidateCookPhaseState(int step, float t)
+        {
+            bool basePrepHidden = !AnyActive(_ingredients) && !AnyActive(_pourStreams);
+            bool bakeHidden = !AnyActive(_ovenProps) && !AnyActive(_steam) &&
+                !AnyActive(_cookies) && !AnyActive(_servingProps);
+            bool decorateHidden = !AnyActive(_decorateProps) && !AnyActive(_cookieDetails);
+            if (step == 0)
+            {
+                bool streamStatesReady = true;
+                for (int i = 0; i < 3; i++)
+                {
+                    float phase = CookIngredientPhase(t, i);
+                    streamStatesReady &= IsActive(_pourStreams[i]) ==
+                        (phase > 0.08f && phase < 0.92f);
+                }
+                return IsActive(_bowl) && IsActive(_bowlRim) && AllActive(_ingredients) &&
+                    streamStatesReady && IsActive(_batter) == (t > 0.20f) &&
+                    IsActive(_cookProps[1]) && IsActive(_cookProps[2]) &&
+                    !IsActive(_whisk) && !IsActive(_cookProps[3]) && !IsActive(_cookProps[0]) &&
+                    bakeHidden && decorateHidden;
+            }
+            if (step == 1)
+            {
+                return IsActive(_bowl) && IsActive(_bowlRim) && IsActive(_whisk) &&
+                    IsActive(_batter) && IsActive(_cookProps[3]) && basePrepHidden &&
+                    !IsActive(_cookProps[0]) && !IsActive(_cookProps[1]) &&
+                    !IsActive(_cookProps[2]) && bakeHidden && decorateHidden;
+            }
+            if (step == 2)
+            {
+                bool steamStatesReady = true;
+                bool cookieStatesReady = true;
+                for (int i = 0; i < 3; i++)
+                {
+                    steamStatesReady &= IsActive(_steam[i]) == (t > 0.16f);
+                    cookieStatesReady &= IsActive(_cookies[i]) == (CookCookieReveal(2, t, i) > 0f);
+                }
+                bool trayCrossingDoor = IsBakeTrayCrossingDoor(t);
+                bool actualDoorFullyOpen = TransformMatches(_ovenProps[1], true,
+                    new Vector3(-0.48f, 0.555f, 0f), Quaternion.Euler(-42f, 0f, 0f),
+                    new Vector3(0.30f, 0.16f, 0.025f));
+                return !IsActive(_bowl) && !IsActive(_bowlRim) && !IsActive(_batter) &&
+                    !IsActive(_whisk) && basePrepHidden && AllActive(_ovenProps) &&
+                    AllActive(_servingProps) && IsActive(_cookProps[0]) &&
+                    !IsActive(_cookProps[1]) && !IsActive(_cookProps[2]) &&
+                    !IsActive(_cookProps[3]) &&
+                    steamStatesReady && cookieStatesReady && !AnyActive(_cookieDetails) &&
+                    !AnyActive(_decorateProps) && (!trayCrossingDoor || actualDoorFullyOpen);
+            }
+            if (step == 3)
+            {
+                bool detailStatesReady = true;
+                for (int i = 0; i < 9; i++)
+                    detailStatesReady &= IsActive(_cookieDetails[i]) ==
+                        (CookDetailReveal(t, i) > 0.65f);
+                return !IsActive(_bowl) && !IsActive(_bowlRim) && !IsActive(_batter) &&
+                    !IsActive(_whisk) && basePrepHidden && !AnyActive(_ovenProps) &&
+                    !AnyActive(_steam) && !AnyActive(_cookProps) &&
+                    AllActive(_decorateProps) && AllActive(_cookies) &&
+                    AllActive(_servingProps) && detailStatesReady;
+            }
+            return false;
+        }
+
+        static float CookIngredientPhase(float t, int index) =>
+            Mathf.Clamp01((t - index * 0.12f) * 1.72f);
+
+        static Vector3 CookIngredientStart(int index) =>
+            new(-0.64f + index * 0.64f, 1.10f + (index % 2) * 0.16f,
+                index == 1 ? -0.20f : 0.18f);
+
+        static float CookPresentProgress(float t) =>
+            Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t - 0.68f) * 3.125f));
+
+        static float CookCookieReveal(int step, float t, int index) =>
+            step == 2 ? Mathf.Clamp01((t - 0.18f - index * 0.08f) * 5f) :
+            step == 3 ? 1f : 0f;
+
+        static float CookDetailReveal(float t, int detailIndex) =>
+            Mathf.Clamp01((t - 0.18f - detailIndex * 0.025f) * 5f);
+
+        static Vector3 BakeTrayCenter(float t)
+        {
+            float load = Mathf.SmoothStep(0f, 1f,
+                Mathf.InverseLerp(BakeLoadStart, BakeLoadEnd, t));
+            float extract = Mathf.SmoothStep(0f, 1f,
+                Mathf.InverseLerp(BakeExtractStart, BakeExtractEnd, t));
+            Vector3 trayCenter = Vector3.Lerp(new Vector3(0.45f, 0.46f, 0.18f),
+                new Vector3(-0.40f, 0.52f, -0.015f), load);
+            return Vector3.Lerp(trayCenter, new Vector3(0.34f, 0.51f, 0.15f), extract);
+        }
+
+        static float BakeDoorOpen(float t)
+        {
+            float close = Mathf.SmoothStep(0f, 1f,
+                Mathf.InverseLerp(BakeDoorCloseStart, BakeDoorCloseEnd, t));
+            float reopen = Mathf.SmoothStep(0f, 1f,
+                Mathf.InverseLerp(BakeDoorReopenStart, BakeDoorReopenEnd, t));
+            return Mathf.Max(1f - close, reopen);
+        }
+
+        static bool IsBakeTrayCrossingDoor(float t) =>
+            (t > BakeLoadStart && t < BakeLoadEnd) ||
+            (t > BakeExtractStart && t < BakeExtractEnd);
+
+        static bool TransformMatches(Transform transform, bool expectedActive,
+            Vector3 expectedPosition, Quaternion expectedRotation, Vector3 expectedScale)
+        {
+            return transform != null && IsActive(transform) == expectedActive &&
+                Vector3.SqrMagnitude(transform.localPosition - expectedPosition) <= 0.000001f &&
+                Quaternion.Angle(transform.localRotation, expectedRotation) <= 0.10f &&
+                Vector3.SqrMagnitude(transform.localScale - expectedScale) <= 0.000001f;
+        }
+
+        static bool AllAssigned(Transform[] transforms, int requiredCount)
+        {
+            if (transforms == null || transforms.Length < requiredCount) return false;
+            for (int i = 0; i < requiredCount; i++)
+                if (transforms[i] == null) return false;
+            return true;
+        }
+
+        static bool IsActive(Transform transform) =>
+            transform != null && transform.gameObject.activeSelf;
+
+        static bool AllActive(Transform[] transforms)
+        {
+            if (transforms == null || transforms.Length == 0) return false;
+            for (int i = 0; i < transforms.Length; i++)
+                if (!IsActive(transforms[i])) return false;
+            return true;
+        }
+
+        static bool AnyActive(Transform[] transforms)
+        {
+            if (transforms == null) return false;
+            for (int i = 0; i < transforms.Length; i++)
+                if (IsActive(transforms[i])) return true;
+            return false;
         }
 
         void BuildPlayStage()
@@ -2031,7 +2794,7 @@ namespace MoonlightMagicHouse
 
         void UpdateActivityCounts()
         {
-            EnsureMaterialIdCapacity();
+            EnsureMaterialIdCapacity(_materials.Count + _renderers.Count);
             ActiveRendererCount = 0;
             ActiveUniqueMaterialCount = 0;
 
@@ -2041,31 +2804,66 @@ namespace MoonlightMagicHouse
                 if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy) continue;
 
                 ActiveRendererCount++;
-                var material = renderer.sharedMaterial;
-                if (material == null) continue;
-
-                int materialId = material.GetInstanceID();
-                bool seen = false;
-                for (int idIndex = 0; idIndex < ActiveUniqueMaterialCount; idIndex++)
+                _sharedMaterialBuffer.Clear();
+                renderer.GetSharedMaterials(_sharedMaterialBuffer);
+                for (int materialIndex = 0; materialIndex < _sharedMaterialBuffer.Count;
+                     materialIndex++)
                 {
-                    if (_activeMaterialIds[idIndex] != materialId) continue;
-                    seen = true;
-                    break;
-                }
+                    var material = _sharedMaterialBuffer[materialIndex];
+                    if (material == null) continue;
 
-                if (seen) continue;
-                _activeMaterialIds[ActiveUniqueMaterialCount] = materialId;
-                ActiveUniqueMaterialCount++;
+                    int materialId = material.GetInstanceID();
+                    bool seen = false;
+                    for (int idIndex = 0; idIndex < ActiveUniqueMaterialCount; idIndex++)
+                    {
+                        if (_activeMaterialIds[idIndex] != materialId) continue;
+                        seen = true;
+                        break;
+                    }
+
+                    if (seen) continue;
+                    EnsureMaterialIdCapacity(ActiveUniqueMaterialCount + 1);
+                    _activeMaterialIds[ActiveUniqueMaterialCount] = materialId;
+                    ActiveUniqueMaterialCount++;
+                }
             }
 
-            ActiveLightCount = _activityLight != null && _activityLight.enabled && _activityLight.gameObject.activeInHierarchy ? 1 : 0;
+            ActiveLightCount = 0;
+            for (int i = 0; i < _stageLights.Count; i++)
+            {
+                var light = _stageLights[i];
+                if (light != null && light.enabled && light.gameObject.activeInHierarchy)
+                    ActiveLightCount++;
+            }
         }
 
-        void EnsureMaterialIdCapacity()
+        void RefreshStageLights()
         {
-            int required = _materials.Count + _renderers.Count;
+            _stageLights.Clear();
+            AddStageLights(_root != null ? _root.transform : null);
+            if (_persistentStation != null && _persistentStation.VisualRoot != null &&
+                !_persistentStation.VisualRoot.IsChildOf(_root.transform))
+                AddStageLights(_persistentStation.VisualRoot);
+        }
+
+        void AddStageLights(Transform root)
+        {
+            if (root == null) return;
+            _lightBuffer.Clear();
+            root.GetComponentsInChildren(true, _lightBuffer);
+            for (int i = 0; i < _lightBuffer.Count; i++)
+            {
+                var light = _lightBuffer[i];
+                if (light != null && !_stageLights.Contains(light))
+                    _stageLights.Add(light);
+            }
+        }
+
+        void EnsureMaterialIdCapacity(int required)
+        {
             if (_activeMaterialIds.Length >= required) return;
-            _activeMaterialIds = new int[required];
+            int capacity = Mathf.NextPowerOfTwo(Mathf.Max(8, required));
+            System.Array.Resize(ref _activeMaterialIds, capacity);
         }
 
         readonly struct MaterialKey : System.IEquatable<MaterialKey>
