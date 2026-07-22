@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
@@ -7,7 +8,17 @@ namespace MoonlightMagicHouse
 {
     public class MoonlightVisualQA : MonoBehaviour
     {
+        public const string MoonbudArticulatedLocomotionMarker =
+            "MOONLIGHT_CONTROLLERLESS_ARTICULATED_LOCOMOTION_VERIFIED";
+        public const string MoonbudAnimatorControllerIncompleteMarker =
+            "MOONLIGHT_ANIMATOR_CONTROLLER_LOCOMOTION_INCOMPLETE";
+        public const string MoonbudPhotorealSpecialistLocomotionMarker =
+            "MOONLIGHT_PHOTOREAL_SPECIALIST_LOCOMOTION_VERIFIED";
+
         public static MoonlightVisualQA Instance { get; private set; }
+
+        static readonly List<MoonlightAnimator> MoonlightAnimatorQACandidates = new();
+        static readonly List<MoonlightKidAnimator> MoonlightKidAnimatorQACandidates = new();
 
         Vector3 _lastLoggedPosition;
         float _lastMoveLogTime;
@@ -582,6 +593,25 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-sprint-contract {sprintDetail} " +
                 "marker=MOONLIGHT_IPAD_SPRINT_CONTRACT_VERIFIED");
+            if (!ValidateMoonbudLocomotionSourceContract(out string locomotionSourceDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] moonbud-locomotion-source " +
+                    locomotionSourceDetail);
+                Application.Quit(103);
+                yield break;
+            }
+            bool photorealMode = IsPhotorealMode(args);
+            if (!ValidateMoonbudLocomotionRuntimeContract(controller, photorealMode,
+                    out string locomotionRuntimeDetail, out string locomotionMarker))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] moonbud-locomotion-runtime " +
+                    $"source=({locomotionSourceDetail}) runtime=({locomotionRuntimeDetail})");
+                Application.Quit(104);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] moonbud-articulated-locomotion " +
+                $"source=({locomotionSourceDetail}) runtime=({locomotionRuntimeDetail}) " +
+                $"marker={locomotionMarker}");
             if (!pad.TracePoolIsReady ||
                 pad.TraceDotPoolCount != MoonlightGesturePad.GestureTraceDotCapacity ||
                 !pad.GuidePoolIsReady ||
@@ -2332,6 +2362,144 @@ namespace MoonlightMagicHouse
 
         static bool Approximately(float actual, float expected)
             => Mathf.Abs(actual - expected) <= 0.01f;
+
+        public static bool ValidateMoonbudLocomotionSourceContract(out string detail)
+        {
+            bool animatorPass = MoonlightAnimator.ValidateProceduralLocomotionSourceContract(
+                out string animatorDetail);
+            bool coordinatedRootPass =
+                MoonlightPlayerController.ProceduralWholeRootBobScale == 0f &&
+                MoonlightPlayerController.ProceduralWholeRootSquashScale == 0f;
+            detail = $"{animatorDetail} " +
+                $"rootBobScale={MoonlightPlayerController.ProceduralWholeRootBobScale:0.00} " +
+                $"rootSquashScale={MoonlightPlayerController.ProceduralWholeRootSquashScale:0.00}";
+            return animatorPass && coordinatedRootPass;
+        }
+
+        public static bool ValidateMoonbudLocomotionRuntimeContract(
+            MoonlightPlayerController controller, out string detail)
+        {
+            string[] args = System.Environment.GetCommandLineArgs();
+            bool photorealMode = IsPhotorealMode(args);
+            return ValidateMoonbudLocomotionRuntimeContract(controller, photorealMode,
+                out detail, out _);
+        }
+
+        static bool IsPhotorealMode(string[] args) => System.Array.Exists(args,
+            argument => string.Equals(argument, "-moonlightPhotoreal",
+                System.StringComparison.OrdinalIgnoreCase));
+
+        public static bool ValidateMoonbudLocomotionRuntimeContract(
+            MoonlightPlayerController controller, bool photorealMode, out string detail,
+            out string marker)
+        {
+            if (controller == null)
+            {
+                marker = "MOONLIGHT_LOCOMOTION_RUNTIME_INCOMPLETE";
+                detail = "path=missing controller=False";
+                return false;
+            }
+
+            if (photorealMode)
+            {
+                MoonlightKidAnimatorQACandidates.Clear();
+                controller.GetComponentsInChildren(true, MoonlightKidAnimatorQACandidates);
+                int activeSpecialists = 0;
+                MoonlightKidAnimator soleSpecialist = null;
+                for (int i = 0; i < MoonlightKidAnimatorQACandidates.Count; i++)
+                {
+                    MoonlightKidAnimator specialist = MoonlightKidAnimatorQACandidates[i];
+                    if (specialist == null || !specialist.isActiveAndEnabled ||
+                        !specialist.gameObject.activeInHierarchy)
+                        continue;
+                    activeSpecialists++;
+                    soleSpecialist = specialist;
+                }
+
+                int controllerActiveCount = controller.ActiveMoonlightKidAnimatorCount;
+                MoonlightKidAnimator routedSpecialist = controller.ActiveMoonlightKidAnimator;
+                bool controllerRouted = activeSpecialists == 1 &&
+                    controllerActiveCount == activeSpecialists &&
+                    routedSpecialist == soleSpecialist;
+                if (!controllerRouted)
+                {
+                    marker = MoonlightKidAnimator.ObservedLocomotionIncompleteMarker;
+                    detail = $"path=photoreal-specialist activeSpecialists=" +
+                        $"{activeSpecialists} controllerActiveSpecialists=" +
+                        $"{controllerActiveCount} controllerRouted={controllerRouted} " +
+                        "intentionalPhotoreal=True specialist=non-unique-or-unrouted";
+                    return false;
+                }
+
+                bool observedPass = soleSpecialist.ValidateObservedLocomotionRuntimeContract(
+                    out string specialistDetail);
+                bool pass = observedPass &&
+                    soleSpecialist.ObservedLocomotionQAMarker ==
+                        MoonlightKidAnimator.ObservedLocomotionReadyMarker;
+                marker = pass
+                    ? MoonbudPhotorealSpecialistLocomotionMarker
+                    : MoonlightKidAnimator.ObservedLocomotionIncompleteMarker;
+                detail = $"path=photoreal-specialist activeSpecialists={activeSpecialists} " +
+                    $"controllerActiveSpecialists={controllerActiveCount} " +
+                    $"controllerRouted={controllerRouted} {specialistDetail}";
+                return pass;
+            }
+
+            MoonlightAnimatorQACandidates.Clear();
+            controller.GetComponentsInChildren(true, MoonlightAnimatorQACandidates);
+            int activeAnimators = 0;
+            MoonlightAnimator soleAnimator = null;
+            for (int i = 0; i < MoonlightAnimatorQACandidates.Count; i++)
+            {
+                MoonlightAnimator animator = MoonlightAnimatorQACandidates[i];
+                if (animator == null || !animator.isActiveAndEnabled ||
+                    !animator.gameObject.activeInHierarchy)
+                    continue;
+                activeAnimators++;
+                soleAnimator = animator;
+            }
+
+            int controllerActiveCount = controller.ActiveMoonlightAnimatorCount;
+            MoonlightAnimator routedAnimator = controller.ActiveMoonlightAnimator;
+            bool controllerRouted = activeAnimators == 1 &&
+                controllerActiveCount == activeAnimators && routedAnimator == soleAnimator;
+            if (!controllerRouted)
+            {
+                marker = "MOONLIGHT_LOCOMOTION_RUNTIME_INCOMPLETE";
+                detail = $"path=authored activeAnimators={activeAnimators} " +
+                    $"controllerActiveAnimators={controllerActiveCount} " +
+                    $"controllerRouted={controllerRouted} animator=non-unique-or-unrouted";
+                return false;
+            }
+
+            bool animatorPass = soleAnimator.ValidateProceduralLocomotionRuntimeContract(
+                out string animatorDetail);
+            if (soleAnimator.HasRuntimeAnimatorController)
+            {
+                marker = MoonbudAnimatorControllerIncompleteMarker;
+                detail = $"path=animator-controller activeAnimators={activeAnimators} " +
+                    $"controllerActiveAnimators={controllerActiveCount} " +
+                    $"controllerRouted={controllerRouted} {animatorDetail}";
+                return false;
+            }
+
+            bool proceduralPass = animatorPass && soleAnimator.UsesProceduralLocomotion &&
+                soleAnimator.LiveProceduralRigBindingValid &&
+                soleAnimator.ActiveVisibleArticulatedBindingCount >=
+                    MoonlightAnimator.MinimumArticulatedTransformCount;
+            marker = proceduralPass
+                ? MoonbudArticulatedLocomotionMarker
+                : "MOONLIGHT_LOCOMOTION_RUNTIME_INCOMPLETE";
+            detail = $"path=controllerless-procedural failClosed=True " +
+                $"activeAnimators={activeAnimators} " +
+                $"controllerActiveAnimators={controllerActiveCount} " +
+                $"controllerRouted={controllerRouted} activeVisibleBindings=" +
+                $"{soleAnimator.ActiveVisibleArticulatedBindingCount}/" +
+                $">={MoonlightAnimator.MinimumArticulatedTransformCount} " +
+                $"bindingFailClosed={soleAnimator.ProceduralRigBindingFailedClosed} " +
+                animatorDetail;
+            return proceduralPass;
+        }
 
         static bool ValidateActionAccent(MoonlightActionFeedback feedback,
             string expectedSignature, string expectedMarker, bool requireContactCenter,

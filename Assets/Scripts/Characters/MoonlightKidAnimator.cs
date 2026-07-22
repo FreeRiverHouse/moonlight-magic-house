@@ -7,6 +7,13 @@ namespace MoonlightMagicHouse
     // proportions childlike and gives every care button a visible reaction.
     public class MoonlightKidAnimator : MonoBehaviour
     {
+        public const int RequiredArticulatedBoneCount = 13;
+        public const int MinimumObservedMovingBoneCount = 8;
+        public const string ObservedLocomotionReadyMarker =
+            "MOONLIGHT_KID_ANIMATOR_LOCOMOTION_OBSERVED";
+        public const string ObservedLocomotionIncompleteMarker =
+            "MOONLIGHT_KID_ANIMATOR_LOCOMOTION_INCOMPLETE";
+
         enum ActionPose { None, Snack, Hug, Nap, Play, Bath, Dance }
 
         Transform _root;
@@ -15,6 +22,8 @@ namespace MoonlightMagicHouse
         Transform _leftUpLeg, _rightUpLeg;
         Transform _leftLeg, _rightLeg, _leftFoot, _rightFoot;
         Transform[] _ribbons;
+        Transform[] _articulatedBones;
+        Renderer[] _renderers;
 
         Quaternion _baseRot;
         Vector3 _basePos;
@@ -34,6 +43,7 @@ namespace MoonlightMagicHouse
         float _facingYaw;
         float _targetFacingYaw;
         bool _sdAvatar;
+        TransformPose[] _qaPoseSnapshot;
 
         struct BonePose
         {
@@ -41,6 +51,22 @@ namespace MoonlightMagicHouse
             public Quaternion baseRot;
             public Vector3 baseScale;
         }
+
+        struct TransformPose
+        {
+            public Transform transform;
+            public Vector3 position;
+            public Quaternion rotation;
+            public Vector3 scale;
+        }
+
+        public bool IsWalkingCommanded => _walking;
+        public bool IsRunningCommanded => _running;
+        public float WalkPhase => _walkPhase;
+        public int ActiveArticulatedBoneCount => CountActiveArticulatedBones();
+        public int ActiveVisibleRendererCount => CountActiveVisibleRenderers();
+        public string ObservedLocomotionQAMarker { get; private set; } =
+            ObservedLocomotionIncompleteMarker;
 
         void Awake()
         {
@@ -62,6 +88,12 @@ namespace MoonlightMagicHouse
             _rightLeg = FindBone("RightLeg");
             _leftFoot = FindBone("LeftFoot");
             _rightFoot = FindBone("RightFoot");
+            _articulatedBones = new[]
+            {
+                _hips, _spine, _head,
+                _leftArm, _leftForeArm, _rightArm, _rightForeArm,
+                _leftUpLeg, _rightUpLeg, _leftLeg, _rightLeg, _leftFoot, _rightFoot
+            };
             _ribbons = new[]
             {
                 FindBone("J_L_HeadRibbon_00"), FindBone("J_L_HeadRibbon_01"),
@@ -74,6 +106,8 @@ namespace MoonlightMagicHouse
 
             ApplyProportionPass();
             CacheBasePoses();
+            _renderers = GetComponentsInChildren<Renderer>(true);
+            _qaPoseSnapshot = new TransformPose[_poses.Length + 1];
         }
 
         public void PlaySnack() => StartPose(ActionPose.Snack, 0.95f);
@@ -116,6 +150,91 @@ namespace MoonlightMagicHouse
             _running = walking && running;
         }
 
+        public bool ValidateObservedLocomotionRuntimeContract(out string detail)
+        {
+            int activeBones = CountActiveArticulatedBones();
+            int activeVisibleRenderers = CountActiveVisibleRenderers();
+            int visibleArticulatedBones = CountVisibleArticulatedBones();
+            bool activeRig = isActiveAndEnabled && gameObject.activeInHierarchy &&
+                _poses != null && _qaPoseSnapshot != null &&
+                activeBones == RequiredArticulatedBoneCount && activeVisibleRenderers > 0 &&
+                visibleArticulatedBones >= MinimumObservedMovingBoneCount;
+            if (!activeRig)
+            {
+                ObservedLocomotionQAMarker = ObservedLocomotionIncompleteMarker;
+                detail = $"observed=False activeAndEnabled={isActiveAndEnabled} " +
+                    $"activeInHierarchy={gameObject.activeInHierarchy} " +
+                    $"activeBones={activeBones}/{RequiredArticulatedBoneCount} " +
+                    $"activeVisibleRenderers={activeVisibleRenderers} " +
+                    $"visibleArticulatedBones={visibleArticulatedBones} " +
+                    $"marker={ObservedLocomotionQAMarker}";
+                return false;
+            }
+
+            CaptureQAPoses();
+            bool walking = _walking;
+            bool running = _running;
+            float walkPhase = _walkPhase;
+            int walkMoved = 0;
+            int runMoved = 0;
+            float walkAmplitude = 0f;
+            float runAmplitude = 0f;
+            float walkCadenceAdvance = 0f;
+            float runCadenceAdvance = 0f;
+            bool exactPoseRestore = false;
+            bool exactStateRestore = false;
+
+            try
+            {
+                PrepareLocomotionSample(false, Mathf.PI * 0.5f);
+                ApplyWalkCycle(0f, 0f);
+                walkMoved = CountMovedArticulatedBones();
+                walkAmplitude = MaximumArticulatedBoneRotation();
+
+                PrepareLocomotionSample(true, Mathf.PI * 0.5f);
+                ApplyWalkCycle(0f, 0f);
+                runMoved = CountMovedArticulatedBones();
+                runAmplitude = MaximumArticulatedBoneRotation();
+
+                const float cadenceSampleSeconds = 0.125f;
+                PrepareLocomotionSample(false, 0f);
+                ApplyWalkCycle(0f, cadenceSampleSeconds);
+                walkCadenceAdvance = _walkPhase;
+                PrepareLocomotionSample(true, 0f);
+                ApplyWalkCycle(0f, cadenceSampleSeconds);
+                runCadenceAdvance = _walkPhase;
+            }
+            finally
+            {
+                RestoreQAPoses();
+                _walking = walking;
+                _running = running;
+                _walkPhase = walkPhase;
+                exactPoseRestore = QAPosesMatch();
+                exactStateRestore = _walking == walking && _running == running &&
+                    Mathf.Abs(_walkPhase - walkPhase) <= 0.000001f;
+            }
+
+            bool movementPass = walkMoved >= MinimumObservedMovingBoneCount &&
+                runMoved >= MinimumObservedMovingBoneCount;
+            bool amplitudePass = runAmplitude > walkAmplitude + 0.01f;
+            bool cadencePass = runCadenceAdvance > walkCadenceAdvance + 0.01f;
+            bool pass = movementPass && amplitudePass && cadencePass &&
+                exactPoseRestore && exactStateRestore;
+            ObservedLocomotionQAMarker = pass
+                ? ObservedLocomotionReadyMarker
+                : ObservedLocomotionIncompleteMarker;
+            detail = $"observed={pass} activeBones={activeBones}/" +
+                $"{RequiredArticulatedBoneCount} activeVisibleRenderers={activeVisibleRenderers} " +
+                $"visibleArticulatedBones={visibleArticulatedBones} " +
+                $"movedWalkRun={walkMoved}/{runMoved} " +
+                $"amplitudeDegWalkRun={walkAmplitude:0.000}/{runAmplitude:0.000} " +
+                $"phaseAdvanceWalkRun={walkCadenceAdvance:0.000}/{runCadenceAdvance:0.000} " +
+                $"exactPoseRestore={exactPoseRestore} exactStateRestore={exactStateRestore} " +
+                $"marker={ObservedLocomotionQAMarker}";
+            return pass;
+        }
+
         public void SetFacingYaw(float yawDegrees)
         {
             _targetFacingYaw = yawDegrees;
@@ -151,7 +270,7 @@ namespace MoonlightMagicHouse
             if (_leftArm != null) Add(_leftArm, Mathf.Sin(t * 1.2f) * 2.5f * idleLayer, 0f, Mathf.Sin(t * 1.5f) * 3.0f * idleLayer);
             if (_rightArm != null) Add(_rightArm, Mathf.Sin(t * 1.2f + 1.5f) * 2.5f * idleLayer, 0f, Mathf.Sin(t * 1.5f + 1.2f) * -3.0f * idleLayer);
             AnimateRibbons(t, napping ? 0.24f : 1f);
-            if (_walking) ApplyWalkCycle(t);
+            if (_walking) ApplyWalkCycle(t, Time.deltaTime);
 
             if (_pose == ActionPose.None) return;
 
@@ -330,12 +449,166 @@ namespace MoonlightMagicHouse
             }
         }
 
-        void ApplyWalkCycle(float t)
+        void PrepareLocomotionSample(bool running, float phase)
+        {
+            RestoreBones();
+            transform.localPosition = _basePos;
+            transform.localRotation = _baseRot;
+            _walking = true;
+            _running = running;
+            _walkPhase = phase;
+        }
+
+        int CountActiveArticulatedBones()
+        {
+            if (_articulatedBones == null) return 0;
+            int active = 0;
+            for (int i = 0; i < _articulatedBones.Length; i++)
+            {
+                Transform bone = _articulatedBones[i];
+                if (bone != null && bone.gameObject.activeInHierarchy) active++;
+            }
+            return active;
+        }
+
+        int CountActiveVisibleRenderers()
+        {
+            if (_renderers == null) return 0;
+            int active = 0;
+            for (int i = 0; i < _renderers.Length; i++)
+            {
+                if (IsActiveVisibleGeometry(_renderers[i])) active++;
+            }
+            return active;
+        }
+
+        int CountVisibleArticulatedBones()
+        {
+            if (_articulatedBones == null) return 0;
+            int visible = 0;
+            for (int i = 0; i < _articulatedBones.Length; i++)
+            {
+                if (IsBoneDrivingActiveVisibleGeometry(_articulatedBones[i])) visible++;
+            }
+            return visible;
+        }
+
+        bool IsBoneDrivingActiveVisibleGeometry(Transform bone)
+        {
+            if (bone == null || !bone.gameObject.activeInHierarchy || _renderers == null)
+                return false;
+            for (int rendererIndex = 0; rendererIndex < _renderers.Length; rendererIndex++)
+            {
+                if (_renderers[rendererIndex] is not SkinnedMeshRenderer skinnedRenderer ||
+                    !IsActiveVisibleGeometry(skinnedRenderer))
+                    continue;
+                Transform[] bones = skinnedRenderer.bones;
+                for (int boneIndex = 0; boneIndex < bones.Length; boneIndex++)
+                {
+                    if (bones[boneIndex] == bone) return true;
+                }
+            }
+            return false;
+        }
+
+        static bool IsActiveVisibleGeometry(Renderer renderer)
+        {
+            if (renderer == null || !renderer.enabled || renderer.forceRenderingOff ||
+                !renderer.gameObject.activeInHierarchy ||
+                renderer.shadowCastingMode == UnityEngine.Rendering.ShadowCastingMode.ShadowsOnly)
+                return false;
+            if (renderer is SkinnedMeshRenderer skinnedRenderer)
+                return skinnedRenderer.sharedMesh != null &&
+                    skinnedRenderer.sharedMesh.vertexCount > 0;
+            if (renderer is not MeshRenderer) return false;
+
+            var meshFilter = renderer.GetComponent<MeshFilter>();
+            return meshFilter != null && meshFilter.sharedMesh != null &&
+                meshFilter.sharedMesh.vertexCount > 0;
+        }
+
+        void CaptureQAPoses()
+        {
+            _qaPoseSnapshot[0] = CaptureTransformPose(transform);
+            for (int i = 0; i < _poses.Length; i++)
+                _qaPoseSnapshot[i + 1] = CaptureTransformPose(_poses[i].bone);
+        }
+
+        static TransformPose CaptureTransformPose(Transform target) => new TransformPose
+        {
+            transform = target,
+            position = target != null ? target.localPosition : Vector3.zero,
+            rotation = target != null ? target.localRotation : Quaternion.identity,
+            scale = target != null ? target.localScale : Vector3.one
+        };
+
+        void RestoreQAPoses()
+        {
+            for (int i = 0; i < _qaPoseSnapshot.Length; i++)
+            {
+                TransformPose pose = _qaPoseSnapshot[i];
+                if (pose.transform == null) continue;
+                pose.transform.localPosition = pose.position;
+                pose.transform.localRotation = pose.rotation;
+                pose.transform.localScale = pose.scale;
+            }
+        }
+
+        bool QAPosesMatch()
+        {
+            for (int i = 0; i < _qaPoseSnapshot.Length; i++)
+            {
+                TransformPose pose = _qaPoseSnapshot[i];
+                if (pose.transform == null) continue;
+                if (Vector3.Distance(pose.transform.localPosition, pose.position) > 0.0000001f ||
+                    Quaternion.Angle(pose.transform.localRotation, pose.rotation) > 0.0001f ||
+                    Vector3.Distance(pose.transform.localScale, pose.scale) > 0.0000001f)
+                    return false;
+            }
+            return true;
+        }
+
+        int CountMovedArticulatedBones()
+        {
+            int moved = 0;
+            for (int i = 0; i < _articulatedBones.Length; i++)
+            {
+                Transform bone = _articulatedBones[i];
+                if (!IsBoneDrivingActiveVisibleGeometry(bone)) continue;
+                Quaternion baseRotation = BaseRotationFor(bone);
+                if (Quaternion.Angle(bone.localRotation, baseRotation) > 0.001f) moved++;
+            }
+            return moved;
+        }
+
+        float MaximumArticulatedBoneRotation()
+        {
+            float maximum = 0f;
+            for (int i = 0; i < _articulatedBones.Length; i++)
+            {
+                Transform bone = _articulatedBones[i];
+                if (!IsBoneDrivingActiveVisibleGeometry(bone)) continue;
+                maximum = Mathf.Max(maximum,
+                    Quaternion.Angle(bone.localRotation, BaseRotationFor(bone)));
+            }
+            return maximum;
+        }
+
+        Quaternion BaseRotationFor(Transform bone)
+        {
+            for (int i = 0; i < _poses.Length; i++)
+            {
+                if (_poses[i].bone == bone) return _poses[i].baseRot;
+            }
+            return bone.localRotation;
+        }
+
+        void ApplyWalkCycle(float t, float deltaTime)
         {
             float speed = _running ? 8.0f : 5.2f;
             float stride = _running ? 30f : 18f;
             float lift = _running ? 0.050f : 0.024f;
-            _walkPhase += Time.deltaTime * speed;
+            _walkPhase += deltaTime * speed;
             float s = Mathf.Sin(_walkPhase);
             float c = Mathf.Cos(_walkPhase);
             float footA = Mathf.Max(0f, s);

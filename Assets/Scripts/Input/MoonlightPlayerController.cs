@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace MoonlightMagicHouse
@@ -9,6 +10,8 @@ namespace MoonlightMagicHouse
         public const float IPadSprintProcessedInputThreshold = 0.92f;
         public const float IPadSprintSpeedMultiplier = 1.45f;
         public const float IPadSprintVisualMultiplier = 1.30f;
+        public const float ProceduralWholeRootBobScale = 0f;
+        public const float ProceduralWholeRootSquashScale = 0f;
         public const string IPadSprintReadyMarker = "MOONLIGHT_IPAD_SPRINT_READY";
         public const string TouchCameraRelativeContractMarker =
             "MOONLIGHT_TOUCH_CAMERA_RELATIVE_CONTRACT_VERIFIED";
@@ -27,6 +30,13 @@ namespace MoonlightMagicHouse
 
         Transform _visual;
         MoonlightBobber _idleBobber;
+        readonly List<MoonlightAnimator> _moonlightAnimators = new();
+        readonly List<MoonlightKidAnimator> _moonlightKidAnimators = new();
+        MoonlightAnimator _activeMoonlightAnimator;
+        MoonlightKidAnimator _activeMoonlightKidAnimator;
+        int _lastAnimatorScanFrame = int.MinValue;
+        int _activeMoonlightAnimatorCount;
+        int _activeMoonlightKidAnimatorCount;
         Quaternion _visualBaseRotation = Quaternion.identity;
         Vector3 _visualBasePosition;
         Vector3 _visualBaseScale = Vector3.one;
@@ -55,6 +65,56 @@ namespace MoonlightMagicHouse
         public int CollisionCount { get; private set; }
         public int RecoveryCount { get; private set; }
         public string LastRecoveryReason { get; private set; } = "";
+        public int ActiveMoonlightAnimatorCount
+        {
+            get
+            {
+                RefreshAnimatorRoutesOncePerFrame();
+                return _activeMoonlightAnimatorCount;
+            }
+        }
+        public int ActiveMoonlightKidAnimatorCount
+        {
+            get
+            {
+                RefreshAnimatorRoutesOncePerFrame();
+                return _activeMoonlightKidAnimatorCount;
+            }
+        }
+        public MoonlightAnimator ActiveMoonlightAnimator
+        {
+            get
+            {
+                RefreshAnimatorRoutesOncePerFrame();
+                return _activeMoonlightAnimator;
+            }
+        }
+        public MoonlightKidAnimator ActiveMoonlightKidAnimator
+        {
+            get
+            {
+                RefreshAnimatorRoutesOncePerFrame();
+                return _activeMoonlightKidAnimator;
+            }
+        }
+        public bool KidWalkingCommanded
+        {
+            get
+            {
+                RefreshAnimatorRoutesOncePerFrame();
+                return _activeMoonlightKidAnimator != null &&
+                    _activeMoonlightKidAnimator.IsWalkingCommanded;
+            }
+        }
+        public bool KidRunningCommanded
+        {
+            get
+            {
+                RefreshAnimatorRoutesOncePerFrame();
+                return _activeMoonlightKidAnimator != null &&
+                    _activeMoonlightKidAnimator.IsRunningCommanded;
+            }
+        }
 
         void Start()
         {
@@ -86,7 +146,8 @@ namespace MoonlightMagicHouse
                 if (_idleBobber != null) _idleBobber.enabled = false;
                 _wasMoving = false;
                 _wasPerformingAction = true;
-                GetComponentInChildren<MoonlightAnimator>()?.SetWalking(false);
+                SetAnimatorActionActive(true);
+                RouteLocomotion(0f, false);
                 return;
             }
 
@@ -94,6 +155,7 @@ namespace MoonlightMagicHouse
             {
                 _wasPerformingAction = false;
                 _wasMoving = true;
+                SetAnimatorActionActive(false);
             }
 
             float movementThresholdSquared = MovementInputThreshold * MovementInputThreshold;
@@ -120,7 +182,7 @@ namespace MoonlightMagicHouse
             bool moving = move.sqrMagnitude > movementThresholdSquared;
             UpdateMovementState(moving, move, clamped);
             UpdateVisualMotion(move, moving);
-            GetComponentInChildren<MoonlightAnimator>()?.SetWalking(moving);
+            RouteLocomotion(moving ? move.magnitude : 0f, IsIPadSprinting);
         }
 
         public void SetTouchMove(Vector2 move)
@@ -132,13 +194,20 @@ namespace MoonlightMagicHouse
                 return;
             }
             _touchMove = Vector2.ClampMagnitude(move, 1f);
+            if (_touchMove.sqrMagnitude <= 0.0001f)
+            {
+                RestoreAnimatorForActionHandoff();
+                RouteLocomotion(0f, false);
+            }
         }
 
         public void ClearTouchMovementState()
         {
+            RestoreAnimatorForActionHandoff();
             _touchMove = Vector2.zero;
             _smoothedMove = Vector2.zero;
             SetIPadSprinting(false);
+            RouteLocomotion(0f, false);
         }
 
         public void SetProcessedTouchSprintForQA(Vector2 move)
@@ -425,6 +494,69 @@ namespace MoonlightMagicHouse
                 $"processedTouchMagnitude={_touchMove.magnitude:0.00} marker={IPadSprintQAMarker}");
         }
 
+        void RefreshAnimatorRoutesOncePerFrame()
+        {
+            int frame = Time.frameCount;
+            if (_lastAnimatorScanFrame == frame) return;
+            _lastAnimatorScanFrame = frame;
+
+            _moonlightAnimators.Clear();
+            _moonlightKidAnimators.Clear();
+            GetComponentsInChildren(true, _moonlightAnimators);
+            GetComponentsInChildren(true, _moonlightKidAnimators);
+
+            _activeMoonlightAnimator = null;
+            _activeMoonlightKidAnimator = null;
+            _activeMoonlightAnimatorCount = 0;
+            _activeMoonlightKidAnimatorCount = 0;
+
+            MoonlightAnimator soleAnimator = null;
+            for (int i = 0; i < _moonlightAnimators.Count; i++)
+            {
+                MoonlightAnimator candidate = _moonlightAnimators[i];
+                if (candidate == null || !candidate.isActiveAndEnabled ||
+                    !candidate.gameObject.activeInHierarchy)
+                    continue;
+                _activeMoonlightAnimatorCount++;
+                soleAnimator = candidate;
+            }
+
+            MoonlightKidAnimator soleKidAnimator = null;
+            for (int i = 0; i < _moonlightKidAnimators.Count; i++)
+            {
+                MoonlightKidAnimator candidate = _moonlightKidAnimators[i];
+                if (candidate == null || !candidate.isActiveAndEnabled ||
+                    !candidate.gameObject.activeInHierarchy)
+                    continue;
+                _activeMoonlightKidAnimatorCount++;
+                soleKidAnimator = candidate;
+            }
+
+            if (_activeMoonlightAnimatorCount == 1)
+                _activeMoonlightAnimator = soleAnimator;
+            if (_activeMoonlightKidAnimatorCount == 1)
+                _activeMoonlightKidAnimator = soleKidAnimator;
+        }
+
+        void SetAnimatorActionActive(bool active)
+        {
+            RefreshAnimatorRoutesOncePerFrame();
+            _activeMoonlightAnimator?.SetActionActive(active);
+        }
+
+        void RestoreAnimatorForActionHandoff()
+        {
+            RefreshAnimatorRoutesOncePerFrame();
+            _activeMoonlightAnimator?.RestoreForActionHandoff();
+        }
+
+        void RouteLocomotion(float movementMagnitude, bool running)
+        {
+            RefreshAnimatorRoutesOncePerFrame();
+            _activeMoonlightAnimator?.SetLocomotion(movementMagnitude, running);
+            _activeMoonlightKidAnimator?.SetWalking(movementMagnitude > 0f, running);
+        }
+
         void UpdateMovementState(bool moving, Vector2 move, bool clamped)
         {
             if (moving == _wasMoving) return;
@@ -464,15 +596,22 @@ namespace MoonlightMagicHouse
 
             float step = Mathf.Sin(_walkPhase);
             float movementVisualMultiplier = IsIPadSprinting ? IPadSprintVisualMultiplier : 1f;
+            RefreshAnimatorRoutesOncePerFrame();
+            bool articulatedGait = _activeMoonlightAnimator != null &&
+                _activeMoonlightAnimator.UsesProceduralLocomotion;
+            articulatedGait |= _activeMoonlightKidAnimator != null;
+            float rootBobScale = articulatedGait ? ProceduralWholeRootBobScale : 1f;
+            float rootSquashScale = articulatedGait ? ProceduralWholeRootSquashScale : 1f;
             var targetPosition = _visualBasePosition;
             if (moving)
-                targetPosition.y += Mathf.Abs(step) * walkBobHeight * movementVisualMultiplier;
+                targetPosition.y += Mathf.Abs(step) * walkBobHeight * movementVisualMultiplier *
+                    rootBobScale;
             _visual.localPosition = Vector3.Lerp(_visual.localPosition, targetPosition, Time.deltaTime * visualReturnSpeed);
 
             if (CanApplyMovementScale())
             {
                 float squash = moving
-                    ? Mathf.Abs(step) * walkSquash * movementVisualMultiplier
+                    ? Mathf.Abs(step) * walkSquash * movementVisualMultiplier * rootSquashScale
                     : 0f;
                 var targetScale = new Vector3(
                     _visualBaseScale.x * (1f + squash * 0.45f),
