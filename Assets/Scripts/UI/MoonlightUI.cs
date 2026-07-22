@@ -97,6 +97,10 @@ namespace MoonlightMagicHouse
         static readonly Vector2 IPadMinimumTouchTarget = new Vector2(96f, 88f);
         public const float NavigationCueSeparationPaddingPixels = 8f;
         public const int NavigationCueMaximumLabelCharacters = 10;
+        public const int IPadResultMaximumLines = 2;
+        public const int IPadResultMaximumLineCharacters = 80;
+        public const int IPadResultMaximumCharacters =
+            IPadResultMaximumLines * IPadResultMaximumLineCharacters + 1;
         const float IPadProgressTrackWidth = 84f;
 
         [Flags]
@@ -2433,19 +2437,97 @@ namespace MoonlightMagicHouse
             ClearContextResult();
         }
 
-        static string FormatIPadResult(string text)
+        public static string FormatIPadResult(string text)
         {
             if (string.IsNullOrEmpty(text)) return text;
             string[] parts = text.Split(new[] { "  /  " }, StringSplitOptions.None);
-            if (parts.Length < 2) return text;
+            if (parts.Length < 2)
+                return LimitIPadResultLine(SanitizeIPadResultSegment(text));
 
-            string firstLine = parts.Length > 1 ? $"{parts[0]}  •  {parts[1]}" : parts[0];
+            string firstLine = LimitIPadResultLine(
+                $"{SanitizeIPadResultSegment(parts[0])} / " +
+                SanitizeIPadResultSegment(parts[1]));
             if (parts.Length == 2) return firstLine;
 
-            var secondLine = new System.Text.StringBuilder(parts[2]);
+            var secondLine = new System.Text.StringBuilder(
+                SanitizeIPadResultSegment(parts[2]));
             for (int i = 3; i < parts.Length; i++)
-                secondLine.Append("  ").Append(parts[i]);
-            return $"{firstLine}\n{secondLine}";
+                secondLine.Append(" / ").Append(SanitizeIPadResultSegment(parts[i]));
+            return $"{firstLine}\n{LimitIPadResultLine(secondLine.ToString())}";
+        }
+
+        public static bool IsValidIPadResultFormat(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text.Length > IPadResultMaximumCharacters)
+                return false;
+            string[] lines = text.Split('\n');
+            if (lines.Length > IPadResultMaximumLines) return false;
+            foreach (string line in lines)
+            {
+                if (string.IsNullOrEmpty(line) ||
+                    line.Length > IPadResultMaximumLineCharacters)
+                    return false;
+            }
+            for (int i = 0; i < text.Length; i++)
+            {
+                char character = text[i];
+                if (character != '\n' && (character < 0x20 || character > 0x7e))
+                    return false;
+            }
+            return true;
+        }
+
+        public static bool ValidateIPadResultFormatterContract(out string detail)
+        {
+            string retry = FormatIPadResult(
+                MoonlightSpatialActionZone.BuildRetryResult(MoonlightGestureKind.Swipe,
+                    "TURN", 1, 4, 0.20f));
+            const string expectedRetry =
+                "TRY AGAIN / SWIPE TO TURN\nSTEP 2/4 / SCORE 20";
+            const string receipt = "MOON SPA COMPLETE  /  RUN PERFECT 95 x4  /  " +
+                "+18 WARMTH  +12 REST  +6 MAGIC  +12 XP  +5 COINS";
+            string formattedReceipt = FormatIPadResult(receipt);
+            string sanitized = FormatIPadResult("READY \u2022 NOW");
+            string limited = FormatIPadResult(
+                new string('A', IPadResultMaximumLineCharacters + 20));
+            bool retryPass = retry == expectedRetry && IsValidIPadResultFormat(retry);
+            bool receiptPass = IsValidIPadResultFormat(formattedReceipt) &&
+                formattedReceipt.Split('\n').Length == 2 &&
+                formattedReceipt.Contains("MOON SPA COMPLETE") &&
+                formattedReceipt.Contains("+5 COINS");
+            bool asciiPass = sanitized == "READY ? NOW" &&
+                IsValidIPadResultFormat(sanitized);
+            bool limitsPass = limited.Length == IPadResultMaximumLineCharacters &&
+                limited.EndsWith("...") && IsValidIPadResultFormat(limited);
+            detail = $"retry=\"{retry.Replace('\n', '/')}\" lines=" +
+                $"{retry.Split('\n').Length}/{IPadResultMaximumLines} ascii={asciiPass} " +
+                $"lineMax={IPadResultMaximumLineCharacters} totalMax=" +
+                $"{IPadResultMaximumCharacters} receipt={receiptPass} limits={limitsPass}";
+            return retryPass && receiptPass && asciiPass && limitsPass;
+        }
+
+        static string SanitizeIPadResultSegment(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            var sanitized = new System.Text.StringBuilder(value.Length);
+            for (int i = 0; i < value.Length; i++)
+            {
+                char character = value[i];
+                if (character >= 0x20 && character <= 0x7e)
+                    sanitized.Append(character);
+                else if (char.IsWhiteSpace(character))
+                    sanitized.Append(' ');
+                else
+                    sanitized.Append('?');
+            }
+            return sanitized.ToString().Trim();
+        }
+
+        static string LimitIPadResultLine(string line)
+        {
+            if (line.Length <= IPadResultMaximumLineCharacters) return line;
+            return line.Substring(0, IPadResultMaximumLineCharacters - 3)
+                .TrimEnd() + "...";
         }
 
         public const float IntermediateActivityResultDurationSeconds = 2.8f;

@@ -208,6 +208,93 @@ namespace MoonlightMagicHouse
                 _ => "TAP"
             };
 
+        public static string BuildRetryResult(MoonlightGestureKind gesture,
+            string actionLabel, int step, int requiredSteps, float score)
+        {
+            requiredSteps = Mathf.Max(1, requiredSteps);
+            string label = string.IsNullOrWhiteSpace(actionLabel)
+                ? "ACTION"
+                : actionLabel.Trim().ToUpperInvariant();
+            string explicitStep = requiredSteps > 1
+                ? $"  /  STEP {Mathf.Clamp(step + 1, 1, requiredSteps)}/{requiredSteps}"
+                : "";
+            float clampedScore = float.IsNaN(score) ? 0f : Mathf.Clamp01(score);
+            return $"TRY AGAIN  /  {CompactGestureInstruction(gesture)} TO {label}" +
+                $"{explicitStep}  /  SCORE {Mathf.RoundToInt(clampedScore * 100f)}";
+        }
+
+        public static bool ValidateRetryResultContract(out string detail)
+        {
+            int checkedStates = 0;
+            int explicitMultiStepStates = 0;
+            bool stateSemanticsPass = true;
+            foreach (MoonlightSpatialActionKind actionKind in
+                     System.Enum.GetValues(typeof(MoonlightSpatialActionKind)))
+            {
+                int requiredSteps = RequiredStepsFor(actionKind);
+                for (int step = 0; step < requiredSteps; step++)
+                {
+                    string result = BuildRetryResult(
+                        RequiredGestureFor(actionKind, step),
+                        ActionLabelFor(actionKind, step, SleepCuddleRestThreshold),
+                        step, requiredSteps, 0.20f);
+                    stateSemanticsPass &= result == ExpectedRetryResult(actionKind, step);
+                    if (requiredSteps > 1 && result.Contains(
+                            $"  /  STEP {step + 1}/{requiredSteps}  /  "))
+                        explicitMultiStepStates++;
+                    checkedStates++;
+                }
+            }
+
+            string sleep = BuildRetryResult(MoonlightGestureKind.Hold,
+                ActionLabelFor(MoonlightSpatialActionKind.SleepCuddle, 0,
+                    SleepCuddleRestThreshold - 1f), 0, 1, 0.20f);
+            string cuddle = BuildRetryResult(MoonlightGestureKind.Hold,
+                ActionLabelFor(MoonlightSpatialActionKind.SleepCuddle, 0,
+                    SleepCuddleRestThreshold), 0, 1, 0.20f);
+            int bedtimeStates = 0;
+            if (sleep == "TRY AGAIN  /  PRESS + HOLD TO SLEEP  /  SCORE 20" &&
+                !sleep.Contains("STEP")) bedtimeStates++;
+            if (cuddle == "TRY AGAIN  /  PRESS + HOLD TO CUDDLE  /  SCORE 20" &&
+                !cuddle.Contains("STEP")) bedtimeStates++;
+
+            string scoreLow = BuildRetryResult(MoonlightGestureKind.Tap,
+                "ADD", 0, 4, -1f);
+            string scoreHigh = BuildRetryResult(MoonlightGestureKind.Tap,
+                "ADD", 0, 4, 2f);
+            string scoreNaN = BuildRetryResult(MoonlightGestureKind.Tap,
+                "ADD", 0, 4, float.NaN);
+            bool scoreClampPass = scoreLow.EndsWith("SCORE 0") &&
+                scoreHigh.EndsWith("SCORE 100") && scoreNaN.EndsWith("SCORE 0");
+            string representative = BuildRetryResult(MoonlightGestureKind.Swipe,
+                ActionLabelFor(MoonlightSpatialActionKind.Read, 1, 0f), 1, 4, 0.20f);
+            bool representativePass = representative ==
+                "TRY AGAIN  /  SWIPE TO TURN  /  STEP 2/4  /  SCORE 20";
+            bool pass = stateSemanticsPass && checkedStates == 22 &&
+                explicitMultiStepStates == 20 && bedtimeStates == 2 &&
+                scoreClampPass && representativePass;
+            detail = $"states={checkedStates}/22 bedtime={bedtimeStates}/2 " +
+                $"explicitSteps={explicitMultiStepStates}/20 scoreClamp={scoreClampPass} " +
+                $"sample=\"{representative}\"";
+            return pass;
+        }
+
+        static string ExpectedRetryResult(MoonlightSpatialActionKind actionKind, int step)
+        {
+            int requiredSteps = RequiredStepsFor(actionKind);
+            string compact = ExpectedCompactIPadInstruction(actionKind, step);
+            if (requiredSteps > 1)
+            {
+                string compactStep = $" {step + 1}/{requiredSteps}";
+                compact = compact.Substring(0, compact.Length - compactStep.Length);
+            }
+            string gestureAction = compact.Replace(" -> ", " TO ");
+            string explicitStep = requiredSteps > 1
+                ? $"  /  STEP {step + 1}/{requiredSteps}"
+                : "";
+            return $"TRY AGAIN  /  {gestureAction}{explicitStep}  /  SCORE 20";
+        }
+
         public static bool IsValidCompactIPadInstruction(string instruction)
         {
             if (string.IsNullOrEmpty(instruction) ||
@@ -343,7 +430,8 @@ namespace MoonlightMagicHouse
                 HapticFeedback.Failure();
                 Debug.Log($"[MoonlightActivityQA] gesture-fail kind={kind} expected={RequiredGesture} " +
                     $"actual={gesture} score={LastGestureScore:0.00} step={_progressStep + 1}/{RequiredSteps}");
-                return $"TRY AGAIN  /  {GestureInstruction(RequiredGesture)}  /  SCORE {Mathf.RoundToInt(LastGestureScore * 100f)}";
+                return BuildRetryResult(RequiredGesture, GetActionLabel(moonlight),
+                    _progressStep, RequiredSteps, LastGestureScore);
             }
 
             if (feedback == null)

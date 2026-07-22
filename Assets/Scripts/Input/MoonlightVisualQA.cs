@@ -51,6 +51,12 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_IPAD_COMPACT_INSTRUCTION_STATIC_CONTRACT_VERIFIED";
         public const string CompactIPadInstructionStaticContractFailureMarker =
             "MOONLIGHT_IPAD_COMPACT_INSTRUCTION_STATIC_CONTRACT_FAILED";
+        public const string RetryResultStaticContractMarker =
+            "MOONLIGHT_RETRY_RESULT_22_OF_22_STATIC_CONTRACT_VERIFIED";
+        public const string IPadResultFormatterStaticContractMarker =
+            "MOONLIGHT_IPAD_RESULT_FORMATTER_STATIC_CONTRACT_VERIFIED";
+        public const string LowScoreRetryRuntimeMarker =
+            "MOONLIGHT_LOW_SCORE_RETRY_5_OF_5_RUNTIME_VERIFIED";
         public const string PlayContinuityRuntimeMarker =
             "MOONLIGHT_PLAY_CONTINUITY_TRANSACTION_VERIFIED";
         public const string PlayContinuityOrderModeMarker =
@@ -968,6 +974,26 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-compact-instruction-contract " +
                 $"{compactInstructionDetail} " +
                 $"marker={CompactIPadInstructionStaticContractMarker}");
+            if (!MoonlightSpatialActionZone.ValidateRetryResultContract(
+                    out string retryResultDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] retry-result-contract " +
+                    retryResultDetail);
+                Application.Quit(167);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] retry-result-contract " +
+                $"{retryResultDetail} marker={RetryResultStaticContractMarker}");
+            if (!MoonlightUI.ValidateIPadResultFormatterContract(
+                    out string resultFormatterDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-result-formatter-contract " +
+                    resultFormatterDetail);
+                Application.Quit(168);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-result-formatter-contract " +
+                $"{resultFormatterDetail} marker={IPadResultFormatterStaticContractMarker}");
             if (!MoonlightUI.ValidateIPadActivityQualityReadoutContract(
                     out string activityQualityDetail))
             {
@@ -2256,6 +2282,8 @@ namespace MoonlightMagicHouse
             int completedActivities = 0;
             int verifiedPersistentStations = 0;
             int busyGestureProbeCount = 0;
+            var verifiedLowScoreRetryKinds =
+                new System.Collections.Generic.HashSet<MoonlightSpatialActionKind>();
             bool verifiedIntermediateResultVisibility = false;
             bool verifiedFinalResultVisibility = false;
             var verifiedVisualSignatures = new System.Collections.Generic.HashSet<string>();
@@ -2450,19 +2478,37 @@ namespace MoonlightMagicHouse
                     : -1;
                 if (expectIPadHud)
                     touchJoystick.ArmHeldInputForQA(rejectedHeldInput);
-                bool lowScoreAccepted = pad.SubmitSynthetic(zone.RequiredGesture, 0.20f);
+                bool lowScoreForwarded = pad.SubmitSynthetic(zone.RequiredGesture, 0.20f);
                 yield return new WaitForSeconds(0.15f);
+                string expectedLowScoreResult =
+                    ExpectedInitialLowScoreIPadResult(zone.Kind);
+                bool lowScoreResultPass = !expectIPadHud ||
+                    (ui.ContextResultQAText == expectedLowScoreResult &&
+                     ui.ContextResultLineCount == 2 &&
+                     MoonlightUI.IsValidIPadResultFormat(ui.ContextResultQAText) &&
+                     ui.ActivityResultIsInsideSafeArea &&
+                     !ui.ContextResultIsOverflowing &&
+                     ui.VisibleActionTextDoesNotOverflow);
                 bool rejectedMovementRetained = !expectIPadHud ||
                     (touchJoystick.ResetSequence == resetSequenceBeforeRejectedAction &&
                      touchJoystick.IsTrackingPointer &&
                      Vector2.Distance(touchJoystick.Value, rejectedHeldInput) <= 0.0001f &&
                      touchJoystick.KnobAnchoredPosition.sqrMagnitude > 0.0001f &&
                      Vector2.Distance(controller.TouchMove, rejectedHeldInput) <= 0.0001f);
-                if (lowScoreAccepted || zone.ProgressStep != startStep || zone.LastGesturePassed ||
-                    audio.LastCueKey != "activity-try-again" || !rejectedMovementRetained)
+                if (!lowScoreForwarded || zone.ProgressStep != startStep ||
+                    zone.LastGesturePassed ||
+                    audio.LastCueKey != "activity-try-again" || !rejectedMovementRetained ||
+                    !lowScoreResultPass)
                 {
                     Debug.LogError($"[MoonlightGameplayQA][FAIL] fail-gesture advanced action={zone.Kind} " +
-                        $"accepted={lowScoreAccepted} step={zone.ProgressStep} cue={audio.LastCueKey} " +
+                        $"forwarded={lowScoreForwarded} passed={zone.LastGesturePassed} " +
+                        $"step={zone.ProgressStep}/{startStep} cue={audio.LastCueKey} " +
+                        $"result=\"{ui.ContextResultQAText.Replace('\n', '/')}\" " +
+                        $"expected=\"{expectedLowScoreResult.Replace('\n', '/')}\" " +
+                        $"lines={ui.ContextResultLineCount}/2 " +
+                        $"safe={ui.ActivityResultIsInsideSafeArea} " +
+                        $"overflow={ui.ContextResultIsOverflowing}/" +
+                        $"{!ui.VisibleActionTextDoesNotOverflow} " +
                         $"retained={rejectedMovementRetained} " +
                         $"tracking={(touchJoystick != null && touchJoystick.IsTrackingPointer)} " +
                         $"value={(touchJoystick != null ? touchJoystick.Value : Vector2.zero):F3} " +
@@ -2471,8 +2517,19 @@ namespace MoonlightMagicHouse
                     yield break;
                 }
                 Debug.Log($"[MoonlightGameplayQA][PASS] fail-gesture action={zone.Kind} " +
-                    $"score={zone.LastGestureScore:0.00} heldMovementRetained={rejectedMovementRetained} " +
+                    $"forwarded={lowScoreForwarded} passed={zone.LastGesturePassed} " +
+                    $"step={zone.ProgressStep}/{startStep} score={zone.LastGestureScore:0.00} " +
+                    $"heldMovementRetained={rejectedMovementRetained} " +
                     "marker=MOONLIGHT_REJECTED_ACTIVITY_MOVEMENT_RETAINED");
+                if (expectIPadHud)
+                {
+                    verifiedLowScoreRetryKinds.Add(zone.Kind);
+                    Debug.Log($"[MoonlightGameplayQA][PASS] low-score-retry-result " +
+                        $"action={zone.Kind} text=\"{ui.ContextResultQAText.Replace('\n', '/')}\" " +
+                        $"lines={ui.ContextResultLineCount}/2 safe={ui.ActivityResultIsInsideSafeArea} " +
+                        $"overflow={ui.ContextResultIsOverflowing} " +
+                        $"verified={verifiedLowScoreRetryKinds.Count}/5");
+                }
                 string failedQualityDetail = "";
                 if (expectIPadHud &&
                     (!ValidateActivityQualityReadoutRuntimeBinding(ui, zone, true, false,
@@ -5186,8 +5243,18 @@ namespace MoonlightMagicHouse
                     $"marker=MOONLIGHT_IPAD_LIVE_HOLD_RUNTIME_4_OF_4_VERIFIED " +
                     $"marker=MOONLIGHT_IPAD_CONTEXT_GESTURE_MOVEMENT_LOCK_6_OF_6_VERIFIED");
 
+            int requiredLowScoreRetryKinds = expectIPadHud ? 5 : 0;
+            bool lowScoreRetryMatrixPass =
+                verifiedLowScoreRetryKinds.Count == requiredLowScoreRetryKinds;
+            string lowScoreRetryMetric = expectIPadHud
+                ? $"{verifiedLowScoreRetryKinds.Count}/5"
+                : $"{verifiedLowScoreRetryKinds.Count}/0(skip)";
+            string lowScoreRetryMarker = expectIPadHud
+                ? $"marker={LowScoreRetryRuntimeMarker} "
+                : "";
             if (completedActivities != 5 || verifiedPersistentStations != 5 ||
                 verifiedVisualSignatures.Count != 20 || busyGestureProbeCount != 20 ||
+                !lowScoreRetryMatrixPass ||
                 !verifiedIntermediateResultVisibility || !verifiedFinalResultVisibility)
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] scored-activity-matrix " +
@@ -5195,6 +5262,7 @@ namespace MoonlightMagicHouse
                     $"persistentStations={verifiedPersistentStations}/5 " +
                     $"signatures={verifiedVisualSignatures.Count}/20 " +
                     $"busyProbes={busyGestureProbeCount}/20 " +
+                    $"lowScoreRetry={lowScoreRetryMetric} " +
                     $"visibleIntervals={verifiedIntermediateResultVisibility}/" +
                     $"{verifiedFinalResultVisibility}");
                 Application.Quit(101);
@@ -5205,8 +5273,10 @@ namespace MoonlightMagicHouse
                 $"persistentStations={verifiedPersistentStations}/5 " +
                 $"signatures={verifiedVisualSignatures.Count}/20 " +
                 $"busyProbes={busyGestureProbeCount}/20 " +
+                $"lowScoreRetry={lowScoreRetryMetric} " +
                 $"visibleIntervals={verifiedIntermediateResultVisibility}/" +
                 $"{verifiedFinalResultVisibility} " +
+                lowScoreRetryMarker +
                 "marker=MOONLIGHT_FIVE_ACTIVITY_MATRIX_VERIFIED");
             if (audio.CuePlayCount < 23)
             {
@@ -5269,6 +5339,22 @@ namespace MoonlightMagicHouse
             MoonlightSpatialActionKind.Read => RoomType.Library,
             MoonlightSpatialActionKind.Care => RoomType.Bedroom,
             _ => RoomType.LivingRoom
+        };
+
+        static string ExpectedInitialLowScoreIPadResult(
+            MoonlightSpatialActionKind kind) => kind switch
+        {
+            MoonlightSpatialActionKind.Cook =>
+                "TRY AGAIN / TAP TO ADD\nSTEP 1/4 / SCORE 20",
+            MoonlightSpatialActionKind.Play =>
+                "TRY AGAIN / SWIPE TO THROW\nSTEP 1/4 / SCORE 20",
+            MoonlightSpatialActionKind.Garden =>
+                "TRY AGAIN / TAP TO PLANT\nSTEP 1/4 / SCORE 20",
+            MoonlightSpatialActionKind.Read =>
+                "TRY AGAIN / TAP TO OPEN\nSTEP 1/4 / SCORE 20",
+            MoonlightSpatialActionKind.Care =>
+                "TRY AGAIN / TAP TO PREP\nSTEP 1/4 / SCORE 20",
+            _ => ""
         };
 
         static MoonlightGestureSample PlayContinuitySample(int step, float score)
