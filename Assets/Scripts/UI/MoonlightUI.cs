@@ -65,6 +65,7 @@ namespace MoonlightMagicHouse
         TMP_Text _iPadProgressLabel;
         Image _iPadProgressFill;
         GameObject _iPadProgressRoot;
+        MoonlightGesturePad _gesturePad;
         bool _iPadLayoutActive;
         bool _roomNavigationLocked;
         bool _activityPresentationWasVisible;
@@ -236,9 +237,9 @@ namespace MoonlightMagicHouse
             if (actionBtn != null)
             {
                 actionBtn.onClick.RemoveListener(ExecuteContextAction);
-                var gesturePad = actionBtn.GetComponent<MoonlightGesturePad>()
+                _gesturePad = actionBtn.GetComponent<MoonlightGesturePad>()
                     ?? actionBtn.gameObject.AddComponent<MoonlightGesturePad>();
-                gesturePad.Bind(this);
+                _gesturePad.Bind(this);
             }
 
             if (_iPadLayoutActive)
@@ -303,6 +304,9 @@ namespace MoonlightMagicHouse
                 interactor.CurrentZone.Kind == activityStage.CurrentKind;
             bool busy = performing || coolingDown || presenting;
             RefreshRoomNavigationState(interactor, presenting, busy);
+            _gesturePad?.SetGestureGuide(
+                interactor?.CurrentZone != null ? interactor.CurrentZone.RequiredGesture : MoonlightGestureKind.Tap,
+                _iPadLayoutActive && hasAction && !busy);
             if (actionBtn != null)
             {
                 actionBtn.gameObject.SetActive(hasAction || busy);

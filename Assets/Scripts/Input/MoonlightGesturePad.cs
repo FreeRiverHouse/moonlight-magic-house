@@ -18,6 +18,7 @@ namespace MoonlightMagicHouse
         IPointerDownHandler, IDragHandler, IPointerUpHandler, ICancelHandler
     {
         public const int GestureTraceDotCapacity = 24;
+        public const int GestureGuideDotCapacity = 12;
         const float GestureTraceFadeSeconds = 0.48f;
         const float ResultFeedbackSeconds = 0.34f;
         const float PassedResultScale = 1.055f;
@@ -26,6 +27,8 @@ namespace MoonlightMagicHouse
         readonly List<Vector2> _points = new();
         readonly RectTransform[] _traceDots = new RectTransform[GestureTraceDotCapacity];
         readonly Image[] _traceImages = new Image[GestureTraceDotCapacity];
+        readonly RectTransform[] _guideDots = new RectTransform[GestureGuideDotCapacity];
+        readonly Image[] _guideImages = new Image[GestureGuideDotCapacity];
 
         MoonlightUI _ui;
         RectTransform _rect;
@@ -44,6 +47,9 @@ namespace MoonlightMagicHouse
         int _traceDotCount;
         float _traceFadeUntil;
         Color _traceResultColor = Color.white;
+        MoonlightGestureKind _guideGesture;
+        bool _guideRequested;
+        bool _guideVisible;
 
         public MoonlightGestureKind ActiveGesture => _gesture;
         public float LastScore { get; private set; }
@@ -51,6 +57,12 @@ namespace MoonlightMagicHouse
         public bool IsTrackingGesture => _pointerId != int.MinValue;
         public int TraceDotPoolCount => _traceDots.Length;
         public int VisibleTraceDotCount => _traceDotCount;
+        public int GuideDotPoolCount => _guideDots.Length;
+        public bool GuideIsVisible => _guideVisible;
+        public MoonlightGestureKind GuideGesture => _guideGesture;
+        public string GuidePathQAMarker => ValidateGestureGuideContract(out _)
+            ? "MOONLIGHT_IPAD_GESTURE_GUIDE_READY"
+            : "MOONLIGHT_IPAD_GESTURE_GUIDE_INVALID";
         public bool LastResultPassed => _lastResultPassed;
         public string ResultFeedbackQAMarker =>
             ValidateResultFeedbackContract(out _)
@@ -72,6 +84,17 @@ namespace MoonlightMagicHouse
                 return true;
             }
         }
+        public bool GuidePoolIsReady
+        {
+            get
+            {
+                for (int i = 0; i < GestureGuideDotCapacity; i++)
+                    if (_guideDots[i] == null || _guideImages[i] == null ||
+                        _guideImages[i].raycastTarget)
+                        return false;
+                return true;
+            }
+        }
         public bool IsAcceptingGesture
         {
             get
@@ -88,10 +111,12 @@ namespace MoonlightMagicHouse
             if (_surface != null) _baseColor = _surface.color;
             _baseScale = transform.localScale;
             BuildTracePool();
+            BuildGuidePool();
         }
 
         void Update()
         {
+            UpdateGuideAnimation();
             if (_pointerId != int.MinValue) return;
 
             if (_surface != null)
@@ -130,6 +155,7 @@ namespace MoonlightMagicHouse
             ClearTrace();
             LastRejectionReason = "";
             SetTrackingVisual();
+            RefreshGuideVisibility();
             HapticFeedback.Light();
             AddPoint(eventData);
         }
@@ -149,6 +175,7 @@ namespace MoonlightMagicHouse
             _pointerId = int.MinValue;
             _startedZone = null;
             RestoreTrackingVisual();
+            RefreshGuideVisibility();
 
             if (startedZone == null || CurrentZone() != startedZone)
             {
@@ -209,6 +236,7 @@ namespace MoonlightMagicHouse
             _points.Clear();
             ClearTrace();
             RestoreTrackingVisual();
+            RefreshGuideVisibility();
             if (wasTracking)
                 Debug.Log($"[MoonlightActivityQA] gesture-cancelled reason={reason}");
         }
@@ -304,6 +332,131 @@ namespace MoonlightMagicHouse
             if (_surface != null)
                 _surface.color = Color.Lerp(_baseColor, _feedbackColor, 0.55f);
             BeginTraceFade(passed);
+        }
+
+        public void SetGestureGuide(MoonlightGestureKind gesture, bool visible)
+        {
+            bool geometryChanged = _guideGesture != gesture;
+            _guideGesture = gesture;
+            _guideRequested = visible;
+            if (geometryChanged) PositionGuideDots();
+            RefreshGuideVisibility();
+        }
+
+        void BuildGuidePool()
+        {
+            for (int i = 0; i < GestureGuideDotCapacity; i++)
+            {
+                var dot = new GameObject($"GestureGuideDot-{i + 1:00}");
+                dot.transform.SetParent(transform, false);
+                dot.transform.SetAsFirstSibling();
+                var rect = dot.AddComponent<RectTransform>();
+                rect.anchorMin = new Vector2(0.5f, 0.5f);
+                rect.anchorMax = new Vector2(0.5f, 0.5f);
+                rect.pivot = new Vector2(0.5f, 0.5f);
+                rect.sizeDelta = new Vector2(8f, 8f);
+                rect.localRotation = Quaternion.Euler(0f, 0f, 45f);
+                var image = dot.AddComponent<Image>();
+                image.color = new Color(0.78f, 0.94f, 1f, 0.16f);
+                image.raycastTarget = false;
+                dot.SetActive(false);
+                _guideDots[i] = rect;
+                _guideImages[i] = image;
+            }
+            PositionGuideDots();
+        }
+
+        void PositionGuideDots()
+        {
+            for (int i = 0; i < GestureGuideDotCapacity; i++)
+            {
+                if (_guideDots[i] == null) continue;
+                float t = i / (float)(GestureGuideDotCapacity - 1);
+                _guideDots[i].anchoredPosition = EvaluateGestureGuidePoint(_guideGesture, t);
+            }
+        }
+
+        void RefreshGuideVisibility()
+        {
+            bool show = _guideRequested && _pointerId == int.MinValue;
+            if (_guideVisible == show) return;
+            _guideVisible = show;
+            for (int i = 0; i < GestureGuideDotCapacity; i++)
+                if (_guideDots[i] != null)
+                    _guideDots[i].gameObject.SetActive(show);
+        }
+
+        void UpdateGuideAnimation()
+        {
+            if (!_guideVisible) return;
+            float traveling = Mathf.Repeat(Time.unscaledTime * 0.72f, 1f);
+            Color baseColor = GuideColor(_guideGesture);
+            for (int i = 0; i < GestureGuideDotCapacity; i++)
+            {
+                if (_guideDots[i] == null || _guideImages[i] == null) continue;
+                float dotT = i / (float)(GestureGuideDotCapacity - 1);
+                float distance = Mathf.Abs(Mathf.DeltaAngle(dotT * 360f, traveling * 360f)) / 180f;
+                float glow = 1f - Mathf.SmoothStep(0f, 0.34f, distance);
+                Color color = baseColor;
+                color.a = Mathf.Lerp(0.10f, 0.58f, glow);
+                _guideImages[i].color = color;
+                _guideDots[i].localScale = Vector3.one * Mathf.Lerp(0.72f, 1.42f, glow);
+            }
+        }
+
+        static Color GuideColor(MoonlightGestureKind gesture) => gesture switch
+        {
+            MoonlightGestureKind.Circle => new Color(0.48f, 0.92f, 1f, 1f),
+            MoonlightGestureKind.Hold => new Color(1f, 0.78f, 0.42f, 1f),
+            MoonlightGestureKind.Swipe => new Color(0.62f, 1f, 0.76f, 1f),
+            MoonlightGestureKind.ZigZag => new Color(0.94f, 0.62f, 1f, 1f),
+            _ => new Color(0.78f, 0.94f, 1f, 1f)
+        };
+
+        public static Vector2 EvaluateGestureGuidePoint(MoonlightGestureKind gesture, float time01)
+        {
+            float t = Mathf.Clamp01(time01);
+            return gesture switch
+            {
+                MoonlightGestureKind.Circle => new Vector2(
+                    Mathf.Cos(t * Mathf.PI * 2f) * 42f,
+                    Mathf.Sin(t * Mathf.PI * 2f) * 26f),
+                MoonlightGestureKind.Hold => new Vector2(
+                    Mathf.Cos(t * Mathf.PI * 2f) * 14f,
+                    Mathf.Sin(t * Mathf.PI * 2f) * 14f),
+                MoonlightGestureKind.Swipe => new Vector2(Mathf.Lerp(-46f, 46f, t), 0f),
+                MoonlightGestureKind.ZigZag => new Vector2(
+                    Mathf.Lerp(-46f, 46f, t),
+                    Mathf.PingPong(t * 4f, 1f) * 44f - 22f),
+                _ => new Vector2(
+                    Mathf.Sin(t * Mathf.PI * 4f),
+                    Mathf.Cos(t * Mathf.PI * 4f)) * Mathf.Lerp(22f, 0f, t)
+            };
+        }
+
+        public static bool ValidateGestureGuideContract(out string detail)
+        {
+            Vector2 circleStart = EvaluateGestureGuidePoint(MoonlightGestureKind.Circle, 0f);
+            Vector2 circleQuarter = EvaluateGestureGuidePoint(MoonlightGestureKind.Circle, 0.25f);
+            Vector2 circleEnd = EvaluateGestureGuidePoint(MoonlightGestureKind.Circle, 1f);
+            Vector2 swipeStart = EvaluateGestureGuidePoint(MoonlightGestureKind.Swipe, 0f);
+            Vector2 swipeEnd = EvaluateGestureGuidePoint(MoonlightGestureKind.Swipe, 1f);
+            Vector2 zigA = EvaluateGestureGuidePoint(MoonlightGestureKind.ZigZag, 0.25f);
+            Vector2 zigB = EvaluateGestureGuidePoint(MoonlightGestureKind.ZigZag, 0.50f);
+            Vector2 zigC = EvaluateGestureGuidePoint(MoonlightGestureKind.ZigZag, 0.75f);
+            Vector2 tapEnd = EvaluateGestureGuidePoint(MoonlightGestureKind.Tap, 1f);
+            Vector2 holdStart = EvaluateGestureGuidePoint(MoonlightGestureKind.Hold, 0f);
+            bool circleClosed = Vector2.Distance(circleStart, circleEnd) <= 0.01f &&
+                                Mathf.Abs(circleQuarter.y) >= 25f;
+            bool swipeClear = swipeEnd.x - swipeStart.x >= 90f;
+            bool zigZagClear = zigA.y > 0f && zigB.y < 0f && zigC.y > 0f;
+            bool tapConverges = tapEnd.magnitude <= 0.01f;
+            bool holdCompact = holdStart.magnitude >= 13f && holdStart.magnitude <= 15f;
+            detail = $"dots={GestureGuideDotCapacity} circleClosed={circleClosed} " +
+                     $"swipeSpan={swipeEnd.x - swipeStart.x:0} zig={zigA.y:0}/{zigB.y:0}/{zigC.y:0} " +
+                     $"tapEnd={tapEnd.magnitude:0.0} holdRadius={holdStart.magnitude:0.0}";
+            return GestureGuideDotCapacity >= 10 && circleClosed && swipeClear &&
+                   zigZagClear && tapConverges && holdCompact;
         }
 
         public static bool ValidateResultFeedbackContract(out string detail)

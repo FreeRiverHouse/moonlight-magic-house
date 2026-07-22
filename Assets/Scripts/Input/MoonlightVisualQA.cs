@@ -303,6 +303,14 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] gesture-coordinates {coordinateDetail} " +
                 "marker=MOONLIGHT_GESTURE_COORDINATES_VERIFIED");
+            if (!MoonlightGesturePad.ValidateGestureGuideContract(out string guideDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-gesture-guide {guideDetail}");
+                Application.Quit(71);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-gesture-guide {guideDetail} " +
+                "marker=MOONLIGHT_IPAD_GESTURE_GUIDE_VERIFIED");
             if (!MoonlightGesturePad.ValidateResultFeedbackContract(out string resultFeedbackDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-gesture-result-feedback " +
@@ -345,15 +353,20 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-joystick-response {joystickResponseDetail} " +
                 "marker=MOONLIGHT_IPAD_JOYSTICK_RESPONSE_CONTRACT_VERIFIED");
             if (!pad.TracePoolIsReady ||
-                pad.TraceDotPoolCount != MoonlightGesturePad.GestureTraceDotCapacity)
+                pad.TraceDotPoolCount != MoonlightGesturePad.GestureTraceDotCapacity ||
+                !pad.GuidePoolIsReady ||
+                pad.GuideDotPoolCount != MoonlightGesturePad.GestureGuideDotCapacity)
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] gesture-trace poolReady={pad.TracePoolIsReady} " +
-                    $"pool={pad.TraceDotPoolCount}/{MoonlightGesturePad.GestureTraceDotCapacity}");
+                    $"pool={pad.TraceDotPoolCount}/{MoonlightGesturePad.GestureTraceDotCapacity} " +
+                    $"guideReady={pad.GuidePoolIsReady} " +
+                    $"guidePool={pad.GuideDotPoolCount}/{MoonlightGesturePad.GestureGuideDotCapacity}");
                 Application.Quit(58);
                 yield break;
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] gesture-trace pool={pad.TraceDotPoolCount} " +
-                "pooled=True raycastBlocking=False marker=MOONLIGHT_GESTURE_TRACE_READY");
+                $"guidePool={pad.GuideDotPoolCount} pooled=True raycastBlocking=False " +
+                "marker=MOONLIGHT_GESTURE_TRACE_READY MOONLIGHT_IPAD_GESTURE_GUIDE_READY");
 
             bool expectIPadHud = args.Contains("-moonlightIPadHudQa");
             var touchJoystick = FindAnyObjectByType<MoonlightTouchJoystick>();
@@ -578,6 +591,8 @@ namespace MoonlightMagicHouse
                             ui.ActivityProgressFillQAMarker ==
                                 "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_READY" &&
                             !string.IsNullOrEmpty(ui.GestureCommandQAMarker) &&
+                            pad.GuideIsVisible && pad.GuideGesture == zone.RequiredGesture &&
+                            pad.GuidePathQAMarker == "MOONLIGHT_IPAD_GESTURE_GUIDE_READY" &&
                             ui.ActionTouchTargetMeetsIPadMinimum && ui.ActionTouchTargetIsInsideSafeArea &&
                             ui.ActivityPromptIsInsideSafeArea && ui.ActivityResultIsInsideSafeArea &&
                             ui.ActivityProgressIsInsideSafeArea && ui.ActivityHUDPanelsDoNotOverlap;
