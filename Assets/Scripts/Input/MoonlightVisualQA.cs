@@ -496,6 +496,14 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-joystick-response {joystickResponseDetail} " +
                 "marker=MOONLIGHT_IPAD_JOYSTICK_RESPONSE_CONTRACT_VERIFIED");
+            if (!controller.ValidateIPadSprintRuntimeContract(out string sprintDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-sprint-contract {sprintDetail}");
+                Application.Quit(85);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-sprint-contract {sprintDetail} " +
+                "marker=MOONLIGHT_IPAD_SPRINT_CONTRACT_VERIFIED");
             if (!pad.TracePoolIsReady ||
                 pad.TraceDotPoolCount != MoonlightGesturePad.GestureTraceDotCapacity ||
                 !pad.GuidePoolIsReady ||
@@ -516,6 +524,69 @@ namespace MoonlightMagicHouse
             var touchJoystick = FindAnyObjectByType<MoonlightTouchJoystick>();
             if (expectIPadHud)
             {
+                Vector3 sprintProbeStart = controller.transform.position;
+                int sprintProbeCollisionCount = controller.CollisionCount;
+                int sprintProbeRecoveryCount = controller.RecoveryCount;
+                var sprintProbeFeedback = controller.GetComponent<MoonlightActionFeedback>();
+                bool sprintProbeActivityIdle = sprintProbeFeedback == null ||
+                    !sprintProbeFeedback.IsPerformingAction;
+
+                controller.SetProcessedTouchSprintForQA(Vector2.right * 0.91f);
+                bool processed91Pass = !controller.IsIPadSprinting &&
+                    Mathf.Abs(controller.TouchMove.magnitude - 0.91f) <= 0.0001f &&
+                    Mathf.Abs(controller.CurrentMoveSpeed - controller.BaseMoveSpeed) <= 0.0001f;
+                float processed91Speed = controller.CurrentMoveSpeed;
+                sprintProbeActivityIdle &= sprintProbeFeedback == null ||
+                    !sprintProbeFeedback.IsPerformingAction;
+
+                controller.SetProcessedTouchSprintForQA(Vector2.right * 0.92f);
+                bool processed92Pass = controller.IsIPadSprinting &&
+                    Mathf.Abs(controller.TouchMove.magnitude - 0.92f) <= 0.0001f &&
+                    Mathf.Abs(controller.CurrentMoveSpeed - 3.77f) <= 0.0001f &&
+                    controller.CurrentMoveSpeed <= 3.7701f;
+                float processed92Speed = controller.CurrentMoveSpeed;
+
+                controller.SetProcessedTouchSprintForQA(Vector2.right);
+                bool processedMaximumPass = controller.IsIPadSprinting &&
+                    Mathf.Abs(controller.TouchMove.magnitude - 1f) <= 0.0001f &&
+                    Mathf.Abs(controller.CurrentMoveSpeed - 3.77f) <= 0.0001f;
+                float oneSecondSprintDistance = controller.CurrentMoveSpeed;
+                sprintProbeActivityIdle &= sprintProbeFeedback == null ||
+                    !sprintProbeFeedback.IsPerformingAction;
+
+                controller.SetProcessedTouchSprintForQA(Vector2.zero);
+                bool neutralStatePass = !controller.IsIPadSprinting &&
+                    controller.TouchMove.sqrMagnitude <= 0.0001f &&
+                    Mathf.Abs(controller.CurrentMoveSpeed - controller.BaseMoveSpeed) <= 0.0001f;
+                float probeDrift = Vector3.Distance(sprintProbeStart, controller.transform.position);
+                bool navigationStateUnchanged = controller.CollisionCount == sprintProbeCollisionCount &&
+                    controller.RecoveryCount == sprintProbeRecoveryCount;
+                sprintProbeActivityIdle &= sprintProbeFeedback == null ||
+                    !sprintProbeFeedback.IsPerformingAction;
+                bool sprintProbePass = processed91Pass && processed92Pass &&
+                    processedMaximumPass && neutralStatePass &&
+                    Mathf.Abs(oneSecondSprintDistance - 3.77f) <= 0.0001f &&
+                    probeDrift <= 0.0001f && navigationStateUnchanged && sprintProbeActivityIdle;
+                if (!sprintProbePass)
+                {
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-sprint-live " +
+                        $"processed91={processed91Pass}/{processed91Speed:0.00} " +
+                        $"processed92={processed92Pass}/{processed92Speed:0.00} " +
+                        $"processedMaximum={processedMaximumPass}/{oneSecondSprintDistance:0.00} " +
+                        $"neutral={neutralStatePass} drift={probeDrift:0.0000} " +
+                        $"navigationState={navigationStateUnchanged} " +
+                        $"activityIdle={sprintProbeActivityIdle} touch={controller.TouchMove:F3} " +
+                        $"base={controller.BaseMoveSpeed:0.00} current={controller.CurrentMoveSpeed:0.00}");
+                    Application.Quit(86);
+                    yield break;
+                }
+                Debug.Log($"[MoonlightGameplayQA][PASS] ipad-sprint-live " +
+                    $"processed91=false/{processed91Speed:0.00} " +
+                    $"processed92=true/{processed92Speed:0.00} " +
+                    $"oneSecondDistance={oneSecondSprintDistance:0.00}m " +
+                    $"after=false/{controller.CurrentMoveSpeed:0.00} drift={probeDrift:0.0000} " +
+                    "activityStarted=false marker=MOONLIGHT_IPAD_SPRINT_LIVE_VERIFIED");
+
                 var activeNavigationZones = FindObjectsByType<MoonlightSpatialActionZone>(
                         FindObjectsSortMode.None)
                     .Where(candidate => candidate != null && candidate.gameObject.activeInHierarchy)
@@ -902,7 +973,8 @@ namespace MoonlightMagicHouse
                             touchJoystick.IsInputNeutral && !touchJoystick.IsTrackingPointer &&
                             touchJoystick.Value.sqrMagnitude <= 0.0001f &&
                             touchJoystick.KnobAnchoredPosition.sqrMagnitude <= 0.0001f &&
-                            controller.TouchMove.sqrMagnitude <= 0.0001f;
+                            controller.TouchMove.sqrMagnitude <= 0.0001f &&
+                            !controller.IsIPadSprinting;
                         if (!acceptedMovementNeutralized)
                         {
                             Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-movement-neutralized " +
@@ -1614,6 +1686,7 @@ namespace MoonlightMagicHouse
                             touchJoystick.Value.sqrMagnitude <= 0.0001f &&
                             touchJoystick.KnobAnchoredPosition.sqrMagnitude <= 0.0001f &&
                             controller.TouchMove.sqrMagnitude <= 0.0001f &&
+                            !controller.IsIPadSprinting &&
                             postCooldownDrift <= 0.001f &&
                             spatialInteractor.CurrentZone == acceptedActionZone;
                         if (!stableAfterCooldown)

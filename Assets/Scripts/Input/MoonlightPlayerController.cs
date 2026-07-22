@@ -5,8 +5,13 @@ namespace MoonlightMagicHouse
     public class MoonlightPlayerController : MonoBehaviour
     {
         public const float MovementInputThreshold = 0.05f;
+        public const float DefaultMoveSpeed = 2.6f;
+        public const float IPadSprintProcessedInputThreshold = 0.92f;
+        public const float IPadSprintSpeedMultiplier = 1.45f;
+        public const float IPadSprintVisualMultiplier = 1.30f;
+        public const string IPadSprintReadyMarker = "MOONLIGHT_IPAD_SPRINT_READY";
 
-        [SerializeField] float moveSpeed = 2.6f;
+        [SerializeField] float moveSpeed = DefaultMoveSpeed;
         [SerializeField] Rect roomBounds = new Rect(-4.2f, -3.25f, 8.4f, 6.5f);
         [SerializeField] float turnSpeed = 12f;
         [SerializeField] float walkBobHeight = 0.055f;
@@ -37,6 +42,13 @@ namespace MoonlightMagicHouse
 
         public Rect RoomBounds => roomBounds;
         public Vector2 TouchMove => _touchMove;
+        public float BaseMoveSpeed => moveSpeed;
+        public bool IsIPadSprinting { get; private set; }
+        public float CurrentMoveSpeed => moveSpeed *
+            (IsIPadSprinting ? IPadSprintSpeedMultiplier : 1f);
+        public string IPadSprintQAMarker => ValidateIPadSprintRuntimeContract(out _)
+            ? IPadSprintReadyMarker
+            : "MOONLIGHT_IPAD_SPRINT_INCOMPLETE";
         public string LastCollisionName { get; private set; } = "";
         public int CollisionCount { get; private set; }
         public int RecoveryCount { get; private set; }
@@ -66,7 +78,11 @@ namespace MoonlightMagicHouse
             bool performingAction = actionFeedback != null && actionFeedback.IsPerformingAction;
             if (performingAction)
             {
+                _touchMove = Vector2.zero;
+                _smoothedMove = Vector2.zero;
+                SetIPadSprinting(false);
                 if (_idleBobber != null) _idleBobber.enabled = false;
+                _wasMoving = false;
                 _wasPerformingAction = true;
                 GetComponentInChildren<MoonlightAnimator>()?.SetWalking(false);
                 return;
@@ -79,10 +95,12 @@ namespace MoonlightMagicHouse
             }
 
             float movementThresholdSquared = MovementInputThreshold * MovementInputThreshold;
-            var move = _touchMove.sqrMagnitude > movementThresholdSquared ? _touchMove : ReadKeyboardMove();
+            bool usingTouchInput = _touchMove.sqrMagnitude > movementThresholdSquared;
+            var move = usingTouchInput ? _touchMove : ReadKeyboardMove();
             move = Vector2.ClampMagnitude(move, 1f);
+            SetIPadSprinting(ShouldSprint(move.magnitude, usingTouchInput));
 
-            var delta = new Vector3(move.x, 0f, move.y) * (moveSpeed * Time.deltaTime);
+            var delta = new Vector3(move.x, 0f, move.y) * (CurrentMoveSpeed * Time.deltaTime);
             bool clamped = !TryMove(delta);
 
             bool moving = move.sqrMagnitude > movementThresholdSquared;
@@ -93,7 +111,53 @@ namespace MoonlightMagicHouse
 
         public void SetTouchMove(Vector2 move)
         {
+            var actionFeedback = GetComponent<MoonlightActionFeedback>();
+            if (actionFeedback != null && actionFeedback.IsPerformingAction)
+            {
+                _touchMove = Vector2.zero;
+                SetIPadSprinting(false);
+                return;
+            }
             _touchMove = Vector2.ClampMagnitude(move, 1f);
+        }
+
+        public void SetProcessedTouchSprintForQA(Vector2 move)
+        {
+            SetTouchMove(move);
+            float movementThresholdSquared = MovementInputThreshold * MovementInputThreshold;
+            bool usingTouchInput = _touchMove.sqrMagnitude > movementThresholdSquared;
+            SetIPadSprinting(ShouldSprint(_touchMove.magnitude, usingTouchInput));
+        }
+
+        public static bool ShouldSprint(float processedTouchMagnitude, bool isTouchInput) =>
+            isTouchInput && processedTouchMagnitude >= IPadSprintProcessedInputThreshold;
+
+        public static bool ValidateIPadSprintContract(out string detail)
+        {
+            bool processedBelowThreshold = ShouldSprint(0.91f, true);
+            bool processedAtThreshold = ShouldSprint(0.92f, true);
+            bool keyboard = ShouldSprint(1f, false);
+            bool speedMultiplierPass = Mathf.Abs(IPadSprintSpeedMultiplier - 1.45f) <= 0.0001f;
+            bool visualPass = Mathf.Abs(IPadSprintVisualMultiplier - 1.30f) <= 0.0001f;
+            detail = $"processedTouchThreshold={IPadSprintProcessedInputThreshold:0.00} " +
+                $"processedTouch91={processedBelowThreshold} " +
+                $"processedTouch92={processedAtThreshold} keyboard={keyboard} " +
+                $"speedMultiplier={IPadSprintSpeedMultiplier:0.00} " +
+                $"visualMultiplier={IPadSprintVisualMultiplier:0.00}";
+            return !processedBelowThreshold && processedAtThreshold && !keyboard &&
+                speedMultiplierPass && visualPass;
+        }
+
+        public bool ValidateIPadSprintRuntimeContract(out string detail)
+        {
+            bool staticPass = ValidateIPadSprintContract(out string staticDetail);
+            float maximumMoveSpeed = BaseMoveSpeed * IPadSprintSpeedMultiplier;
+            bool baseSpeedPass = Mathf.Abs(BaseMoveSpeed - 2.60f) <= 0.0001f;
+            bool maximumSpeedPass = Mathf.Abs(maximumMoveSpeed - 3.77f) <= 0.0001f;
+            bool currentSpeedPass = CurrentMoveSpeed <= maximumMoveSpeed + 0.0001f;
+            detail = $"{staticDetail} serializedBase={BaseMoveSpeed:0.00} " +
+                $"current={CurrentMoveSpeed:0.00} maximum={maximumMoveSpeed:0.00}";
+            return staticPass && baseSpeedPass && maximumSpeedPass && currentSpeedPass;
         }
 
         public void ConfigureBounds(Rect bounds)
@@ -264,6 +328,18 @@ namespace MoonlightMagicHouse
             return Vector2.ClampMagnitude(new Vector2(x, y), 1f);
         }
 
+        void SetIPadSprinting(bool sprinting)
+        {
+            if (sprinting == IsIPadSprinting) return;
+
+            float speedBefore = CurrentMoveSpeed;
+            bool wasSprinting = IsIPadSprinting;
+            IsIPadSprinting = sprinting;
+            Debug.Log($"[MoonlightVisualQA] ipad-sprint before={wasSprinting} after={IsIPadSprinting} " +
+                $"speedBefore={speedBefore:0.00} speedAfter={CurrentMoveSpeed:0.00} " +
+                $"processedTouchMagnitude={_touchMove.magnitude:0.00} marker={IPadSprintQAMarker}");
+        }
+
         void UpdateMovementState(bool moving, Vector2 move, bool clamped)
         {
             if (moving == _wasMoving) return;
@@ -291,7 +367,8 @@ namespace MoonlightMagicHouse
                 var targetRotation = Quaternion.Euler(0f, yaw, 0f) * _visualBaseRotation;
                 targetRotation *= Quaternion.Euler(0f, 0f, _currentLean);
                 _visual.localRotation = Quaternion.Slerp(_visual.localRotation, targetRotation, turnSpeed * Time.deltaTime);
-                _walkPhase += Time.deltaTime * walkBobSpeed;
+                float visualMultiplier = IsIPadSprinting ? IPadSprintVisualMultiplier : 1f;
+                _walkPhase += Time.deltaTime * walkBobSpeed * visualMultiplier;
                 _lastYaw = yaw;
             }
             else
@@ -301,14 +378,17 @@ namespace MoonlightMagicHouse
             }
 
             float step = Mathf.Sin(_walkPhase);
+            float movementVisualMultiplier = IsIPadSprinting ? IPadSprintVisualMultiplier : 1f;
             var targetPosition = _visualBasePosition;
             if (moving)
-                targetPosition.y += Mathf.Abs(step) * walkBobHeight;
+                targetPosition.y += Mathf.Abs(step) * walkBobHeight * movementVisualMultiplier;
             _visual.localPosition = Vector3.Lerp(_visual.localPosition, targetPosition, Time.deltaTime * visualReturnSpeed);
 
             if (CanApplyMovementScale())
             {
-                float squash = moving ? Mathf.Abs(step) * walkSquash : 0f;
+                float squash = moving
+                    ? Mathf.Abs(step) * walkSquash * movementVisualMultiplier
+                    : 0f;
                 var targetScale = new Vector3(
                     _visualBaseScale.x * (1f + squash * 0.45f),
                     _visualBaseScale.y * (1f - squash),
