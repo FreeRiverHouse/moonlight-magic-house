@@ -402,15 +402,17 @@ namespace MoonlightMagicHouse
                 _activityStep == _activityRequiredSteps - 1;
             bool heldFinalPresentation = finalActivityStep &&
                 _activityStage.LingerFinalState(FinalPresentationSecondsFor(kind));
-            bool heldIntermediatePlayStep = !finalActivityStep &&
-                kind == MoonlightSpatialActionKind.Play &&
-                _activityStage != null && _activityStage.HoldPlayStepTerminal();
-            if (!heldFinalPresentation && !heldIntermediatePlayStep)
+            bool heldIntermediateStep = !finalActivityStep && _activityStage != null &&
+                (kind == MoonlightSpatialActionKind.Play
+                    ? _activityStage.HoldPlayStepTerminal()
+                    : kind == MoonlightSpatialActionKind.Cook &&
+                      _activityStage.HoldCookStepTerminal());
+            if (!heldFinalPresentation && !heldIntermediateStep)
             {
                 _activityStage?.End();
                 EndCameraFocus();
             }
-            else if (heldIntermediatePlayStep)
+            else if (heldIntermediateStep)
             {
                 EndCameraFocus();
             }
@@ -530,7 +532,8 @@ namespace MoonlightMagicHouse
 
         static float FinalPresentationSecondsFor(MoonlightSpatialActionKind kind) => kind switch
         {
-            MoonlightSpatialActionKind.Cook => 5.2f,
+            MoonlightSpatialActionKind.Cook =>
+                MoonlightActivityStage.CookFinalPresentationSeconds,
             MoonlightSpatialActionKind.Play => 4.8f,
             MoonlightSpatialActionKind.Garden => 4.6f,
             MoonlightSpatialActionKind.Read => ReadFinalPresentationSeconds,
@@ -2232,7 +2235,7 @@ namespace MoonlightMagicHouse
 
         static float DurationFor(MoonlightSpatialActionKind kind, string state) => kind switch
         {
-            MoonlightSpatialActionKind.Cook => 2.25f,
+            MoonlightSpatialActionKind.Cook => MoonlightActivityStage.CookActionSeconds,
             MoonlightSpatialActionKind.Play => 1.85f,
             MoonlightSpatialActionKind.Garden => 2.05f,
             MoonlightSpatialActionKind.Read => ReadActionDurationSeconds,

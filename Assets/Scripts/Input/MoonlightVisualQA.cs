@@ -57,6 +57,8 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_PLAY_CONTINUITY_ORDER_MODE";
         public const string PlayPhaseLandmarkTransactionMarker =
             "MOONLIGHT_PLAY_PHASE_LANDMARK_TRANSACTION_VERIFIED";
+        public const string CookContinuityRuntimeMarker =
+            "MOONLIGHT_COOK_CONTINUITY_TRANSACTION_VERIFIED";
 
         static readonly string[] IntermediateActivityResults =
         {
@@ -264,6 +266,30 @@ namespace MoonlightMagicHouse
             public string ArenaSource = "";
             public bool ArenaSourceContractPassed = true;
             public string OrderMode = "middle";
+        }
+
+        sealed class CookContinuityObservation
+        {
+            public MoonlightActivityStage Stage;
+            public int RootId;
+            public int MaterialIdentityCount;
+            public int MaterialIdentityHash;
+            public int LightId;
+            public int BuildBaseline;
+            public int HandoffBaseline;
+            public int TerminalHoldCount;
+            public int HandoffCount;
+            public int SharedPropHandoffMask;
+            public int RootIdentityHandoffMask;
+            public int MaterialIdentityHandoffMask;
+            public int LightIdentityHandoffMask;
+            public int SourceObservedMask;
+            public string Source = "";
+            public bool IdentityPreserved = true;
+            public bool SourceContractPassed = true;
+            public bool BudgetContractPassed = true;
+            public bool FinalLingerObserved;
+            public float MaximumSharedPropDiscontinuity;
         }
 
         readonly struct CareCompletionRootState
@@ -2335,6 +2361,19 @@ namespace MoonlightMagicHouse
                 float rewardRest = moonlight.stats.rest;
                 int rewardXp = moonlight.xp;
                 int rewardCoins = moonlight.coins;
+                CookContinuityObservation cookContinuity = null;
+                if (expectedKind == MoonlightSpatialActionKind.Cook)
+                {
+                    cookContinuity = new CookContinuityObservation();
+                    var priorStage = moonlight.GetComponent<MoonlightActivityStage>();
+                    if (priorStage != null)
+                    {
+                        cookContinuity.BuildBaseline =
+                            priorStage.CookStageBuildCountForQA;
+                        cookContinuity.HandoffBaseline =
+                            priorStage.CookHandoffCountForQA;
+                    }
+                }
                 PlayContinuityObservation playContinuity = null;
                 if (expectedKind == MoonlightSpatialActionKind.Play)
                 {
@@ -2797,6 +2836,80 @@ namespace MoonlightMagicHouse
                         }
                     }
                     var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
+                    if (cookContinuity != null)
+                    {
+                        var continuityStage = moonlight.GetComponent<MoonlightActivityStage>();
+                        cookContinuity.Stage = continuityStage;
+                        if (continuityStage == null)
+                        {
+                            Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                $"cook-continuity-stage-missing step={step + 1}/4");
+                            Application.Quit(162);
+                            yield break;
+                        }
+
+                        if (step == 0)
+                        {
+                            cookContinuity.RootId = continuityStage.CookStageRootInstanceId;
+                            cookContinuity.MaterialIdentityCount =
+                                continuityStage.CookStageMaterialIdentityCountForQA;
+                            cookContinuity.MaterialIdentityHash =
+                                continuityStage.CookStageMaterialIdentityHashForQA;
+                            cookContinuity.LightId = continuityStage.CookStageLightInstanceId;
+                        }
+                        else
+                        {
+                            cookContinuity.HandoffCount++;
+                            int handoffBit = 1 << (step - 1);
+                            if (continuityStage.CookStageRootInstanceId ==
+                                cookContinuity.RootId)
+                                cookContinuity.RootIdentityHandoffMask |= handoffBit;
+                            if (continuityStage.CookStageMaterialIdentityCountForQA ==
+                                    cookContinuity.MaterialIdentityCount &&
+                                continuityStage.CookStageMaterialIdentityHashForQA ==
+                                    cookContinuity.MaterialIdentityHash)
+                                cookContinuity.MaterialIdentityHandoffMask |= handoffBit;
+                            if (continuityStage.CookStageLightInstanceId ==
+                                cookContinuity.LightId)
+                                cookContinuity.LightIdentityHandoffMask |= handoffBit;
+                            int expectedSharedProps = step switch
+                            {
+                                1 => 3,
+                                2 => 1,
+                                _ => 7
+                            };
+                            if (continuityStage.LastCookSharedPropCountForQA ==
+                                expectedSharedProps)
+                                cookContinuity.SharedPropHandoffMask |= 1 << (step - 1);
+                            cookContinuity.MaximumSharedPropDiscontinuity = Mathf.Max(
+                                cookContinuity.MaximumSharedPropDiscontinuity,
+                                continuityStage.LastCookSharedPropDiscontinuityForQA);
+                        }
+
+                        cookContinuity.IdentityPreserved &=
+                            continuityStage.CookStageRootInstanceId == cookContinuity.RootId &&
+                            continuityStage.CookStageMaterialIdentityCountForQA ==
+                                cookContinuity.MaterialIdentityCount &&
+                            continuityStage.CookStageMaterialIdentityHashForQA ==
+                                cookContinuity.MaterialIdentityHash &&
+                            continuityStage.CookStageLightInstanceId == cookContinuity.LightId &&
+                            continuityStage.CookStageRootInstanceId != 0 &&
+                            continuityStage.CookStageMaterialIdentityCountForQA > 0 &&
+                            continuityStage.CookStageLightInstanceId != 0 &&
+                            CountActiveCookStageRoots() == 1;
+                        cookContinuity.BudgetContractPassed &=
+                            MoonlightActivityStage.CookRendererBudget == 36 &&
+                            MoonlightActivityStage.CookMaterialBudget == 24 &&
+                            MoonlightActivityStage.CookLightBudget == 1 &&
+                            continuityStage.ActiveRendererCount > 0 &&
+                            continuityStage.ActiveRendererCount <=
+                                MoonlightActivityStage.CookRendererBudget &&
+                            continuityStage.ActiveUniqueMaterialCount > 0 &&
+                            continuityStage.ActiveUniqueMaterialCount <=
+                                MoonlightActivityStage.CookMaterialBudget &&
+                            continuityStage.ActiveLightCount ==
+                                MoonlightActivityStage.CookLightBudget;
+                    }
                     if (playContinuity != null)
                     {
                         var continuityStage = moonlight.GetComponent<MoonlightActivityStage>();
@@ -3481,30 +3594,29 @@ namespace MoonlightMagicHouse
                                 $"budget=({stage.CookBudgetEvidence}) " +
                                 "marker=MOONLIGHT_GESTURE_COOK_RUNTIME_VERIFIED");
 
-                            bool authoredWorkbenchPass = stage.HasAuthoredCookWorkbench &&
-                                stage.AuthoredCookWorkbenchRendererCount >= 8 &&
-                                stage.AuthoredCookWorkbenchRendererCount <= 12 &&
-                                stage.AuthoredCookWorkbenchMaterialCount >= 8 &&
-                                stage.AuthoredCookWorkbenchMaterialCount <= 10 &&
-                                stage.AuthoredCookWorkbenchColliderCount == 0 &&
-                                stage.AuthoredCookWorkbenchLightCount == 0;
-                            if (!authoredWorkbenchPass)
+                            bool cookSourcePass =
+                                stage.ValidateCookWorkbenchSourceRuntimeContract(
+                                    out string cookSourceDetail);
+                            if (cookContinuity != null)
                             {
-                                Debug.LogError("[MoonlightGameplayQA][FAIL] authored-cook-workbench " +
-                                    $"present={stage.HasAuthoredCookWorkbench} " +
-                                    $"renderers={stage.AuthoredCookWorkbenchRendererCount}/8-12 " +
-                                    $"materials={stage.AuthoredCookWorkbenchMaterialCount}/8-10 " +
-                                    $"colliders={stage.AuthoredCookWorkbenchColliderCount} " +
-                                    $"lights={stage.AuthoredCookWorkbenchLightCount}");
+                                cookContinuity.SourceObservedMask |= 1 << step;
+                                if (string.IsNullOrEmpty(cookContinuity.Source))
+                                    cookContinuity.Source =
+                                        stage.CookWorkbenchVisualSourceForQA;
+                                cookContinuity.SourceContractPassed &= cookSourcePass &&
+                                    cookContinuity.Source ==
+                                        stage.CookWorkbenchVisualSourceForQA;
+                            }
+                            if (!cookSourcePass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] cook-workbench-source " +
+                                    cookSourceDetail);
                                 Application.Quit(32);
                                 yield break;
                             }
-                            Debug.Log("[MoonlightGameplayQA][PASS] authored-cook-workbench " +
-                                $"renderers={stage.AuthoredCookWorkbenchRendererCount} " +
-                                $"materials={stage.AuthoredCookWorkbenchMaterialCount} " +
-                                $"colliders={stage.AuthoredCookWorkbenchColliderCount} " +
-                                $"lights={stage.AuthoredCookWorkbenchLightCount} " +
-                                "marker=MOONLIGHT_AUTHORED_COOK_WORKBENCH_READY");
+                            Debug.Log("[MoonlightGameplayQA][PASS] cook-workbench-source " +
+                                cookSourceDetail +
+                                " marker=MOONLIGHT_COOK_WORKBENCH_SOURCE_EXCLUSIVE");
 
                             string expectedCookPhase = MoonlightActivityStage.CookPhaseName(step);
                             int expectedMotionProps =
@@ -4223,6 +4335,46 @@ namespace MoonlightMagicHouse
                     Debug.Log($"[MoonlightGameplayQA][PASS] activity-camera-state action={zone.Kind} " +
                         $"step={step + 1} state={(finalPresentationStep ? "held-for-presentation" : "released")} " +
                         $"blend={releasedCamera.ActivityFocusBlend:0.00}");
+                    if (cookContinuity != null && !finalPresentationStep)
+                    {
+                        stage = moonlight.GetComponent<MoonlightActivityStage>();
+                        bool terminalHoldPass = stage != null &&
+                            stage.IsHoldingCookStepTerminal &&
+                            stage.CookIntermediateResultVisibleForQA &&
+                            !stage.IsLingering && feedback != null &&
+                            feedback.CanBeginAction && !feedback.IsCameraFocusActive &&
+                            feedback.VisualPoseRestoredForQA &&
+                            stage.CookStageRootInstanceId == cookContinuity.RootId &&
+                            stage.CookStageMaterialIdentityCountForQA ==
+                                cookContinuity.MaterialIdentityCount &&
+                            stage.CookStageMaterialIdentityHashForQA ==
+                                cookContinuity.MaterialIdentityHash &&
+                            stage.CookStageLightInstanceId == cookContinuity.LightId &&
+                            stage.CookBudgetReady && CountActiveCookStageRoots() == 1;
+                        if (!terminalHoldPass)
+                        {
+                            Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                $"cook-terminal-hold step={step + 1}/3 " +
+                                $"held={(stage != null && stage.IsHoldingCookStepTerminal)} " +
+                                $"visible={(stage != null && stage.CookIntermediateResultVisibleForQA)} " +
+                                $"root={(stage != null ? stage.CookStageRootInstanceId : 0)}/" +
+                                $"{cookContinuity.RootId} materials=" +
+                                $"{(stage != null ? stage.CookStageMaterialIdentityCountForQA : 0)}/" +
+                                $"{(stage != null ? stage.CookStageMaterialIdentityHashForQA : 0)} " +
+                                $"light={(stage != null ? stage.CookStageLightInstanceId : 0)} " +
+                                $"budget={(stage != null && stage.CookBudgetReady)}");
+                            Application.Quit(162);
+                            yield break;
+                        }
+                        cookContinuity.TerminalHoldCount++;
+                        Debug.Log("[MoonlightGameplayQA][PASS] cook-terminal-hold " +
+                            $"step={step + 1}/3 root={stage.CookStageRootInstanceId} " +
+                            $"materials={stage.CookStageMaterialIdentityCountForQA}/" +
+                            $"{stage.CookStageMaterialIdentityHashForQA} " +
+                            $"light={stage.CookStageLightInstanceId} " +
+                            $"budget=({stage.CookBudgetEvidence}) " +
+                            "marker=MOONLIGHT_COOK_INTERMEDIATE_TERMINAL_VISIBLE");
+                    }
                     if (playContinuity != null && !finalPresentationStep)
                     {
                         stage = moonlight.GetComponent<MoonlightActivityStage>();
@@ -4340,6 +4492,10 @@ namespace MoonlightMagicHouse
                                 Application.Quit(118);
                                 yield break;
                             }
+                            if (cookContinuity != null)
+                                cookContinuity.FinalLingerObserved = stage.IsLingering &&
+                                    stage.CurrentStep == 3 &&
+                                    stage.LingerSecondsRemaining > 0f;
                             Debug.Log("[MoonlightGameplayQA][PASS] gesture-cook-linger " +
                                 $"marks={stage.CookCookieMarksRetainGestureImprint} " +
                                 $"resultMarker={stage.CookGestureResultQAMarker} " +
@@ -4630,6 +4786,90 @@ namespace MoonlightMagicHouse
                         : RoomType.LivingRoom;
                     rooms.GoToRoom(detour);
                     yield return new WaitForSeconds(0.12f);
+                    if (cookContinuity != null)
+                    {
+                        int buildDelta = cookContinuity.Stage != null
+                            ? cookContinuity.Stage.CookStageBuildCountForQA -
+                                cookContinuity.BuildBaseline
+                            : -1;
+                        int handoffDelta = cookContinuity.Stage != null
+                            ? cookContinuity.Stage.CookHandoffCountForQA -
+                                cookContinuity.HandoffBaseline
+                            : -1;
+                        bool cleanupPass = cookContinuity.Stage != null &&
+                            !cookContinuity.Stage.IsVisible &&
+                            !cookContinuity.Stage.IsLingering &&
+                            !cookContinuity.Stage.IsHoldingCookStepTerminal &&
+                            cookContinuity.Stage.CookStageRootInstanceId == 0 &&
+                            cookContinuity.Stage.CookStageMaterialIdentityCountForQA == 0 &&
+                            cookContinuity.Stage.CookStageMaterialIdentityHashForQA == 0 &&
+                            cookContinuity.Stage.CookStageLightInstanceId == 0 &&
+                            cookContinuity.Stage.ActiveRendererCount == 0 &&
+                            cookContinuity.Stage.ActiveUniqueMaterialCount == 0 &&
+                            cookContinuity.Stage.ActiveLightCount == 0 &&
+                            CountActiveCookStageRoots() == 0;
+                        bool transactionPass = buildDelta == 1 && handoffDelta == 3 &&
+                            cookContinuity.HandoffCount == 3 &&
+                            cookContinuity.SharedPropHandoffMask == 0x7 &&
+                            cookContinuity.RootIdentityHandoffMask == 0x7 &&
+                            cookContinuity.MaterialIdentityHandoffMask == 0x7 &&
+                            cookContinuity.LightIdentityHandoffMask == 0x7 &&
+                            cookContinuity.TerminalHoldCount == 3 &&
+                            cookContinuity.IdentityPreserved &&
+                            cookContinuity.MaterialIdentityCount > 0 &&
+                            cookContinuity.MaximumSharedPropDiscontinuity <= 0.001f &&
+                            cookContinuity.SourceObservedMask ==
+                                (1 << MoonlightActivityStage.CookPhaseCount) - 1 &&
+                            cookContinuity.SourceContractPassed &&
+                            (cookContinuity.Source == "authored" ||
+                             cookContinuity.Source == "fallback") &&
+                            cookContinuity.BudgetContractPassed &&
+                            Mathf.Approximately(
+                                MoonlightActivityStage.CookFinalPresentationSeconds, 5.2f) &&
+                            cookContinuity.FinalLingerObserved && cleanupPass;
+                        if (!transactionPass)
+                        {
+                            Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                $"cook-continuity-transaction build={buildDelta}/1 " +
+                                $"handoffs={handoffDelta}/{cookContinuity.HandoffCount}/3 " +
+                                $"shared=0x{cookContinuity.SharedPropHandoffMask:X}/7 " +
+                                $"identityMasks={cookContinuity.RootIdentityHandoffMask:X}/" +
+                                $"{cookContinuity.MaterialIdentityHandoffMask:X}/" +
+                                $"{cookContinuity.LightIdentityHandoffMask:X} " +
+                                $"terminalHolds={cookContinuity.TerminalHoldCount}/3 " +
+                                $"root={cookContinuity.RootId} materials=" +
+                                $"{cookContinuity.MaterialIdentityCount}/" +
+                                $"{cookContinuity.MaterialIdentityHash} " +
+                                $"light={cookContinuity.LightId} identity=" +
+                                $"{cookContinuity.IdentityPreserved} discontinuity=" +
+                                $"{cookContinuity.MaximumSharedPropDiscontinuity:0.000000}m " +
+                                $"source={cookContinuity.Source}/" +
+                                $"0x{cookContinuity.SourceObservedMask:X}/" +
+                                $"{cookContinuity.SourceContractPassed} budget=" +
+                                $"{cookContinuity.BudgetContractPassed} linger=" +
+                                $"{cookContinuity.FinalLingerObserved} cleanup={cleanupPass}");
+                            Application.Quit(162);
+                            yield break;
+                        }
+                        Debug.Log("[MoonlightGameplayQA][PASS] " +
+                            $"cook-continuity-transaction build={buildDelta}/1 " +
+                            $"handoffs={handoffDelta}/3 shared=0x" +
+                            $"{cookContinuity.SharedPropHandoffMask:X}/7 terminalHolds=" +
+                            $"{cookContinuity.TerminalHoldCount}/3 root=" +
+                            $"{cookContinuity.RootId} materials=" +
+                            $"{cookContinuity.MaterialIdentityCount}/" +
+                            $"{cookContinuity.MaterialIdentityHash} light=" +
+                            $"{cookContinuity.LightId} identityMasks=" +
+                            $"{cookContinuity.RootIdentityHandoffMask:X}/" +
+                            $"{cookContinuity.MaterialIdentityHandoffMask:X}/" +
+                            $"{cookContinuity.LightIdentityHandoffMask:X} " +
+                            $"discontinuity=" +
+                            $"{cookContinuity.MaximumSharedPropDiscontinuity:0.000000}m " +
+                            $"source={cookContinuity.Source} budget=36r/24m/1l " +
+                            $"linger={MoonlightActivityStage.CookFinalPresentationSeconds:0.0}s " +
+                            "cleanup=True " +
+                            $"marker={CookContinuityRuntimeMarker}");
+                    }
                     if (playContinuity != null)
                     {
                         bool firstThreeRewardsUnchanged = true;
@@ -5254,6 +5494,11 @@ namespace MoonlightMagicHouse
             FindObjectsByType<Transform>(FindObjectsSortMode.None)
                 .Count(candidate => candidate != null &&
                     candidate.name == "ActivityStage-Play");
+
+        static int CountActiveCookStageRoots() =>
+            FindObjectsByType<Transform>(FindObjectsSortMode.None)
+                .Count(candidate => candidate != null &&
+                    candidate.name == "ActivityStage-Cook");
 
         static bool PlayCoordinateIsFinite(float value) =>
             !float.IsNaN(value) && !float.IsInfinity(value);

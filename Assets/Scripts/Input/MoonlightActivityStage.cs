@@ -54,11 +54,28 @@ namespace MoonlightMagicHouse
         const float ReadFinishMinimumIntensity = 1f;
         const float ReadFinishMaximumIntensity = 1.85f;
         const float PlayContinuationBlendSeconds = 0.24f;
+        public const float CookHandoffSeconds = 0.30f;
+        public const float CookActionSeconds = 2.25f;
+        public const float CookFinalPresentationSeconds = 5.2f;
+        public const float CookHandoffProgressFraction =
+            CookHandoffSeconds / CookActionSeconds;
         public const float PlayContinuationMaximumDeltaSeconds = 1f / 30f;
         public const string PlayContinuationClockSourceForQA = "Time.unscaledDeltaTime";
         public const string PlayContinuationClockQAMarker =
             "MOONLIGHT_PLAY_CONTINUATION_CLOCK_UNSCALED_CAPPED";
         static readonly Vector3 CookDecorParkedPosition = new(-0.43f, 0.72f, 0.30f);
+        static readonly string[] CookFallbackBaseNames =
+        {
+            "KitchenCounterFallback", "CounterClothFallback"
+        };
+        static readonly Vector3[] CookFallbackBasePositions =
+        {
+            new(0f, 0.20f, 0.02f), new(0f, 0.38f, 0.02f)
+        };
+        static readonly Vector3[] CookFallbackBaseScales =
+        {
+            new(1.70f, 0.34f, 0.86f), new(1.58f, 0.035f, 0.76f)
+        };
         static readonly Vector3[] GardenWateringCanBasePositions =
         {
             new(0.58f, 0.31f, -0.18f),
@@ -204,6 +221,7 @@ namespace MoonlightMagicHouse
         readonly List<Material> _sharedMaterialBuffer = new();
         readonly List<Light> _stageLights = new();
         readonly List<Light> _lightBuffer = new();
+        readonly HashSet<int> _cookMaterialIdentityBuffer = new();
         readonly HashSet<int> _gardenMagicFlowerMaterialIds = new();
         bool _cookBakeDoorClearancePass = true;
         int[] _activeMaterialIds = System.Array.Empty<int>();
@@ -222,6 +240,7 @@ namespace MoonlightMagicHouse
         Transform[] _decorateProps;
         Transform[] _servingProps;
         Transform _authoredCookWorkbench;
+        Transform[] _cookFallbackBase;
         Transform _ball;
         Transform[] _blocks;
         Transform[] _playProps;
@@ -267,6 +286,15 @@ namespace MoonlightMagicHouse
         int _requiredSteps = 1;
         float _playProgress;
         bool _isHoldingPlayStepTerminal;
+        bool _isHoldingCookStepTerminal;
+        bool _cookHandoffActive;
+        int _cookHandoffFromStep = -1;
+        int _cookZoneInstanceId;
+        readonly List<Transform> _cookHandoffSharedProps = new();
+        readonly List<Vector3> _cookHandoffSharedPositions = new();
+        readonly List<Quaternion> _cookHandoffSharedRotations = new();
+        readonly List<Vector3> _cookHandoffSharedScales = new();
+        Vector3 _cookBowlHandoffPosition;
         bool _playContinuationActive;
         bool _playContinuationFirstRenderedFramePending;
         int _playContinuationBeginFrame;
@@ -310,6 +338,39 @@ namespace MoonlightMagicHouse
         public int ActiveUniqueMaterialCount { get; private set; }
         public int ActiveLightCount { get; private set; }
         public MoonlightGestureSample ActiveGestureSample => _gestureSample;
+        public int CookStageRootInstanceId =>
+            CurrentKind == MoonlightSpatialActionKind.Cook && _root != null
+                ? _root.GetInstanceID()
+                : 0;
+        public int CookStageLightInstanceId =>
+            CurrentKind == MoonlightSpatialActionKind.Cook && _activityLight != null
+                ? _activityLight.GetInstanceID()
+                : 0;
+        public int CookStageMaterialIdentityCountForQA =>
+            CurrentKind == MoonlightSpatialActionKind.Cook
+                ? CountCookStageMaterialIdentities(out _)
+                : 0;
+        public int CookStageMaterialIdentityHashForQA
+        {
+            get
+            {
+                if (CurrentKind != MoonlightSpatialActionKind.Cook) return 0;
+                CountCookStageMaterialIdentities(out int identityHash);
+                return identityHash;
+            }
+        }
+        public bool IsHoldingCookStepTerminal => _isHoldingCookStepTerminal &&
+            CurrentKind == MoonlightSpatialActionKind.Cook && _root != null;
+        public bool IsCookHandoffActive => _cookHandoffActive &&
+            CurrentKind == MoonlightSpatialActionKind.Cook && _root != null;
+        public int CookStageBuildCountForQA { get; private set; }
+        public int CookHandoffCountForQA { get; private set; }
+        public float LastCookSharedPropDiscontinuityForQA { get; private set; }
+        public int LastCookSharedPropCountForQA { get; private set; }
+        public bool CookIntermediateResultVisibleForQA => IsHoldingCookStepTerminal &&
+            CurrentStep < CookPhaseCount - 1 && CookCurrentPhaseProgress == 1f &&
+            CookCurrentPhaseStateReady && CookCurrentPhaseVisibleMotionPropCount >=
+                CookPhaseMinimumVisibleMotionPropCount(CurrentStep);
         public Vector3 PlayBallLocalPosition => _ball != null
             ? _ball.localPosition
             : new Vector3(float.NaN, float.NaN, float.NaN);
@@ -689,6 +750,12 @@ namespace MoonlightMagicHouse
             return pass;
         }
         public bool HasAuthoredCookWorkbench => _authoredCookWorkbench != null;
+        public bool UsesProceduralCookWorkbenchFallback =>
+            CurrentKind == MoonlightSpatialActionKind.Cook && !HasAuthoredCookWorkbench &&
+            CountTransforms(_cookFallbackBase) == CookFallbackBaseNames.Length;
+        public string CookWorkbenchVisualSourceForQA => HasAuthoredCookWorkbench
+            ? "authored"
+            : UsesProceduralCookWorkbenchFallback ? "fallback" : "missing";
         public int AuthoredCookWorkbenchRendererCount { get; private set; }
         public int AuthoredCookWorkbenchMaterialCount { get; private set; }
         public int AuthoredCookWorkbenchColliderCount { get; private set; }
@@ -760,6 +827,56 @@ namespace MoonlightMagicHouse
             CookCurrentPhaseMotionReady && CookCurrentPhaseStateReady && CookBudgetReady
                 ? CookPhaseReadyMarker(CurrentStep)
                 : CookChoreographyIncompleteMarker;
+
+        public bool ValidateCookWorkbenchSourceRuntimeContract(out string detail)
+        {
+            bool authoredPass = HasAuthoredCookWorkbench && _cookFallbackBase == null &&
+                AuthoredCookWorkbenchRendererCount >= 8 &&
+                AuthoredCookWorkbenchRendererCount <= 12 &&
+                AuthoredCookWorkbenchMaterialCount >= 8 &&
+                AuthoredCookWorkbenchMaterialCount <= 10 &&
+                AuthoredCookWorkbenchColliderCount == 0 &&
+                AuthoredCookWorkbenchLightCount == 0;
+            bool fallbackPass = !HasAuthoredCookWorkbench &&
+                UsesProceduralCookWorkbenchFallback &&
+                CookFallbackBaseTransformsMatchContract();
+            bool exactlyOneSource = authoredPass != fallbackPass;
+            detail = $"source={CookWorkbenchVisualSourceForQA} exactlyOne={exactlyOneSource} " +
+                $"authored={AuthoredCookWorkbenchRendererCount}r/" +
+                $"{AuthoredCookWorkbenchMaterialCount}m/" +
+                $"{AuthoredCookWorkbenchColliderCount}c/" +
+                $"{AuthoredCookWorkbenchLightCount}l fallback=" +
+                $"{CountTransforms(_cookFallbackBase)}o/" +
+                $"{CountTransformComponents<Renderer>(_cookFallbackBase, false)}r/" +
+                $"{CountTransformMaterials(_cookFallbackBase)}m/" +
+                $"{CountTransformComponents<Collider>(_cookFallbackBase, true)}c/" +
+                $"{CountTransformComponents<Light>(_cookFallbackBase, true)}l " +
+                $"budget=({CookBudgetEvidence})";
+            return CurrentKind == MoonlightSpatialActionKind.Cook && exactlyOneSource &&
+                CookBudgetReady;
+        }
+
+        bool CookFallbackBaseTransformsMatchContract()
+        {
+            if (_cookFallbackBase == null ||
+                _cookFallbackBase.Length != CookFallbackBaseNames.Length)
+                return false;
+            for (int i = 0; i < _cookFallbackBase.Length; i++)
+            {
+                Transform candidate = _cookFallbackBase[i];
+                if (candidate == null || candidate.parent != _root.transform ||
+                    candidate.name != CookFallbackBaseNames[i] ||
+                    Vector3.Distance(candidate.localPosition,
+                        CookFallbackBasePositions[i]) > 0.0001f ||
+                    Vector3.Distance(candidate.localScale,
+                        CookFallbackBaseScales[i]) > 0.0001f ||
+                    candidate.GetComponent<Renderer>() == null ||
+                    candidate.GetComponent<Collider>() != null ||
+                    candidate.GetComponent<Light>() != null)
+                    return false;
+            }
+            return true;
+        }
 
         public static int CookPhaseMinimumMotionPropCount(int phaseIndex) => phaseIndex switch
         {
@@ -846,6 +963,9 @@ namespace MoonlightMagicHouse
             bool pass = CookPhaseCount == 4 && configuredPhaseMask == CookRequiredPhaseMask &&
                 phaseCountsPass && totalMotionProps == 49 && bakeTimingPass &&
                 exactBakeTimingPass && fullBakeClearancePass &&
+                CookHandoffProgressFraction >= 0.12f &&
+                CookHandoffProgressFraction <= 0.15f &&
+                Mathf.Approximately(CookFinalPresentationSeconds, 5.2f) &&
                 CookRendererBudget > 0 && CookRendererBudget <= 36 &&
                 CookMaterialBudget > 0 && CookMaterialBudget <= 24 && CookLightBudget == 1;
             detail = $"phases={CookPhaseCount} mask=0x{configuredPhaseMask:X}/0x{CookRequiredPhaseMask:X} " +
@@ -858,6 +978,9 @@ namespace MoonlightMagicHouse
                 $"{CookPhaseMinimumVisibleMotionPropCount(2)}," +
                 $"{CookPhaseMinimumVisibleMotionPropCount(3)} timing={bakeTimingPass} " +
                 $"exactTiming={exactBakeTimingPass} fullDoorClearance={fullBakeClearancePass} " +
+                $"handoff={CookHandoffSeconds:0.00}s/" +
+                $"{CookActionSeconds:0.00}s={CookHandoffProgressFraction:0.000} " +
+                $"linger={CookFinalPresentationSeconds:0.0}s " +
                 $"budgets={CookRendererBudget}r/{CookMaterialBudget}m/{CookLightBudget}l";
             return pass;
         }
@@ -1222,6 +1345,8 @@ namespace MoonlightMagicHouse
         public void Begin(MoonlightSpatialActionKind kind, int stepIndex, int requiredSteps,
             MoonlightGestureSample gestureSample)
         {
+            if (TryBeginRetainedCookStep(kind, stepIndex, requiredSteps, gestureSample))
+                return;
             if (TryBeginRetainedPlayStep(kind, stepIndex, requiredSteps, gestureSample))
                 return;
 
@@ -1235,6 +1360,9 @@ namespace MoonlightMagicHouse
                 : Mathf.Max(1, requiredSteps);
             CurrentStep = Mathf.Clamp(stepIndex, 0, _requiredSteps - 1);
             _playZoneInstanceId = kind == MoonlightSpatialActionKind.Play
+                ? CurrentInteractionZoneInstanceId()
+                : 0;
+            _cookZoneInstanceId = kind == MoonlightSpatialActionKind.Cook
                 ? CurrentInteractionZoneInstanceId()
                 : 0;
             _root = new GameObject($"ActivityStage-{kind}");
@@ -1287,6 +1415,40 @@ namespace MoonlightMagicHouse
 
             RefreshStageLights();
             UpdateStage(kind, 0f);
+        }
+
+        bool TryBeginRetainedCookStep(MoonlightSpatialActionKind kind, int stepIndex,
+            int requiredSteps, MoonlightGestureSample gestureSample)
+        {
+            int nextStep = Mathf.Clamp(stepIndex, 0, Mathf.Max(3, requiredSteps - 1));
+            if (kind != MoonlightSpatialActionKind.Cook || !IsHoldingCookStepTerminal ||
+                IsLingering || nextStep != CurrentStep + 1)
+                return false;
+
+            int currentZoneInstanceId = CurrentInteractionZoneInstanceId();
+            if (_cookZoneInstanceId != 0 && currentZoneInstanceId != _cookZoneInstanceId)
+                return false;
+
+            int previousStep = CurrentStep;
+            CaptureCookHandoff(previousStep);
+            _requiredSteps = Mathf.Max(CookPhaseCount, requiredSteps);
+            CurrentStep = Mathf.Clamp(stepIndex, 0, _requiredSteps - 1);
+            _gestureSample = gestureSample;
+            _cookHandoffFromStep = previousStep;
+            _cookHandoffActive = true;
+            _isHoldingCookStepTerminal = false;
+            UpdateStage(kind, 0f);
+            LastCookSharedPropDiscontinuityForQA =
+                MeasureCookHandoffDiscontinuity(previousStep);
+            CookHandoffCountForQA++;
+            Debug.Log($"[MoonlightActivityQA] cook-stage-continued step={CurrentStep + 1}/" +
+                $"{_requiredSteps} root={CookStageRootInstanceId} shared=" +
+                $"{LastCookSharedPropCountForQA} discontinuity=" +
+                $"{LastCookSharedPropDiscontinuityForQA:0.000000}m materials=" +
+                $"{CookStageMaterialIdentityCountForQA}/" +
+                $"{CookStageMaterialIdentityHashForQA} light={CookStageLightInstanceId} " +
+                "marker=MOONLIGHT_COOK_STAGE_CONTINUITY_REUSED");
+            return true;
         }
 
         bool TryBeginRetainedPlayStep(MoonlightSpatialActionKind kind, int stepIndex,
@@ -1356,6 +1518,23 @@ namespace MoonlightMagicHouse
             return true;
         }
 
+        public bool HoldCookStepTerminal()
+        {
+            if (_root == null || CurrentKind != MoonlightSpatialActionKind.Cook ||
+                CurrentStep >= _requiredSteps - 1)
+                return false;
+
+            _cookHandoffActive = false;
+            UpdateStage(CurrentKind, 1f);
+            _isHoldingCookStepTerminal = true;
+            Debug.Log($"[MoonlightActivityQA] cook-step-terminal-held " +
+                $"step={CurrentStep + 1}/{_requiredSteps} root={CookStageRootInstanceId} " +
+                $"materials={CookStageMaterialIdentityCountForQA}/" +
+                $"{CookStageMaterialIdentityHashForQA} light={CookStageLightInstanceId} " +
+                "marker=MOONLIGHT_COOK_STEP_TERMINAL_HELD");
+            return true;
+        }
+
         public bool LingerFinalState(float seconds)
         {
             if (_root == null || _requiredSteps <= 1 || CurrentStep != _requiredSteps - 1)
@@ -1368,6 +1547,7 @@ namespace MoonlightMagicHouse
                 StopCoroutine(_lingerRoutine);
 
             UpdateStage(CurrentKind, 1f);
+            _isHoldingCookStepTerminal = false;
             _isHoldingPlayStepTerminal = false;
             _playContinuationActive = false;
             _applyPersistentCompletionOnEnd = ShouldBindPersistentStation(CurrentKind,
@@ -1551,24 +1731,28 @@ namespace MoonlightMagicHouse
 
         void Update()
         {
-            if (!IsLingering && !IsHoldingPlayStepTerminal) return;
+            if (!IsLingering && !IsHoldingPlayStepTerminal &&
+                !IsHoldingCookStepTerminal) return;
 
             var interactor = GetComponent<MoonlightSpatialInteractor>();
             var currentZone = interactor != null ? interactor.CurrentZone : null;
             bool samePlayZone = CurrentKind != MoonlightSpatialActionKind.Play ||
                 _playZoneInstanceId == 0 ||
                 (currentZone != null && currentZone.GetInstanceID() == _playZoneInstanceId);
+            bool sameCookZone = CurrentKind != MoonlightSpatialActionKind.Cook ||
+                _cookZoneInstanceId == 0 ||
+                (currentZone != null && currentZone.GetInstanceID() == _cookZoneInstanceId);
             if (currentZone != null && currentZone.isActiveAndEnabled &&
                 currentZone.gameObject.activeInHierarchy &&
-                currentZone.Kind == CurrentKind && samePlayZone)
+                currentZone.Kind == CurrentKind && samePlayZone && sameCookZone)
                 return;
 
             if (IsLingering)
                 Debug.Log($"[MoonlightActivityQA] final-presentation-cancel kind={CurrentKind} " +
                     "reason=left-zone marker=MOONLIGHT_ACTIVITY_FINAL_PRESENTATION_CANCELLED");
             else
-                Debug.Log("[MoonlightActivityQA] play-step-hold-cancel kind=Play " +
-                    "reason=left-zone marker=MOONLIGHT_PLAY_STEP_HOLD_CANCELLED");
+                Debug.Log($"[MoonlightActivityQA] step-hold-cancel kind={CurrentKind} " +
+                    "reason=left-zone marker=MOONLIGHT_ACTIVITY_STEP_HOLD_CANCELLED");
             End();
         }
 
@@ -1628,6 +1812,7 @@ namespace MoonlightMagicHouse
             _decorateProps = null;
             _servingProps = null;
             _authoredCookWorkbench = null;
+            _cookFallbackBase = null;
             AuthoredCookWorkbenchRendererCount = 0;
             AuthoredCookWorkbenchMaterialCount = 0;
             AuthoredCookWorkbenchColliderCount = 0;
@@ -1640,6 +1825,15 @@ namespace MoonlightMagicHouse
             CookCurrentPhaseMotionReady = false;
             CookCurrentPhaseStateReady = false;
             _cookBakeDoorClearancePass = true;
+            _isHoldingCookStepTerminal = false;
+            _cookHandoffActive = false;
+            _cookHandoffFromStep = -1;
+            _cookZoneInstanceId = 0;
+            _cookHandoffSharedProps.Clear();
+            _cookHandoffSharedPositions.Clear();
+            _cookHandoffSharedRotations.Clear();
+            _cookHandoffSharedScales.Clear();
+            _cookBowlHandoffPosition = Vector3.zero;
             _ball = null;
             _playBallRenderer = null;
             _gestureSample = default;
@@ -1764,14 +1958,161 @@ namespace MoonlightMagicHouse
                 LastCareLingerCompletedNaturallyForQA && isolated;
         }
 
+        void CaptureCookHandoff(int fromStep)
+        {
+            _cookHandoffSharedProps.Clear();
+            _cookHandoffSharedPositions.Clear();
+            _cookHandoffSharedRotations.Clear();
+            _cookHandoffSharedScales.Clear();
+
+            void Capture(Transform prop)
+            {
+                if (prop == null) return;
+                _cookHandoffSharedProps.Add(prop);
+                _cookHandoffSharedPositions.Add(prop.localPosition);
+                _cookHandoffSharedRotations.Add(prop.localRotation);
+                _cookHandoffSharedScales.Add(prop.localScale);
+            }
+
+            if (fromStep == 0)
+            {
+                Capture(_bowl);
+                Capture(_bowlRim);
+                Capture(_batter);
+            }
+            else if (fromStep == 1)
+            {
+                Capture(_bowl);
+                Capture(_bowlRim);
+                Capture(_batter);
+                _cookBowlHandoffPosition = _bowl != null
+                    ? _bowl.localPosition
+                    : Vector3.zero;
+            }
+            else if (fromStep == 2)
+            {
+                if (_servingProps != null)
+                    for (int i = 0; i < _servingProps.Length; i++)
+                        Capture(_servingProps[i]);
+                if (_cookies != null)
+                    for (int i = 0; i < _cookies.Length; i++) Capture(_cookies[i]);
+            }
+        }
+
+        float MeasureCookHandoffDiscontinuity(int fromStep)
+        {
+            if (fromStep == 1)
+            {
+                LastCookSharedPropCountForQA = 1;
+                return _servingProps != null && _servingProps.Length > 0 &&
+                    _servingProps[0] != null
+                        ? Vector3.Distance(_cookBowlHandoffPosition,
+                            _servingProps[0].localPosition)
+                        : float.PositiveInfinity;
+            }
+
+            LastCookSharedPropCountForQA = _cookHandoffSharedProps.Count;
+            float maximum = 0f;
+            for (int i = 0; i < _cookHandoffSharedProps.Count; i++)
+            {
+                Transform prop = _cookHandoffSharedProps[i];
+                if (prop == null) return float.PositiveInfinity;
+                maximum = Mathf.Max(maximum,
+                    Vector3.Distance(_cookHandoffSharedPositions[i], prop.localPosition));
+            }
+            return maximum;
+        }
+
+        void ApplyCookHandoff(float progress)
+        {
+            float blend = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(progress));
+            if (_cookHandoffFromStep == 1)
+            {
+                if (_servingProps != null && _servingProps.Length >= 4)
+                {
+                    Vector3 targetCenter = _servingProps[0].localPosition;
+                    Vector3 center = Vector3.Lerp(_cookBowlHandoffPosition,
+                        targetCenter, blend);
+                    _servingProps[0].localPosition = center;
+                    _servingProps[1].localPosition = center +
+                        new Vector3(-0.48f * blend, 0.02f * blend, 0f);
+                    _servingProps[2].localPosition = center +
+                        new Vector3(0.48f * blend, 0.02f * blend, 0f);
+                    _servingProps[3].localPosition = center +
+                        new Vector3(0f, -0.075f * blend, 0f);
+                }
+                for (int i = 0; i < _cookHandoffSharedProps.Count; i++)
+                {
+                    Transform source = _cookHandoffSharedProps[i];
+                    if (source == null) continue;
+                    source.gameObject.SetActive(blend < 1f);
+                    source.localPosition = _cookHandoffSharedPositions[i];
+                    source.localRotation = _cookHandoffSharedRotations[i];
+                    source.localScale = Vector3.Lerp(
+                        _cookHandoffSharedScales[i], Vector3.zero, blend);
+                }
+                return;
+            }
+
+            for (int i = 0; i < _cookHandoffSharedProps.Count; i++)
+            {
+                Transform prop = _cookHandoffSharedProps[i];
+                if (prop == null) continue;
+                prop.localPosition = Vector3.Lerp(
+                    _cookHandoffSharedPositions[i], prop.localPosition, blend);
+                prop.localRotation = Quaternion.Slerp(
+                    _cookHandoffSharedRotations[i], prop.localRotation, blend);
+                prop.localScale = Vector3.Lerp(
+                    _cookHandoffSharedScales[i], prop.localScale, blend);
+            }
+        }
+
+        int CountCookStageMaterialIdentities(out int identityHash)
+        {
+            _cookMaterialIdentityBuffer.Clear();
+            for (int rendererIndex = 0; rendererIndex < _renderers.Count; rendererIndex++)
+            {
+                Renderer renderer = _renderers[rendererIndex];
+                if (renderer == null) continue;
+                _sharedMaterialBuffer.Clear();
+                renderer.GetSharedMaterials(_sharedMaterialBuffer);
+                for (int materialIndex = 0; materialIndex < _sharedMaterialBuffer.Count;
+                     materialIndex++)
+                {
+                    Material material = _sharedMaterialBuffer[materialIndex];
+                    if (material != null)
+                        _cookMaterialIdentityBuffer.Add(material.GetInstanceID());
+                }
+            }
+
+            unchecked
+            {
+                int sum = 0;
+                int xor = 0;
+                foreach (int identity in _cookMaterialIdentityBuffer)
+                {
+                    sum += identity;
+                    xor ^= identity;
+                }
+                identityHash = (sum * 397) ^ xor ^ _cookMaterialIdentityBuffer.Count;
+            }
+            return _cookMaterialIdentityBuffer.Count;
+        }
+
         void BuildCookStage()
         {
+            CookStageBuildCountForQA++;
             if (!BuildAuthoredCookWorkbench())
             {
-                Primitive(PrimitiveType.Cube, "KitchenCounterFallback", new Vector3(0f, 0.20f, 0.02f),
-                    new Vector3(1.70f, 0.34f, 0.86f), new Color(0.33f, 0.22f, 0.19f), 0.02f);
-                Primitive(PrimitiveType.Cube, "CounterClothFallback", new Vector3(0f, 0.38f, 0.02f),
-                    new Vector3(1.58f, 0.035f, 0.76f), new Color(0.93f, 0.79f, 0.58f), 0.04f);
+                _cookFallbackBase = new[]
+                {
+                    Primitive(PrimitiveType.Cube, CookFallbackBaseNames[0],
+                        CookFallbackBasePositions[0], CookFallbackBaseScales[0],
+                        new Color(0.33f, 0.22f, 0.19f), 0.02f),
+                    Primitive(PrimitiveType.Cube, CookFallbackBaseNames[1],
+                        CookFallbackBasePositions[1], CookFallbackBaseScales[1],
+                        new Color(0.93f, 0.79f, 0.58f), 0.04f)
+                };
             }
             _servingProps = new[]
             {
@@ -1959,6 +2300,13 @@ namespace MoonlightMagicHouse
                 return;
             }
 
+            float handoffProgress = _cookHandoffActive
+                ? Mathf.Clamp01(t / CookHandoffProgressFraction)
+                : 1f;
+            if (_cookHandoffActive)
+                t = t <= CookHandoffProgressFraction
+                    ? 0f
+                    : Mathf.InverseLerp(CookHandoffProgressFraction, 1f, t);
             int step = Mathf.Clamp(CurrentStep, 0, 3);
             CookCurrentPhaseName = CookPhaseName(step);
             CookCurrentPhaseProgress = t;
@@ -2208,6 +2556,16 @@ namespace MoonlightMagicHouse
                 _decorateProps[3].localScale = new Vector3(0.48f, 0.020f, 0.045f)
                     * Mathf.Lerp(0.25f, 1f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t * 2.4f)))
                     * (1f + Mathf.Sin(t * Mathf.PI * 5f) * 0.06f * working);
+            }
+
+            if (_cookHandoffActive)
+            {
+                ApplyCookHandoff(handoffProgress);
+                if (handoffProgress >= 1f)
+                {
+                    _cookHandoffActive = false;
+                    _cookHandoffFromStep = -1;
+                }
             }
 
             CookCurrentPhaseMotionPropCount = CountCookPhaseMotionMatches(step, t);
