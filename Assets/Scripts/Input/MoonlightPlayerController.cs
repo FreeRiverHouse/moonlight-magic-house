@@ -13,6 +13,8 @@ namespace MoonlightMagicHouse
         [SerializeField] float turnLeanAngle = 7f;
         [SerializeField] float visualReturnSpeed = 8f;
         [SerializeField] float collisionSkin = 0.055f;
+        [SerializeField] float recoveryStep = 0.28f;
+        [SerializeField, Range(2, 8)] int recoveryRings = 5;
 
         Transform _visual;
         MoonlightBobber _idleBobber;
@@ -28,11 +30,15 @@ namespace MoonlightMagicHouse
         bool _wasPerformingAction;
         CapsuleCollider _capsule;
         readonly Collider[] _overlaps = new Collider[24];
+        Vector3 _lastSafePosition;
+        bool _hasSafePosition;
 
         public Rect RoomBounds => roomBounds;
         public Vector2 TouchMove => _touchMove;
         public string LastCollisionName { get; private set; } = "";
         public int CollisionCount { get; private set; }
+        public int RecoveryCount { get; private set; }
+        public string LastRecoveryReason { get; private set; } = "";
 
         void Start()
         {
@@ -46,6 +52,8 @@ namespace MoonlightMagicHouse
                 _idleBobber = _visual.GetComponent<MoonlightBobber>();
             }
 
+            Physics.SyncTransforms();
+            RememberSafePosition();
             MoonlightVisualQA.Instance?.RegisterController(this);
             Debug.Log($"[MoonlightVisualQA] movement-ready bounds={roomBounds} position={transform.position}");
         }
@@ -102,6 +110,11 @@ namespace MoonlightMagicHouse
             position.y = 0f;
             transform.position = position;
             Physics.SyncTransforms();
+            _hasSafePosition = false;
+            if (!CanOccupy(transform.position, out var blocker))
+                TryRecoverFromOverlap("room-entry", blocker);
+            else
+                RememberSafePosition();
             LastCollisionName = "";
             Debug.Log($"[MoonlightNavigationQA] teleport position={position:F2} bounds={bounds}");
         }
@@ -111,12 +124,18 @@ namespace MoonlightMagicHouse
             if (delta.sqrMagnitude < 0.0000001f) return true;
             if (_capsule == null) _capsule = GetComponent<CapsuleCollider>();
 
+            Physics.SyncTransforms();
+            if (!CanOccupy(transform.position, out var overlap) &&
+                !TryRecoverFromOverlap("overlap-before-move", overlap))
+                return false;
+
             bool movedAll = true;
             LastCollisionName = "";
             var xDelta = new Vector3(delta.x, 0f, 0f);
             var zDelta = new Vector3(0f, 0f, delta.z);
             if (!TryMoveAxis(xDelta)) movedAll = false;
             if (!TryMoveAxis(zDelta)) movedAll = false;
+            RememberSafePosition();
             return movedAll;
         }
 
@@ -172,6 +191,64 @@ namespace MoonlightMagicHouse
             if (bounds.max.y <= 0.12f || bounds.size.y <= 0.08f) return false;
             return true;
         }
+
+        void RememberSafePosition()
+        {
+            if (!CanOccupy(transform.position, out _)) return;
+            _lastSafePosition = transform.position;
+            _hasSafePosition = true;
+        }
+
+        bool TryRecoverFromOverlap(string reason, Collider blocker)
+        {
+            Vector3 origin = transform.position;
+            if (_hasSafePosition && IsInsideBounds(_lastSafePosition) &&
+                CanOccupy(_lastSafePosition, out _))
+            {
+                ApplyRecovery(_lastSafePosition, reason, blocker);
+                return true;
+            }
+
+            const int directions = 12;
+            for (int ring = 1; ring <= recoveryRings; ring++)
+            {
+                float distance = recoveryStep * ring;
+                for (int index = 0; index < directions; index++)
+                {
+                    float angle = index * Mathf.PI * 2f / directions;
+                    Vector3 candidate = origin + new Vector3(
+                        Mathf.Cos(angle) * distance, 0f, Mathf.Sin(angle) * distance);
+                    candidate.x = Mathf.Clamp(candidate.x, roomBounds.xMin, roomBounds.xMax);
+                    candidate.z = Mathf.Clamp(candidate.z, roomBounds.yMin, roomBounds.yMax);
+                    candidate.y = 0f;
+                    if (!CanOccupy(candidate, out _)) continue;
+                    ApplyRecovery(candidate, reason, blocker);
+                    return true;
+                }
+            }
+
+            LastRecoveryReason = $"FAILED {reason}";
+            Debug.LogError($"[MoonlightNavigationQA] recovery-failed reason={reason} " +
+                $"blocker={(blocker != null ? blocker.name : "unknown")} origin={origin:F2}");
+            return false;
+        }
+
+        void ApplyRecovery(Vector3 position, string reason, Collider blocker)
+        {
+            transform.position = position;
+            Physics.SyncTransforms();
+            _lastSafePosition = position;
+            _hasSafePosition = true;
+            RecoveryCount++;
+            LastRecoveryReason = reason;
+            Debug.Log($"[MoonlightNavigationQA] recovery-pass reason={reason} " +
+                $"blocker={(blocker != null ? blocker.name : "unknown")} position={position:F2} " +
+                $"count={RecoveryCount} marker=MOONLIGHT_PLAYER_RECOVERED");
+        }
+
+        bool IsInsideBounds(Vector3 position) =>
+            position.x >= roomBounds.xMin && position.x <= roomBounds.xMax &&
+            position.z >= roomBounds.yMin && position.z <= roomBounds.yMax;
 
         static Vector2 ReadKeyboardMove()
         {

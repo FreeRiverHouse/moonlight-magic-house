@@ -291,6 +291,32 @@ namespace MoonlightMagicHouse
 
             rooms.GoToRoom(RoomType.LivingRoom);
             yield return new WaitForSeconds(0.25f);
+            var overlapBlocker = GameObject.Find("KitchenTableCollision")?.GetComponent<Collider>();
+            if (overlapBlocker == null)
+            {
+                Debug.LogError("[MoonlightGameplayQA][FAIL] recovery blocker missing");
+                Application.Quit(55);
+                yield break;
+            }
+            int recoveriesBefore = controller.RecoveryCount;
+            var forcedOverlap = overlapBlocker.bounds.center;
+            forcedOverlap.y = 0f;
+            controller.transform.position = forcedOverlap;
+            Physics.SyncTransforms();
+            controller.TryMove(new Vector3(0.02f, 0f, 0f));
+            if (controller.RecoveryCount <= recoveriesBefore ||
+                controller.LastRecoveryReason != "overlap-before-move")
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] overlap-recovery " +
+                    $"count={controller.RecoveryCount - recoveriesBefore} " +
+                    $"reason={controller.LastRecoveryReason} position={controller.transform.position:F2}");
+                Application.Quit(56);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] overlap-recovery " +
+                $"position={controller.transform.position:F2} count={controller.RecoveryCount} " +
+                "marker=MOONLIGHT_PLAYER_RECOVERED");
+
             controller.TeleportTo(new Vector3(-0.55f, 0f, -2.45f), controller.RoomBounds);
             int collisionsBefore = controller.CollisionCount;
             for (int i = 0; i < 38; i++)
