@@ -4034,13 +4034,18 @@ namespace MoonlightMagicHouse
             new System.Collections.Generic.List<Renderer>();
         readonly MaterialPropertyBlock _block = new MaterialPropertyBlock();
         MoonlightActionFeedback _actionFeedback;
+        EyeBlinker _blinker;
 
         public int EyeRendererCount => _eyeRenderers.Count;
         public int HighlightRendererCount => _highlightRenderers.Count;
         public float EyePairSeparation { get; private set; }
         public float CurrentCatchlightEmission { get; private set; }
+        public int BlinkLinkedPartCount => _blinker != null ? _blinker.BoundEyeCount : 0;
+        public float BlinkCurrentOpenness => _blinker != null ? _blinker.CurrentOpenness : 1f;
+        public string BlinkQAMarker => _blinker != null ? _blinker.QAMarker : "missing";
         public string QAMarker => EyeRendererCount == 2 && HighlightRendererCount == 2 &&
-            EyePairSeparation > 0.01f
+            EyePairSeparation > 0.01f && _blinker != null &&
+            _blinker.QAMarker == "MOONLIGHT_AUTHORED_EYE_BLINK_READY"
                 ? "MOONLIGHT_HERO_EYE_CATCHLIGHT_READY"
                 : "MOONLIGHT_HERO_EYE_CATCHLIGHT_INCOMPLETE";
 
@@ -4059,10 +4064,17 @@ namespace MoonlightMagicHouse
             EyePairSeparation = _eyeRenderers.Count == 2
                 ? Vector3.Distance(_eyeRenderers[0].bounds.center, _eyeRenderers[1].bounds.center)
                 : 0f;
+            var blinkParts = new Transform[_eyeRenderers.Count + _highlightRenderers.Count];
+            int blinkIndex = 0;
+            foreach (Renderer renderer in _eyeRenderers) blinkParts[blinkIndex++] = renderer.transform;
+            foreach (Renderer renderer in _highlightRenderers) blinkParts[blinkIndex++] = renderer.transform;
+            _blinker = root.GetComponent<EyeBlinker>() ?? root.AddComponent<EyeBlinker>();
+            _blinker.Bind(blinkParts);
             _actionFeedback = GetComponentInParent<MoonlightActionFeedback>();
             ApplyCatchlight(MoonlightHouseSetup.HeroEyeIdleEmission);
             Debug.Log($"[MoonlightHeroQA] eyes={EyeRendererCount} highlights={HighlightRendererCount} " +
-                $"separation={EyePairSeparation:0.000} emission={CurrentCatchlightEmission:0.00} " +
+                $"blinkParts={BlinkLinkedPartCount} separation={EyePairSeparation:0.000} " +
+                $"emission={CurrentCatchlightEmission:0.00} blink={BlinkQAMarker} " +
                 $"marker={QAMarker}");
         }
 

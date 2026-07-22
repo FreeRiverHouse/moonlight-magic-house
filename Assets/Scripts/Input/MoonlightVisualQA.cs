@@ -95,9 +95,17 @@ namespace MoonlightMagicHouse
                 Application.Quit(72);
                 yield break;
             }
+            if (!EyeBlinker.ValidateBlinkContract(out string blinkDetail))
+            {
+                Debug.LogError($"[MoonlightVisualQA][FAIL] authored-eye-blink-contract {blinkDetail}");
+                Application.Quit(74);
+                yield break;
+            }
             var heroEyeQuality = moonlight.GetComponentInChildren<MoonlightHeroEyeQuality>(true);
             bool heroEyePass = heroEyeQuality != null &&
-                heroEyeQuality.QAMarker == "MOONLIGHT_HERO_EYE_CATCHLIGHT_READY";
+                heroEyeQuality.QAMarker == "MOONLIGHT_HERO_EYE_CATCHLIGHT_READY" &&
+                heroEyeQuality.BlinkLinkedPartCount == 4 &&
+                heroEyeQuality.BlinkQAMarker == "MOONLIGHT_AUTHORED_EYE_BLINK_READY";
             if (!heroEyePass)
             {
                 Debug.LogError($"[MoonlightVisualQA][FAIL] hero-eye-catchlight " +
@@ -108,9 +116,12 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightVisualQA][PASS] hero-eye-catchlight " +
                 $"eyes={heroEyeQuality.EyeRendererCount} highlights={heroEyeQuality.HighlightRendererCount} " +
+                $"blinkParts={heroEyeQuality.BlinkLinkedPartCount} " +
                 $"separation={heroEyeQuality.EyePairSeparation:0.000} " +
-                $"emission={heroEyeQuality.CurrentCatchlightEmission:0.00} contract={heroEyeDetail} " +
-                "marker=MOONLIGHT_HERO_EYE_CATCHLIGHT_VERIFIED");
+                $"emission={heroEyeQuality.CurrentCatchlightEmission:0.00} " +
+                $"eyeContract={heroEyeDetail} blinkContract={blinkDetail} " +
+                "marker=MOONLIGHT_HERO_EYE_CATCHLIGHT_VERIFIED " +
+                "MOONLIGHT_AUTHORED_EYE_BLINK_VERIFIED");
 
             Vector3 start = controller.transform.position;
             controller.SetTouchMove(Vector2.up);
