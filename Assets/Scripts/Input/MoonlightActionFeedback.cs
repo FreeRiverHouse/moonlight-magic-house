@@ -61,6 +61,8 @@ namespace MoonlightMagicHouse
         public string ActionMotionProfile { get; private set; } = "";
         public string ActionContactPhase { get; private set; } = "";
         public string ActionContactTarget { get; private set; } = "";
+        public string ActionContactSource { get; private set; } = "";
+        public bool UsesLiveStageContact { get; private set; }
         public float ActionContactWeight { get; private set; }
         public bool IsActionContactActive => _contactPhaseIndex == 2;
         public Vector3 ActionContactPoint => _actionContactPoint;
@@ -680,6 +682,8 @@ namespace MoonlightMagicHouse
         {
             ActionContactPhase = "";
             ActionContactTarget = "";
+            ActionContactSource = "";
+            UsesLiveStageContact = false;
             ActionContactWeight = 0f;
             _actionContactPoint = Vector3.zero;
             _actionPresentationDirection = Vector3.zero;
@@ -808,7 +812,14 @@ namespace MoonlightMagicHouse
             int step = Mathf.Clamp(activityStep, 0, 3);
             if (_activityStage != null &&
                 _activityStage.TryGetInteractionContactPoint(kind, step, t, out Vector3 stageContact))
+            {
+                ActionContactSource = "activity-stage";
+                UsesLiveStageContact = true;
                 return stageContact;
+            }
+
+            ActionContactSource = "fallback";
+            UsesLiveStageContact = false;
 
             if (kind == MoonlightSpatialActionKind.Cook)
             {

@@ -521,6 +521,7 @@ namespace MoonlightMagicHouse
                         bool peakContactFinite = false;
                         bool peakContactInViewport = false;
                         bool peakCameraReadableFacing = false;
+                        bool peakUsesLiveStageContact = false;
                         int contactSamples = 0;
                         float peakContactTime = 0f;
                         float peakContactWeight = -1f;
@@ -529,6 +530,7 @@ namespace MoonlightMagicHouse
                         float peakCameraFacingAngle = 180f;
                         string peakContactPhase = "";
                         string peakContactTarget = "";
+                        string peakContactSource = "";
                         Vector3 peakContactPoint = Vector3.zero;
                         Vector3 peakContactViewport = Vector3.zero;
                         Camera contactCamera = Camera.main;
@@ -563,6 +565,8 @@ namespace MoonlightMagicHouse
                                      sampledCameraFacingAngle <= cameraFacingMaxAngle);
                                 bool validContactSample = feedback.IsPerformingAction &&
                                     feedback.ActionContactTarget == expectedContactTarget &&
+                                    feedback.UsesLiveStageContact &&
+                                    feedback.ActionContactSource == "activity-stage" &&
                                     sampledWeight >= contactWeightThreshold && finiteContact &&
                                     sampledDistance <= contactMaxDistance &&
                                     sampledVisualDistance <= visualContactMaxDistance && sampledInViewport &&
@@ -578,6 +582,8 @@ namespace MoonlightMagicHouse
                                     peakContactWeight = sampledWeight;
                                     peakContactPhase = feedback.ActionContactPhase;
                                     peakContactTarget = feedback.ActionContactTarget;
+                                    peakContactSource = feedback.ActionContactSource;
+                                    peakUsesLiveStageContact = feedback.UsesLiveStageContact;
                                     peakContactPoint = sampledPoint;
                                     peakContactDistance = sampledDistance;
                                     peakVisualContactDistance = sampledVisualDistance;
@@ -601,6 +607,7 @@ namespace MoonlightMagicHouse
                         bool contactPass = observedValidContact && peakContactPerforming &&
                             peakContactPhase == "contact" &&
                             peakContactTarget == expectedContactTarget &&
+                            peakUsesLiveStageContact && peakContactSource == "activity-stage" &&
                             peakContactWeight >= contactWeightThreshold && peakContactFinite &&
                             peakContactDistance <= contactMaxDistance &&
                             peakVisualContactDistance <= visualContactMaxDistance && peakContactInViewport &&
@@ -611,6 +618,7 @@ namespace MoonlightMagicHouse
                                 $"step={step + 1} observed={observedContact} valid={observedValidContact} " +
                                 $"samples={contactSamples} " +
                                 $"phase={peakContactPhase} target={peakContactTarget}/{expectedContactTarget} " +
+                                $"source={peakContactSource} liveStage={peakUsesLiveStageContact} " +
                                 $"weight={peakContactWeight:0.00} threshold={contactWeightThreshold:0.00} " +
                                 $"point={peakContactPoint:F2} distance={peakContactDistance:0.00} " +
                                 $"visualDistance={peakVisualContactDistance:0.00}/{visualContactMaxDistance:0.00} " +
@@ -635,6 +643,7 @@ namespace MoonlightMagicHouse
                         Debug.Log($"[MoonlightGameplayQA][PASS] action-contact action={zone.Kind} " +
                             $"step={step + 1} samples={contactSamples} phase={peakContactPhase} " +
                             $"target={peakContactTarget} weight={peakContactWeight:0.00} " +
+                            $"source={peakContactSource} liveStage={peakUsesLiveStageContact} " +
                             $"threshold={contactWeightThreshold:0.00} point={peakContactPoint:F2} " +
                             $"distance={peakContactDistance:0.00} sampleTime={peakContactTime:0.00} " +
                             $"visualDistance={peakVisualContactDistance:0.00}/{visualContactMaxDistance:0.00} " +
