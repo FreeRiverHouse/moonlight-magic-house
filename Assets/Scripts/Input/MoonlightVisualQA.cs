@@ -178,19 +178,21 @@ namespace MoonlightMagicHouse
                 ui?.ShowContextResult(result);
                 var feedback = moonlight.GetComponent<MoonlightActionFeedback>();
                 string expectedVisualSignature = MoonlightActionFeedback.ActionVisualSignatureFor(
-                    zone.Kind, feedback != null ? feedback.StateText : "");
+                    zone.Kind, feedback != null ? feedback.ActivityStep : 0,
+                    feedback != null ? feedback.StateText : "");
+                string expectedVisualMarker = MoonlightActionFeedback.ActionVisualSignatureMarkerFor(
+                    zone.Kind, feedback != null ? feedback.ActivityStep : 0,
+                    feedback != null ? feedback.StateText : "");
+                bool actionAccentPass = ValidateActionAccent(feedback, expectedVisualSignature,
+                    expectedVisualMarker, zone.Kind != MoonlightSpatialActionKind.SleepCuddle,
+                    out string actionAccentDetail);
                 if (feedback == null || !feedback.IsPerformingAction ||
                     string.IsNullOrEmpty(feedback.ActiveEffectName) ||
-                    feedback.ActionVisualSignature != expectedVisualSignature ||
-                    feedback.ActionAccentRendererCount != 1 ||
-                    feedback.ActionAccentWorldExtent < 0.17f)
+                    !actionAccentPass)
                 {
                     Debug.LogError($"[MoonlightVisualQA][FAIL] action={zone.Kind} animated feedback " +
                         $"effect={(feedback != null ? feedback.ActiveEffectName : "missing")} " +
-                        $"visual={(feedback != null ? feedback.ActionVisualSignature : "missing")}/" +
-                        $"{expectedVisualSignature} accents=" +
-                        $"{(feedback != null ? feedback.ActionAccentRendererCount : 0)} " +
-                        $"extent={(feedback != null ? feedback.ActionAccentWorldExtent : 0f):0.000}");
+                        actionAccentDetail);
                     Application.Quit(5);
                     yield break;
                 }
@@ -244,7 +246,9 @@ namespace MoonlightMagicHouse
                 Debug.Log($"[MoonlightVisualQA][PASS] action={zone.Kind} prompt=\"{prompt}\" " +
                     $"result=\"{result}\" effect={feedback.ActiveEffectName} " +
                     $"visual={feedback.ActionVisualSignature} accents={feedback.ActionAccentRendererCount} " +
-                    $"accentExtent={feedback.ActionAccentWorldExtent:0.000} " +
+                    $"colliders={feedback.ActionAccentColliderCount} materials={feedback.ActionAccentMaterialCount} " +
+                    $"bounds={feedback.ActionAccentBoundsSize:F3} accentExtent={feedback.ActionAccentWorldExtent:0.000} " +
+                    $"signatureMarker={feedback.ActionVisualSignatureMarker} " +
                     $"eyeExpression={heroEyeQuality.CurrentExpressionName} " +
                     $"eyeColorDistance={expressionColorDistance:0.000} " +
                     $"marker=MOONLIGHT_ACTIVITY_EYE_EXPRESSION_VERIFIED screenshot={actionOutput}");
@@ -263,6 +267,18 @@ namespace MoonlightMagicHouse
                     if (feedback == null || !feedback.IsPerformingAction || activityStage == null || !activityStage.IsVisible)
                     {
                         Debug.LogError($"[MoonlightVisualQA][FAIL] action={zone.Kind} step={step + 1} feedback missing");
+                        Application.Quit(10);
+                        yield break;
+                    }
+                    expectedVisualSignature = MoonlightActionFeedback.ActionVisualSignatureFor(
+                        zone.Kind, step, feedback.StateText);
+                    expectedVisualMarker = MoonlightActionFeedback.ActionVisualSignatureMarkerFor(
+                        zone.Kind, step, feedback.StateText);
+                    if (!ValidateActionAccent(feedback, expectedVisualSignature, expectedVisualMarker,
+                            true, out actionAccentDetail))
+                    {
+                        Debug.LogError($"[MoonlightVisualQA][FAIL] action={zone.Kind} " +
+                            $"step={step + 1} composite-contact-prop {actionAccentDetail}");
                         Application.Quit(10);
                         yield break;
                     }
@@ -297,17 +313,16 @@ namespace MoonlightMagicHouse
                 string cuddleResult = interactor.ExecuteCurrent();
                 ui?.ShowContextResult(cuddleResult);
                 feedback = moonlight.GetComponent<MoonlightActionFeedback>();
+                expectedVisualMarker = MoonlightActionFeedback.ActionVisualSignatureMarkerFor(
+                    MoonlightSpatialActionKind.SleepCuddle, 0, "Cuddled");
                 if (feedback == null || !feedback.IsPerformingAction ||
                     feedback.ActiveEffectName != "cuddle-orbit" ||
-                    feedback.ActionVisualSignature != "cuddle-heart-pair" ||
-                    feedback.ActionAccentRendererCount != 1 ||
-                    feedback.ActionAccentWorldExtent < 0.17f)
+                    !ValidateActionAccent(feedback, "cuddle-heart-pair", expectedVisualMarker,
+                        false, out actionAccentDetail))
                 {
                     Debug.LogError("[MoonlightVisualQA][FAIL] action=Cuddle animated feedback missing " +
                         $"effect={feedback?.ActiveEffectName ?? "missing"} " +
-                        $"visual={feedback?.ActionVisualSignature ?? "missing"} " +
-                        $"accent={feedback?.ActionAccentRendererCount ?? 0} " +
-                        $"extent={(feedback?.ActionAccentWorldExtent ?? 0f):0.000}");
+                        actionAccentDetail);
                     Application.Quit(6);
                     yield break;
                 }
@@ -324,7 +339,9 @@ namespace MoonlightMagicHouse
                 Debug.Log($"[MoonlightVisualQA][PASS] action=Cuddle prompt=\"{cuddlePrompt}\" " +
                     $"result=\"{cuddleResult}\" effect={feedback.ActiveEffectName} " +
                     $"visual={feedback.ActionVisualSignature} accent={feedback.ActionAccentRendererCount} " +
-                    $"accentExtent={feedback.ActionAccentWorldExtent:0.000} " +
+                    $"colliders={feedback.ActionAccentColliderCount} materials={feedback.ActionAccentMaterialCount} " +
+                    $"bounds={feedback.ActionAccentBoundsSize:F3} accentExtent={feedback.ActionAccentWorldExtent:0.000} " +
+                    $"signatureMarker={feedback.ActionVisualSignatureMarker} " +
                     $"screenshot={cuddleOutput}");
                 passedActions++;
                 yield return new WaitForSeconds(1.2f);
@@ -994,6 +1011,21 @@ namespace MoonlightMagicHouse
                     if (zone.Kind is MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
                         MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read)
                     {
+                        string expectedVisualSignature = MoonlightActionFeedback.ActionVisualSignatureFor(
+                            zone.Kind, step, feedback != null ? feedback.StateText : "");
+                        string expectedVisualMarker = MoonlightActionFeedback.ActionVisualSignatureMarkerFor(
+                            zone.Kind, step, feedback != null ? feedback.StateText : "");
+                        if (!ValidateActionAccent(feedback, expectedVisualSignature, expectedVisualMarker,
+                                true, out string actionAccentDetail))
+                        {
+                            Debug.LogError($"[MoonlightGameplayQA][FAIL] action-contact-prop " +
+                                $"action={zone.Kind} step={step + 1} {actionAccentDetail}");
+                            Application.Quit(84);
+                            yield break;
+                        }
+                        Debug.Log($"[MoonlightGameplayQA][PASS] action-contact-prop action={zone.Kind} " +
+                            $"step={step + 1} {actionAccentDetail}");
+
                         string expectedContactTarget = zone.Kind switch
                         {
                             MoonlightSpatialActionKind.Cook => step switch
@@ -1041,6 +1073,7 @@ namespace MoonlightMagicHouse
                         float peakContactWeight = -1f;
                         float peakContactDistance = float.PositiveInfinity;
                         float peakVisualContactDistance = float.PositiveInfinity;
+                        float peakAccentContactDistance = float.PositiveInfinity;
                         float peakCameraFacingAngle = 180f;
                         string peakContactPhase = "";
                         string peakContactTarget = "";
@@ -1066,6 +1099,7 @@ namespace MoonlightMagicHouse
                                     : float.PositiveInfinity;
                                 float sampledWeight = feedback.ActionContactWeight;
                                 float sampledVisualDistance = feedback.ActionVisualContactPlanarDistance;
+                                float sampledAccentContactDistance = feedback.ActionAccentContactDistance;
                                 Vector3 sampledViewport = finiteContact && contactCamera != null
                                     ? contactCamera.WorldToViewportPoint(sampledPoint)
                                     : Vector3.zero;
@@ -1083,7 +1117,8 @@ namespace MoonlightMagicHouse
                                     feedback.ActionContactSource == "activity-stage" &&
                                     sampledWeight >= contactWeightThreshold && finiteContact &&
                                     sampledDistance <= contactMaxDistance &&
-                                    sampledVisualDistance <= visualContactMaxDistance && sampledInViewport &&
+                                    sampledVisualDistance <= visualContactMaxDistance &&
+                                    sampledAccentContactDistance <= 0.01f && sampledInViewport &&
                                     sampledCameraReadableFacing;
                                 bool hadValidContact = observedValidContact;
                                 observedValidContact |= validContactSample;
@@ -1101,6 +1136,7 @@ namespace MoonlightMagicHouse
                                     peakContactPoint = sampledPoint;
                                     peakContactDistance = sampledDistance;
                                     peakVisualContactDistance = sampledVisualDistance;
+                                    peakAccentContactDistance = sampledAccentContactDistance;
                                     peakContactFinite = finiteContact;
                                     peakContactViewport = sampledViewport;
                                     peakContactInViewport = sampledInViewport;
@@ -1124,7 +1160,8 @@ namespace MoonlightMagicHouse
                             peakUsesLiveStageContact && peakContactSource == "activity-stage" &&
                             peakContactWeight >= contactWeightThreshold && peakContactFinite &&
                             peakContactDistance <= contactMaxDistance &&
-                            peakVisualContactDistance <= visualContactMaxDistance && peakContactInViewport &&
+                            peakVisualContactDistance <= visualContactMaxDistance &&
+                            peakAccentContactDistance <= 0.01f && peakContactInViewport &&
                             peakCameraReadableFacing;
                         if (!contactPass)
                         {
@@ -1136,6 +1173,7 @@ namespace MoonlightMagicHouse
                                 $"weight={peakContactWeight:0.00} threshold={contactWeightThreshold:0.00} " +
                                 $"point={peakContactPoint:F2} distance={peakContactDistance:0.00} " +
                                 $"visualDistance={peakVisualContactDistance:0.00}/{visualContactMaxDistance:0.00} " +
+                                $"accentContactDistance={peakAccentContactDistance:0.000}/0.010 " +
                                 $"viewport={peakContactViewport:F2} inViewport={peakContactInViewport} " +
                                 $"cameraFacing={peakCameraFacingAngle:0.0}/{cameraFacingMinAngle:0}-{cameraFacingMaxAngle:0} " +
                                 $"readableFacing={peakCameraReadableFacing} " +
@@ -1161,8 +1199,15 @@ namespace MoonlightMagicHouse
                             $"threshold={contactWeightThreshold:0.00} point={peakContactPoint:F2} " +
                             $"distance={peakContactDistance:0.00} sampleTime={peakContactTime:0.00} " +
                             $"visualDistance={peakVisualContactDistance:0.00}/{visualContactMaxDistance:0.00} " +
+                            $"accentContactDistance={peakAccentContactDistance:0.000}/0.010 " +
                             $"viewport={peakContactViewport:F2} inViewport={peakContactInViewport} " +
                             $"cameraFacing={peakCameraFacingAngle:0.0} readableFacing={peakCameraReadableFacing} " +
+                            $"signature={feedback.ActionVisualSignature} " +
+                            $"signatureMarker={feedback.ActionVisualSignatureMarker} " +
+                            $"renderers={feedback.ActionAccentRendererCount} " +
+                            $"colliders={feedback.ActionAccentColliderCount} " +
+                            $"materials={feedback.ActionAccentMaterialCount} " +
+                            $"bounds={feedback.ActionAccentBoundsSize:F3} " +
                             $"screenshot={contactShot} marker=MOONLIGHT_THREE_QUARTER_FACING_VERIFIED");
 
                         float followThroughDeadline = Time.time + 2.40f;
@@ -1825,6 +1870,42 @@ namespace MoonlightMagicHouse
 
         static bool Approximately(float actual, float expected)
             => Mathf.Abs(actual - expected) <= 0.01f;
+
+        static bool ValidateActionAccent(MoonlightActionFeedback feedback,
+            string expectedSignature, string expectedMarker, bool requireContactCenter,
+            out string detail)
+        {
+            Vector3 bounds = feedback != null ? feedback.ActionAccentBoundsSize : Vector3.zero;
+            bool finiteBounds = !float.IsNaN(bounds.x) && !float.IsNaN(bounds.y) &&
+                !float.IsNaN(bounds.z) && !float.IsInfinity(bounds.x) &&
+                !float.IsInfinity(bounds.y) && !float.IsInfinity(bounds.z);
+            float extent = feedback != null ? feedback.ActionAccentWorldExtent : 0f;
+            float contactDistance = feedback != null
+                ? feedback.ActionAccentContactDistance
+                : float.PositiveInfinity;
+            bool pass = feedback != null && feedback.IsPerformingAction &&
+                feedback.ActionVisualSignature == expectedSignature &&
+                feedback.ActionVisualSignatureMarker == expectedMarker &&
+                feedback.ActionAccentRendererCount >= 3 && feedback.ActionAccentRendererCount <= 5 &&
+                feedback.ActionAccentColliderCount == 0 &&
+                feedback.ActionAccentMaterialCount > 0 && feedback.ActionAccentMaterialCount <= 5 &&
+                finiteBounds && bounds.x > 0f && bounds.y > 0f && bounds.z > 0f &&
+                bounds.x <= MoonlightActionFeedback.MaximumActionAccentExtent &&
+                bounds.y <= MoonlightActionFeedback.MaximumActionAccentExtent &&
+                bounds.z <= MoonlightActionFeedback.MaximumActionAccentExtent &&
+                extent >= MoonlightActionFeedback.MinimumActionAccentExtent &&
+                extent <= MoonlightActionFeedback.MaximumActionAccentExtent &&
+                (!requireContactCenter || contactDistance <= 0.01f);
+            detail = $"visual={feedback?.ActionVisualSignature ?? "missing"}/{expectedSignature} " +
+                $"marker={feedback?.ActionVisualSignatureMarker ?? "missing"}/{expectedMarker} " +
+                $"renderers={feedback?.ActionAccentRendererCount ?? 0}/3-5 " +
+                $"colliders={feedback?.ActionAccentColliderCount ?? -1} " +
+                $"materials={feedback?.ActionAccentMaterialCount ?? 0}/<=5 bounds={bounds:F3} " +
+                $"extent={extent:0.000}/{MoonlightActionFeedback.MinimumActionAccentExtent:0.00}-" +
+                $"{MoonlightActionFeedback.MaximumActionAccentExtent:0.00} " +
+                $"contactDistance={contactDistance:0.000}";
+            return pass;
+        }
 
         IEnumerator RunRoomCaptureQa(string[] args)
         {

@@ -6,6 +6,9 @@ namespace MoonlightMagicHouse
 {
     public class MoonlightActionFeedback : MonoBehaviour
     {
+        public const float MinimumActionAccentExtent = 0.18f;
+        public const float MaximumActionAccentExtent = 0.80f;
+
         [SerializeField] float cooldownSeconds = 1.15f;
 
         Transform _visual;
@@ -21,7 +24,12 @@ namespace MoonlightMagicHouse
         GameObject _actionAccent;
         TrailRenderer _actionTrail;
         Material _actionMaterial;
-        Material _actionAccentMaterial;
+        readonly List<Material> _actionAccentMaterials = new();
+        readonly List<Transform> _actionAccentParts = new();
+        readonly List<Vector3> _actionAccentBasePositions = new();
+        readonly List<Vector3> _actionAccentBaseScales = new();
+        readonly List<Quaternion> _actionAccentBaseRotations = new();
+        static readonly Dictionary<PrimitiveType, Mesh> ActionAccentPrimitiveMeshes = new();
         Material _trailMaterial;
         Material _particleMaterial;
         Texture2D _particleTexture;
@@ -110,8 +118,13 @@ namespace MoonlightMagicHouse
         }
         public string ActiveEffectName { get; private set; } = "";
         public string ActionVisualSignature { get; private set; } = "";
+        public string ActionVisualSignatureMarker { get; private set; } = "";
         public int ActionAccentRendererCount { get; private set; }
+        public int ActionAccentColliderCount { get; private set; }
+        public int ActionAccentMaterialCount { get; private set; }
+        public Vector3 ActionAccentBoundsSize { get; private set; }
         public float ActionAccentWorldExtent { get; private set; }
+        public float ActionAccentContactDistance { get; private set; }
         public bool MasteryCelebrationIsQueued => _masteryCelebrationQueued;
         public int QueuedMasteryTier => _queuedMasteryTier;
         public int LastMasteryCelebrationTier { get; private set; } = -1;
@@ -235,7 +248,9 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightVisualQA] action-start kind={kind} state={state} label=\"{label}\" " +
                 $"step={_activityStep + 1}/{_activityRequiredSteps} duration={duration:0.00}s " +
                 $"motionProfile=\"{ActionMotionProfile}\" contactTarget=\"{ActionContactTarget}\" " +
-                $"visual=\"{ActionVisualSignature}\" accents={ActionAccentRendererCount} " +
+                $"visual=\"{ActionVisualSignature}\" marker={ActionVisualSignatureMarker} " +
+                $"accents={ActionAccentRendererCount} colliders={ActionAccentColliderCount} " +
+                $"materials={ActionAccentMaterialCount} bounds={ActionAccentBoundsSize:F3} " +
                 $"accentExtent={ActionAccentWorldExtent:0.000}");
 
             if (_flash != null)
@@ -1107,26 +1122,13 @@ namespace MoonlightMagicHouse
             renderer.sharedMaterial = _actionMaterial;
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
 
-            ActionVisualSignature = ActionVisualSignatureFor(kind, state);
-            _actionAccent = GameObject.CreatePrimitive(ActionAccentPrimitiveFor(kind));
+            ActionVisualSignature = ActionVisualSignatureFor(kind, _activityStep, state);
+            ActionVisualSignatureMarker = ActionVisualSignatureMarkerFor(kind, _activityStep, state);
+            _actionAccent = new GameObject();
             _actionAccent.name = $"ActionAccent-{ActionVisualSignature}";
-            _actionAccent.transform.localScale = ActionAccentWorldScaleFor(kind);
-            var accentCollider = _actionAccent.GetComponent<Collider>();
-            if (accentCollider != null) Destroy(accentCollider);
-            _actionAccentMaterial = new Material(shader);
-            Color accentColor = Color.Lerp(color, Color.white, 0.46f);
-            _actionAccentMaterial.color = accentColor;
-            if (_actionAccentMaterial.HasProperty("_EmissionColor"))
-            {
-                _actionAccentMaterial.EnableKeyword("_EMISSION");
-                _actionAccentMaterial.SetColor("_EmissionColor", accentColor * 1.15f);
-            }
-            var accentRenderer = _actionAccent.GetComponent<Renderer>();
-            accentRenderer.sharedMaterial = _actionAccentMaterial;
-            accentRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            ActionAccentRendererCount = _actionAccent.GetComponentsInChildren<Renderer>(true).Length;
+            CreateActionAccentMaterials(shader, color);
+            CreateActionAccentParts(kind, _activityStep);
             UpdateActionAccent(kind, 0f);
-            ActionAccentWorldExtent = MaximumAxis(accentRenderer.bounds.size);
 
             _actionTrail = _actionOrb.AddComponent<TrailRenderer>();
             _actionTrail.time = Mathf.Min(0.75f, duration * 0.55f);
@@ -1192,61 +1194,376 @@ namespace MoonlightMagicHouse
         void UpdateActionAccent(MoonlightSpatialActionKind kind, float t)
         {
             if (_actionAccent == null || _actionOrb == null) return;
-            _actionAccent.transform.position = _actionOrb.transform.position +
-                ActionAccentWorldOffsetFor(kind);
-            _actionAccent.transform.rotation = ActionAccentRotationFor(kind, t);
+            bool contactProp = IsStepSpecificActivity(kind);
+            Vector3 anchor = contactProp
+                ? _actionContactPoint
+                : _actionOrb.transform.position + ActionAccentWorldOffsetFor(kind);
+            _actionAccent.transform.position = anchor;
+
+            Quaternion facing = CameraFacingRotation(anchor);
+            _actionAccent.transform.rotation = facing *
+                ActionAccentRotationFor(kind, _activityStep, t);
+
+            float contactEnergy = _contactPhaseIndex switch
+            {
+                1 => ActionContactWeight * 0.55f,
+                2 => ActionContactWeight,
+                3 => Mathf.Max(0.25f, ActionContactWeight * 0.70f),
+                _ => 0f
+            };
+            for (int i = 0; i < _actionAccentParts.Count; i++)
+            {
+                float wave = Mathf.Sin((Mathf.Clamp01(t) * 2f + i * 0.23f) * Mathf.PI * 2f);
+                Transform part = _actionAccentParts[i];
+                part.localPosition = _actionAccentBasePositions[i] +
+                    Vector3.up * wave * (0.006f + contactEnergy * 0.012f);
+                part.localRotation = _actionAccentBaseRotations[i] *
+                    Quaternion.Euler(0f, contactEnergy * wave * 8f,
+                        wave * (3f + i) + contactEnergy * (i % 2 == 0 ? 10f : -10f));
+                part.localScale = _actionAccentBaseScales[i] *
+                    (1f + contactEnergy * (0.06f + i * 0.01f));
+            }
+
+            ActionAccentContactDistance = contactProp
+                ? Vector3.Distance(_actionAccent.transform.position, _actionContactPoint)
+                : 0f;
+            RefreshActionAccentMetrics();
         }
 
         void DestroyActionOrb()
         {
             ActiveEffectName = "";
             ActionVisualSignature = "";
+            ActionVisualSignatureMarker = "";
             ActionAccentRendererCount = 0;
+            ActionAccentColliderCount = 0;
+            ActionAccentMaterialCount = 0;
+            ActionAccentBoundsSize = Vector3.zero;
             ActionAccentWorldExtent = 0f;
+            ActionAccentContactDistance = 0f;
             if (_actionAccent != null) Destroy(_actionAccent);
             if (_actionOrb != null) Destroy(_actionOrb);
             if (_actionMaterial != null) Destroy(_actionMaterial);
-            if (_actionAccentMaterial != null) Destroy(_actionAccentMaterial);
+            foreach (Material material in _actionAccentMaterials)
+                if (material != null) Destroy(material);
             if (_trailMaterial != null) Destroy(_trailMaterial);
             _actionOrb = null;
             _actionAccent = null;
             _actionTrail = null;
             _actionMaterial = null;
-            _actionAccentMaterial = null;
             _trailMaterial = null;
+            _actionAccentMaterials.Clear();
+            _actionAccentParts.Clear();
+            _actionAccentBasePositions.Clear();
+            _actionAccentBaseScales.Clear();
+            _actionAccentBaseRotations.Clear();
         }
 
         public static string ActionVisualSignatureFor(MoonlightSpatialActionKind kind,
-                                                       string state) => kind switch
+                                                       string state) =>
+            ActionVisualSignatureFor(kind, 0, state);
+
+        public static string ActionVisualSignatureFor(MoonlightSpatialActionKind kind,
+                                                       int activityStep,
+                                                       string state = "") =>
+            (kind, Mathf.Clamp(activityStep, 0, 3)) switch
         {
-            MoonlightSpatialActionKind.Cook => "utensil-capsule",
-            MoonlightSpatialActionKind.Play => "ball-energy-band",
-            MoonlightSpatialActionKind.Garden => "leaf-sprout",
-            MoonlightSpatialActionKind.Read => "turning-page",
-            MoonlightSpatialActionKind.SleepCuddle when state == "Resting" => "dream-moon-pair",
-            MoonlightSpatialActionKind.SleepCuddle => "cuddle-heart-pair",
+            (MoonlightSpatialActionKind.Cook, 0) => "cook-scoop",
+            (MoonlightSpatialActionKind.Cook, 1) => "cook-whisk",
+            (MoonlightSpatialActionKind.Cook, 2) => "cook-cookie-tray",
+            (MoonlightSpatialActionKind.Cook, _) => "cook-icing",
+            (MoonlightSpatialActionKind.Play, 0) => "play-star-ball",
+            (MoonlightSpatialActionKind.Play, 1) => "play-orbit",
+            (MoonlightSpatialActionKind.Play, 2) => "play-impact",
+            (MoonlightSpatialActionKind.Play, _) => "play-catch-star",
+            (MoonlightSpatialActionKind.Garden, 0) => "garden-seed",
+            (MoonlightSpatialActionKind.Garden, 1) => "garden-watering",
+            (MoonlightSpatialActionKind.Garden, 2) => "garden-droplets",
+            (MoonlightSpatialActionKind.Garden, _) => "garden-bloom",
+            (MoonlightSpatialActionKind.Read, 0) => "read-open-book",
+            (MoonlightSpatialActionKind.Read, 1) => "read-page-fan",
+            (MoonlightSpatialActionKind.Read, 2) => "read-bookmark",
+            (MoonlightSpatialActionKind.Read, _) => "read-memory-motes",
+            (MoonlightSpatialActionKind.SleepCuddle, _) when state == "Resting" => "dream-moon-pair",
+            (MoonlightSpatialActionKind.SleepCuddle, _) => "cuddle-heart-pair",
             _ => "magic-accent"
         };
 
-        static PrimitiveType ActionAccentPrimitiveFor(MoonlightSpatialActionKind kind) => kind switch
+        public static string ActionVisualSignatureMarkerFor(MoonlightSpatialActionKind kind,
+                                                             int activityStep,
+                                                             string state = "")
         {
-            MoonlightSpatialActionKind.Cook => PrimitiveType.Capsule,
-            MoonlightSpatialActionKind.Play => PrimitiveType.Cube,
-            MoonlightSpatialActionKind.Garden => PrimitiveType.Sphere,
-            MoonlightSpatialActionKind.Read => PrimitiveType.Cube,
-            MoonlightSpatialActionKind.SleepCuddle => PrimitiveType.Sphere,
-            _ => PrimitiveType.Sphere
+            string signature = ActionVisualSignatureFor(kind, activityStep, state)
+                .ToUpperInvariant().Replace('-', '_');
+            return IsStepSpecificActivity(kind)
+                ? $"MOONLIGHT_ACTION_PROP_{kind.ToString().ToUpperInvariant()}_STEP_{Mathf.Clamp(activityStep, 0, 3) + 1}_{signature}"
+                : $"MOONLIGHT_ACTION_PROP_{signature}";
+        }
+
+        struct ActionAccentPartSpec
+        {
+            public PrimitiveType Primitive;
+            public Vector3 Position;
+            public Vector3 Scale;
+            public Vector3 Euler;
+            public int MaterialSlot;
+
+            public ActionAccentPartSpec(PrimitiveType primitive, Vector3 position,
+                Vector3 scale, Vector3 euler, int materialSlot)
+            {
+                Primitive = primitive;
+                Position = position;
+                Scale = scale;
+                Euler = euler;
+                MaterialSlot = materialSlot;
+            }
+        }
+
+        static ActionAccentPartSpec Part(PrimitiveType primitive, Vector3 position,
+            Vector3 scale, float zRotation, int materialSlot) =>
+            new(primitive, position, scale, new Vector3(0f, 0f, zRotation), materialSlot);
+
+        static ActionAccentPartSpec[] ActionAccentLayoutFor(MoonlightSpatialActionKind kind,
+                                                             int activityStep)
+        {
+            int step = Mathf.Clamp(activityStep, 0, 3);
+            return (kind, step) switch
+            {
+                (MoonlightSpatialActionKind.Cook, 0) => new[]
+                {
+                    Part(PrimitiveType.Sphere, new Vector3(-0.04f, 0f, 0f), new Vector3(0.22f, 0.10f, 0.12f), 0f, 0),
+                    Part(PrimitiveType.Capsule, new Vector3(0.11f, 0.10f, 0f), new Vector3(0.035f, 0.13f, 0.035f), -40f, 1),
+                    Part(PrimitiveType.Sphere, new Vector3(-0.08f, 0.035f, -0.03f), Vector3.one * 0.065f, 0f, 2),
+                    Part(PrimitiveType.Sphere, new Vector3(0.00f, 0.045f, -0.03f), Vector3.one * 0.055f, 0f, 2)
+                },
+                (MoonlightSpatialActionKind.Cook, 1) => new[]
+                {
+                    Part(PrimitiveType.Capsule, new Vector3(0f, 0.13f, 0f), new Vector3(0.04f, 0.12f, 0.04f), 0f, 1),
+                    Part(PrimitiveType.Capsule, new Vector3(-0.055f, -0.06f, 0f), new Vector3(0.018f, 0.10f, 0.018f), -18f, 0),
+                    Part(PrimitiveType.Capsule, new Vector3(0f, -0.07f, 0f), new Vector3(0.018f, 0.11f, 0.018f), 0f, 0),
+                    Part(PrimitiveType.Capsule, new Vector3(0.055f, -0.06f, 0f), new Vector3(0.018f, 0.10f, 0.018f), 18f, 0)
+                },
+                (MoonlightSpatialActionKind.Cook, 2) => new[]
+                {
+                    Part(PrimitiveType.Cube, Vector3.zero, new Vector3(0.36f, 0.035f, 0.23f), 0f, 1),
+                    Part(PrimitiveType.Sphere, new Vector3(-0.11f, 0.04f, -0.02f), new Vector3(0.085f, 0.045f, 0.085f), 0f, 2),
+                    Part(PrimitiveType.Sphere, new Vector3(0f, 0.04f, 0.02f), new Vector3(0.085f, 0.045f, 0.085f), 0f, 2),
+                    Part(PrimitiveType.Sphere, new Vector3(0.11f, 0.04f, -0.02f), new Vector3(0.085f, 0.045f, 0.085f), 0f, 2)
+                },
+                (MoonlightSpatialActionKind.Cook, _) => new[]
+                {
+                    Part(PrimitiveType.Sphere, new Vector3(-0.06f, -0.07f, 0f), new Vector3(0.20f, 0.065f, 0.15f), 0f, 1),
+                    Part(PrimitiveType.Capsule, new Vector3(0.06f, 0.10f, 0f), new Vector3(0.055f, 0.13f, 0.055f), -20f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(-0.10f, 0.005f, -0.04f), Vector3.one * 0.065f, 0f, 2),
+                    Part(PrimitiveType.Sphere, new Vector3(0f, 0.015f, -0.04f), Vector3.one * 0.060f, 0f, 2)
+                },
+                (MoonlightSpatialActionKind.Play, 0) => StarBallLayout(false),
+                (MoonlightSpatialActionKind.Play, 1) => new[]
+                {
+                    Part(PrimitiveType.Sphere, Vector3.zero, Vector3.one * 0.15f, 0f, 1),
+                    Part(PrimitiveType.Cube, Vector3.zero, new Vector3(0.38f, 0.018f, 0.025f), 0f, 0),
+                    Part(PrimitiveType.Cube, Vector3.zero, new Vector3(0.34f, 0.018f, 0.025f), 60f, 0),
+                    Part(PrimitiveType.Cube, Vector3.zero, new Vector3(0.34f, 0.018f, 0.025f), -60f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(0.19f, 0f, -0.01f), Vector3.one * 0.055f, 0f, 2)
+                },
+                (MoonlightSpatialActionKind.Play, 2) => ImpactLayout(),
+                (MoonlightSpatialActionKind.Play, _) => StarBallLayout(true),
+                (MoonlightSpatialActionKind.Garden, 0) => new[]
+                {
+                    Part(PrimitiveType.Cube, new Vector3(0f, -0.10f, 0f), new Vector3(0.32f, 0.055f, 0.16f), 0f, 1),
+                    Part(PrimitiveType.Sphere, new Vector3(0f, -0.025f, 0f), new Vector3(0.085f, 0.12f, 0.065f), 18f, 2),
+                    Part(PrimitiveType.Sphere, new Vector3(-0.07f, 0.075f, 0f), new Vector3(0.13f, 0.065f, 0.055f), -28f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(0.07f, 0.075f, 0f), new Vector3(0.13f, 0.065f, 0.055f), 28f, 0)
+                },
+                (MoonlightSpatialActionKind.Garden, 1) => new[]
+                {
+                    Part(PrimitiveType.Cylinder, new Vector3(-0.05f, 0f, 0f), new Vector3(0.10f, 0.08f, 0.10f), 0f, 1),
+                    Part(PrimitiveType.Capsule, new Vector3(0.10f, 0.06f, 0f), new Vector3(0.025f, 0.12f, 0.025f), -58f, 0),
+                    Part(PrimitiveType.Capsule, new Vector3(-0.14f, 0.07f, 0f), new Vector3(0.025f, 0.09f, 0.025f), 30f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(0.22f, -0.04f, 0f), new Vector3(0.045f, 0.07f, 0.045f), 0f, 2)
+                },
+                (MoonlightSpatialActionKind.Garden, 2) => new[]
+                {
+                    Part(PrimitiveType.Capsule, new Vector3(-0.12f, -0.02f, 0f), new Vector3(0.025f, 0.10f, 0.025f), 0f, 1),
+                    Part(PrimitiveType.Sphere, new Vector3(-0.02f, 0.09f, 0f), new Vector3(0.055f, 0.09f, 0.055f), 0f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(0.08f, 0.015f, 0f), new Vector3(0.055f, 0.09f, 0.055f), 0f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(0.17f, -0.07f, 0f), new Vector3(0.050f, 0.08f, 0.050f), 0f, 2)
+                },
+                (MoonlightSpatialActionKind.Garden, _) => BloomLayout(),
+                (MoonlightSpatialActionKind.Read, 0) => new[]
+                {
+                    Part(PrimitiveType.Cube, new Vector3(-0.10f, 0f, 0f), new Vector3(0.22f, 0.025f, 0.17f), -12f, 0),
+                    Part(PrimitiveType.Cube, new Vector3(0.10f, 0f, 0f), new Vector3(0.22f, 0.025f, 0.17f), 12f, 0),
+                    Part(PrimitiveType.Capsule, new Vector3(0f, -0.02f, -0.01f), new Vector3(0.018f, 0.11f, 0.018f), 90f, 1),
+                    Part(PrimitiveType.Cube, new Vector3(0f, -0.035f, 0.035f), new Vector3(0.40f, 0.018f, 0.18f), 0f, 2)
+                },
+                (MoonlightSpatialActionKind.Read, 1) => PageFanLayout(),
+                (MoonlightSpatialActionKind.Read, 2) => new[]
+                {
+                    Part(PrimitiveType.Cube, new Vector3(-0.08f, 0f, 0f), new Vector3(0.20f, 0.022f, 0.16f), -8f, 0),
+                    Part(PrimitiveType.Cube, new Vector3(0.08f, 0f, 0f), new Vector3(0.20f, 0.022f, 0.16f), 8f, 0),
+                    Part(PrimitiveType.Cube, new Vector3(0.03f, -0.09f, -0.03f), new Vector3(0.055f, 0.20f, 0.018f), 4f, 2)
+                },
+                (MoonlightSpatialActionKind.Read, _) => new[]
+                {
+                    Part(PrimitiveType.Sphere, new Vector3(-0.15f, -0.05f, 0f), Vector3.one * 0.060f, 0f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(-0.05f, 0.08f, 0f), Vector3.one * 0.075f, 0f, 2),
+                    Part(PrimitiveType.Sphere, new Vector3(0.07f, -0.01f, 0f), Vector3.one * 0.055f, 0f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(0.17f, 0.10f, 0f), Vector3.one * 0.065f, 0f, 1)
+                },
+                _ => new[]
+                {
+                    Part(PrimitiveType.Sphere, new Vector3(-0.08f, 0f, 0f), Vector3.one * 0.16f, 0f, 0),
+                    Part(PrimitiveType.Sphere, new Vector3(0.08f, 0.04f, 0f), Vector3.one * 0.13f, 0f, 1),
+                    Part(PrimitiveType.Sphere, new Vector3(0f, -0.08f, 0f), Vector3.one * 0.09f, 0f, 2)
+                }
+            };
+        }
+
+        static ActionAccentPartSpec[] StarBallLayout(bool caught)
+        {
+            float squeeze = caught ? 0.82f : 1f;
+            return new[]
+            {
+                Part(PrimitiveType.Sphere, Vector3.zero, Vector3.one * 0.16f, 0f, 1),
+                Part(PrimitiveType.Cube, new Vector3(0f, 0.14f * squeeze, 0f), new Vector3(0.05f, 0.17f, 0.035f), 0f, 0),
+                Part(PrimitiveType.Cube, new Vector3(0.14f * squeeze, 0f, 0f), new Vector3(0.17f, 0.05f, 0.035f), 0f, 0),
+                Part(PrimitiveType.Cube, new Vector3(0f, -0.14f * squeeze, 0f), new Vector3(0.05f, 0.17f, 0.035f), 0f, 2),
+                Part(PrimitiveType.Cube, new Vector3(-0.14f * squeeze, 0f, 0f), new Vector3(0.17f, 0.05f, 0.035f), 0f, 2)
+            };
+        }
+
+        static ActionAccentPartSpec[] ImpactLayout() => new[]
+        {
+            Part(PrimitiveType.Sphere, Vector3.zero, Vector3.one * 0.12f, 0f, 1),
+            Part(PrimitiveType.Capsule, new Vector3(0f, 0.14f, 0f), new Vector3(0.022f, 0.085f, 0.022f), 0f, 0),
+            Part(PrimitiveType.Capsule, new Vector3(0.14f, 0f, 0f), new Vector3(0.022f, 0.085f, 0.022f), -90f, 2),
+            Part(PrimitiveType.Capsule, new Vector3(0f, -0.14f, 0f), new Vector3(0.022f, 0.085f, 0.022f), 0f, 0),
+            Part(PrimitiveType.Capsule, new Vector3(-0.14f, 0f, 0f), new Vector3(0.022f, 0.085f, 0.022f), 90f, 2)
         };
 
-        static Vector3 ActionAccentWorldScaleFor(MoonlightSpatialActionKind kind) => kind switch
+        static ActionAccentPartSpec[] BloomLayout() => new[]
         {
-            MoonlightSpatialActionKind.Cook => new Vector3(0.07f, 0.20f, 0.07f),
-            MoonlightSpatialActionKind.Play => new Vector3(0.22f, 0.035f, 0.22f),
-            MoonlightSpatialActionKind.Garden => new Vector3(0.08f, 0.20f, 0.04f),
-            MoonlightSpatialActionKind.Read => new Vector3(0.24f, 0.025f, 0.16f),
-            MoonlightSpatialActionKind.SleepCuddle => new Vector3(0.17f, 0.11f, 0.08f),
-            _ => Vector3.one * 0.10f
+            Part(PrimitiveType.Sphere, Vector3.zero, Vector3.one * 0.11f, 0f, 2),
+            Part(PrimitiveType.Sphere, new Vector3(0f, 0.105f, 0f), new Vector3(0.12f, 0.16f, 0.055f), 0f, 0),
+            Part(PrimitiveType.Sphere, new Vector3(0.105f, 0f, 0f), new Vector3(0.16f, 0.12f, 0.055f), 0f, 1),
+            Part(PrimitiveType.Sphere, new Vector3(0f, -0.105f, 0f), new Vector3(0.12f, 0.16f, 0.055f), 0f, 0),
+            Part(PrimitiveType.Sphere, new Vector3(-0.105f, 0f, 0f), new Vector3(0.16f, 0.12f, 0.055f), 0f, 1)
         };
+
+        static ActionAccentPartSpec[] PageFanLayout() => new[]
+        {
+            Part(PrimitiveType.Cube, new Vector3(-0.09f, 0f, 0f), new Vector3(0.23f, 0.020f, 0.16f), -18f, 1),
+            Part(PrimitiveType.Cube, new Vector3(-0.03f, 0.025f, -0.01f), new Vector3(0.23f, 0.018f, 0.16f), -6f, 0),
+            Part(PrimitiveType.Cube, new Vector3(0.04f, 0.035f, -0.02f), new Vector3(0.23f, 0.018f, 0.16f), 7f, 0),
+            Part(PrimitiveType.Cube, new Vector3(0.10f, 0.015f, -0.03f), new Vector3(0.23f, 0.020f, 0.16f), 19f, 2)
+        };
+
+        void CreateActionAccentMaterials(Shader shader, Color color)
+        {
+            Color[] palette =
+            {
+                Color.Lerp(color, Color.white, 0.52f),
+                Color.Lerp(color, new Color(0.18f, 0.22f, 0.32f), 0.22f),
+                Color.Lerp(color, new Color(1f, 0.62f, 0.28f), 0.34f)
+            };
+            foreach (Color paletteColor in palette)
+            {
+                var material = new Material(shader);
+                material.color = paletteColor;
+                if (material.HasProperty("_EmissionColor"))
+                {
+                    material.EnableKeyword("_EMISSION");
+                    material.SetColor("_EmissionColor", paletteColor * 1.18f);
+                }
+                _actionAccentMaterials.Add(material);
+            }
+        }
+
+        void CreateActionAccentParts(MoonlightSpatialActionKind kind, int activityStep)
+        {
+            ActionAccentPartSpec[] layout = ActionAccentLayoutFor(kind, activityStep);
+            for (int i = 0; i < layout.Length; i++)
+            {
+                ActionAccentPartSpec spec = layout[i];
+                var part = new GameObject($"{ActionVisualSignature}-part-{i + 1}");
+                part.transform.SetParent(_actionAccent.transform, false);
+                part.transform.localPosition = spec.Position;
+                part.transform.localScale = spec.Scale;
+                part.transform.localRotation = Quaternion.Euler(spec.Euler);
+
+                var meshFilter = part.AddComponent<MeshFilter>();
+                meshFilter.sharedMesh = ActionAccentMeshFor(spec.Primitive);
+                var partRenderer = part.AddComponent<MeshRenderer>();
+                int materialSlot = Mathf.Clamp(spec.MaterialSlot, 0, _actionAccentMaterials.Count - 1);
+                partRenderer.sharedMaterial = _actionAccentMaterials[materialSlot];
+                partRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                partRenderer.receiveShadows = false;
+
+                _actionAccentParts.Add(part.transform);
+                _actionAccentBasePositions.Add(spec.Position);
+                _actionAccentBaseScales.Add(spec.Scale);
+                _actionAccentBaseRotations.Add(Quaternion.Euler(spec.Euler));
+            }
+        }
+
+        static Mesh ActionAccentMeshFor(PrimitiveType primitive)
+        {
+            if (ActionAccentPrimitiveMeshes.TryGetValue(primitive, out Mesh cachedMesh) &&
+                cachedMesh != null)
+                return cachedMesh;
+
+            GameObject source = GameObject.CreatePrimitive(primitive);
+            source.SetActive(false);
+            Mesh mesh = source.GetComponent<MeshFilter>().sharedMesh;
+            ActionAccentPrimitiveMeshes[primitive] = mesh;
+            Object.Destroy(source);
+            return mesh;
+        }
+
+        void RefreshActionAccentMetrics()
+        {
+            if (_actionAccent == null) return;
+            Renderer[] renderers = _actionAccent.GetComponentsInChildren<Renderer>(true);
+            var materials = new HashSet<Material>();
+            Bounds bounds = default;
+            bool hasBounds = false;
+            foreach (Renderer accentRenderer in renderers)
+            {
+                if (!accentRenderer.enabled) continue;
+                if (!hasBounds)
+                {
+                    bounds = accentRenderer.bounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(accentRenderer.bounds);
+                }
+                foreach (Material material in accentRenderer.sharedMaterials)
+                    if (material != null) materials.Add(material);
+            }
+
+            ActionAccentRendererCount = renderers.Length;
+            ActionAccentColliderCount = _actionAccent.GetComponentsInChildren<Collider>(true).Length;
+            ActionAccentMaterialCount = materials.Count;
+            ActionAccentBoundsSize = hasBounds ? bounds.size : Vector3.zero;
+            ActionAccentWorldExtent = MaximumAxis(ActionAccentBoundsSize);
+        }
+
+        static bool IsStepSpecificActivity(MoonlightSpatialActionKind kind) =>
+            kind is MoonlightSpatialActionKind.Cook or MoonlightSpatialActionKind.Play or
+                MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read;
+
+        static Quaternion CameraFacingRotation(Vector3 position)
+        {
+            Camera camera = Camera.main;
+            if (camera == null) return Quaternion.identity;
+            Vector3 toCamera = camera.transform.position - position;
+            return toCamera.sqrMagnitude > 0.0001f
+                ? Quaternion.LookRotation(toCamera.normalized, Vector3.up)
+                : Quaternion.identity;
+        }
 
         static Vector3 ActionAccentWorldOffsetFor(MoonlightSpatialActionKind kind) => kind switch
         {
@@ -1260,50 +1577,100 @@ namespace MoonlightMagicHouse
         static float MaximumAxis(Vector3 value) =>
             Mathf.Max(value.x, Mathf.Max(value.y, value.z));
 
-        static Quaternion ActionAccentRotationFor(MoonlightSpatialActionKind kind, float t)
+        static Quaternion ActionAccentRotationFor(MoonlightSpatialActionKind kind, int activityStep, float t)
         {
             float wave = Mathf.Sin(Mathf.Clamp01(t) * Mathf.PI * 2f);
-            return kind switch
+            int step = Mathf.Clamp(activityStep, 0, 3);
+            return (kind, step) switch
             {
-                MoonlightSpatialActionKind.Cook => Quaternion.Euler(0f, 0f, 12f + t * 300f),
-                MoonlightSpatialActionKind.Play => Quaternion.Euler(0f, t * 360f, 45f),
-                MoonlightSpatialActionKind.Garden => Quaternion.Euler(0f, t * 90f, 34f + wave * 12f),
-                MoonlightSpatialActionKind.Read => Quaternion.Euler(0f, wave * 22f, 8f),
-                MoonlightSpatialActionKind.SleepCuddle => Quaternion.Euler(0f, 0f, wave * 18f),
+                (MoonlightSpatialActionKind.Cook, 1) => Quaternion.Euler(0f, 0f, t * 260f),
+                (MoonlightSpatialActionKind.Cook, _) => Quaternion.Euler(0f, 0f, 8f + wave * 10f),
+                (MoonlightSpatialActionKind.Play, 1) => Quaternion.Euler(0f, 0f, t * 300f),
+                (MoonlightSpatialActionKind.Play, 2) => Quaternion.Euler(0f, 0f, wave * 18f),
+                (MoonlightSpatialActionKind.Play, _) => Quaternion.Euler(0f, 0f, 18f + wave * 12f),
+                (MoonlightSpatialActionKind.Garden, 2) => Quaternion.Euler(0f, 0f, -8f + wave * 8f),
+                (MoonlightSpatialActionKind.Garden, _) => Quaternion.Euler(0f, 0f, wave * 10f),
+                (MoonlightSpatialActionKind.Read, 1) => Quaternion.Euler(0f, wave * 7f, wave * 14f),
+                (MoonlightSpatialActionKind.Read, _) => Quaternion.Euler(0f, wave * 5f, wave * 7f),
+                (MoonlightSpatialActionKind.SleepCuddle, _) => Quaternion.Euler(0f, 0f, wave * 18f),
                 _ => Quaternion.identity
             };
         }
 
         public static bool ValidateActionVisualSignatureContract(out string detail)
         {
-            var samples = new[]
+            string[] expectedSignatures =
             {
-                (MoonlightSpatialActionKind.Cook, ""),
-                (MoonlightSpatialActionKind.Play, ""),
-                (MoonlightSpatialActionKind.Garden, ""),
-                (MoonlightSpatialActionKind.Read, ""),
-                (MoonlightSpatialActionKind.SleepCuddle, "Resting"),
-                (MoonlightSpatialActionKind.SleepCuddle, "Cuddled")
+                "cook-scoop", "cook-whisk", "cook-cookie-tray", "cook-icing",
+                "play-star-ball", "play-orbit", "play-impact", "play-catch-star",
+                "garden-seed", "garden-watering", "garden-droplets", "garden-bloom",
+                "read-open-book", "read-page-fan", "read-bookmark", "read-memory-motes"
             };
             var signatures = new HashSet<string>();
+            var markers = new HashSet<string>();
             var primitives = new HashSet<PrimitiveType>();
-            float minimumAspect = float.PositiveInfinity;
+            int minimumRenderers = int.MaxValue;
+            int maximumRenderers = 0;
+            int maximumMaterials = 0;
             float minimumExtent = float.PositiveInfinity;
-            foreach (var sample in samples)
+            float maximumExtent = 0f;
+            bool correctSignatures = true;
+            bool validLayouts = true;
+            int sampleIndex = 0;
+            MoonlightSpatialActionKind[] activities =
             {
-                signatures.Add(ActionVisualSignatureFor(sample.Item1, sample.Item2));
-                primitives.Add(ActionAccentPrimitiveFor(sample.Item1));
-                Vector3 scale = ActionAccentWorldScaleFor(sample.Item1);
-                float minimumAxis = Mathf.Max(0.001f, Mathf.Min(scale.x, Mathf.Min(scale.y, scale.z)));
-                float maximumAxis = Mathf.Max(scale.x, Mathf.Max(scale.y, scale.z));
-                minimumAspect = Mathf.Min(minimumAspect, maximumAxis / minimumAxis);
-                minimumExtent = Mathf.Min(minimumExtent, maximumAxis);
+                MoonlightSpatialActionKind.Cook,
+                MoonlightSpatialActionKind.Play,
+                MoonlightSpatialActionKind.Garden,
+                MoonlightSpatialActionKind.Read
+            };
+            foreach (MoonlightSpatialActionKind activity in activities)
+            for (int step = 0; step < 4; step++)
+            {
+                string signature = ActionVisualSignatureFor(activity, step);
+                correctSignatures &= signature == expectedSignatures[sampleIndex++];
+                signatures.Add(signature);
+                markers.Add(ActionVisualSignatureMarkerFor(activity, step));
+                ActionAccentPartSpec[] layout = ActionAccentLayoutFor(activity, step);
+                var materialSlots = new HashSet<int>();
+                foreach (ActionAccentPartSpec part in layout)
+                {
+                    primitives.Add(part.Primitive);
+                    materialSlots.Add(part.MaterialSlot);
+                    validLayouts &= part.MaterialSlot >= 0 && part.MaterialSlot < 5;
+                }
+                float extent = ApproximateLayoutExtent(layout);
+                minimumRenderers = Mathf.Min(minimumRenderers, layout.Length);
+                maximumRenderers = Mathf.Max(maximumRenderers, layout.Length);
+                maximumMaterials = Mathf.Max(maximumMaterials, materialSlots.Count);
+                minimumExtent = Mathf.Min(minimumExtent, extent);
+                maximumExtent = Mathf.Max(maximumExtent, extent);
+                validLayouts &= layout.Length >= 3 && layout.Length <= 5 &&
+                    materialSlots.Count <= 5 && extent >= MinimumActionAccentExtent &&
+                    extent <= MaximumActionAccentExtent;
             }
-            detail = $"signatures={signatures.Count}/{samples.Length} primitives={primitives.Count} " +
-                $"minAspect={minimumAspect:0.00} minWorldExtent={minimumExtent:0.000} " +
-                $"renderersPerEffect=2";
-            return signatures.Count == samples.Length && primitives.Count >= 3 &&
-                minimumAspect >= 1.40f && minimumExtent >= 0.17f;
+            detail = $"signatures={signatures.Count}/16 markers={markers.Count}/16 " +
+                $"correct={correctSignatures} renderers={minimumRenderers}-{maximumRenderers}/3-5 " +
+                $"colliders=0 materials<={maximumMaterials}/5 primitives={primitives.Count} " +
+                $"extent={minimumExtent:0.000}-{maximumExtent:0.000}/" +
+                $"{MinimumActionAccentExtent:0.00}-{MaximumActionAccentExtent:0.00}";
+            return correctSignatures && signatures.Count == 16 && markers.Count == 16 &&
+                validLayouts && primitives.Count >= 3;
+        }
+
+        static float ApproximateLayoutExtent(ActionAccentPartSpec[] layout)
+        {
+            Vector3 minimum = new(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity);
+            Vector3 maximum = new(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity);
+            foreach (ActionAccentPartSpec part in layout)
+            {
+                Vector3 half = part.Primitive is PrimitiveType.Capsule or PrimitiveType.Cylinder
+                    ? new Vector3(part.Scale.x * 0.5f, part.Scale.y, part.Scale.z * 0.5f)
+                    : part.Scale * 0.5f;
+                minimum = Vector3.Min(minimum, part.Position - half);
+                maximum = Vector3.Max(maximum, part.Position + half);
+            }
+            return MaximumAxis(maximum - minimum);
         }
 
         void OnDisable()
