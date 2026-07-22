@@ -114,11 +114,17 @@ namespace MoonlightMagicHouse
             var actionFeedback = GetComponent<MoonlightActionFeedback>();
             if (actionFeedback != null && actionFeedback.IsPerformingAction)
             {
-                _touchMove = Vector2.zero;
-                SetIPadSprinting(false);
+                ClearTouchMovementState();
                 return;
             }
             _touchMove = Vector2.ClampMagnitude(move, 1f);
+        }
+
+        public void ClearTouchMovementState()
+        {
+            _touchMove = Vector2.zero;
+            _smoothedMove = Vector2.zero;
+            SetIPadSprinting(false);
         }
 
         public void SetProcessedTouchSprintForQA(Vector2 move)

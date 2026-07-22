@@ -36,7 +36,12 @@ namespace MoonlightMagicHouse
         public string LastResetReason { get; private set; } = "";
         public bool IsInputNeutral => !IsTrackingPointer && _value.sqrMagnitude <= 0.0001f &&
             KnobAnchoredPosition.sqrMagnitude <= 0.0001f &&
-            (_controller == null || _controller.TouchMove.sqrMagnitude <= 0.0001f);
+            (_controller == null || (_controller.TouchMove.sqrMagnitude <= 0.0001f &&
+                !_controller.IsIPadSprinting));
+        public string PauseReleaseQAMarker =>
+            LastResetReason == "paused" && IsInputNeutral
+                ? "MOONLIGHT_IPAD_JOYSTICK_PAUSE_RELEASE_VERIFIED"
+                : "MOONLIGHT_IPAD_JOYSTICK_PAUSE_RELEASE_NOT_VERIFIED";
         public string ActivityMovementNeutralizationQAMarker =>
             LastResetReason == "activity-accepted" && IsInputNeutral
                 ? "MOONLIGHT_IPAD_ACTIVITY_MOVEMENT_NEUTRALIZED"
@@ -90,6 +95,8 @@ namespace MoonlightMagicHouse
 
         public void ClearInputForQA() => ResetInput("qa-cleanup");
 
+        public void SimulateApplicationPauseForQA() => OnApplicationPause(true);
+
         public void OnPointerDown(PointerEventData eventData)
         {
             if (_activePointer != int.MinValue && _activePointer != eventData.pointerId) return;
@@ -119,6 +126,11 @@ namespace MoonlightMagicHouse
             if (!hasFocus) ResetInput("focus-lost");
         }
 
+        void OnApplicationPause(bool paused)
+        {
+            if (paused) ResetInput("paused");
+        }
+
         void UpdateValue(PointerEventData eventData)
         {
             if (_rect == null) return;
@@ -137,12 +149,18 @@ namespace MoonlightMagicHouse
 
         void ResetInput(string reason)
         {
-            bool hadInput = _activePointer != int.MinValue || _value.sqrMagnitude > 0.0001f;
+            EnsureController();
+            if (LastResetReason == reason && IsInputNeutral) return;
+
+            bool hadInput = _activePointer != int.MinValue || _value.sqrMagnitude > 0.0001f ||
+                KnobAnchoredPosition.sqrMagnitude > 0.0001f ||
+                (_controller != null && (_controller.TouchMove.sqrMagnitude > 0.0001f ||
+                    _controller.IsIPadSprinting));
             _activePointer = int.MinValue;
             _value = Vector2.zero;
             if (knob) knob.anchoredPosition = Vector2.zero;
             SetVisualState(false, 0f);
-            _controller?.SetTouchMove(Vector2.zero);
+            _controller?.ClearTouchMovementState();
             LastResetReason = reason;
             ResetSequence++;
             if (hadInput)

@@ -587,6 +587,58 @@ namespace MoonlightMagicHouse
                     $"after=false/{controller.CurrentMoveSpeed:0.00} drift={probeDrift:0.0000} " +
                     "activityStarted=false marker=MOONLIGHT_IPAD_SPRINT_LIVE_VERIFIED");
 
+                if (touchJoystick == null)
+                {
+                    Debug.LogError("[MoonlightGameplayQA][FAIL] ipad-joystick-pause-release " +
+                        "joystick=missing");
+                    Application.Quit(87);
+                    yield break;
+                }
+
+                touchJoystick.Bind(controller);
+                touchJoystick.ArmHeldInputForQA(Vector2.right);
+                controller.SetProcessedTouchSprintForQA(touchJoystick.Value);
+                bool pauseInputArmed = touchJoystick.IsTrackingPointer &&
+                    touchJoystick.Value.sqrMagnitude > 0.0001f &&
+                    touchJoystick.KnobAnchoredPosition.sqrMagnitude > 0.0001f &&
+                    controller.TouchMove.sqrMagnitude > 0.0001f &&
+                    controller.IsIPadSprinting;
+                int pauseResetSequenceBefore = touchJoystick.ResetSequence;
+                touchJoystick.SimulateApplicationPauseForQA();
+                int pauseResetSequenceAfter = touchJoystick.ResetSequence;
+                touchJoystick.SimulateApplicationPauseForQA();
+                bool pauseReleasePass = pauseInputArmed &&
+                    !touchJoystick.IsTrackingPointer &&
+                    touchJoystick.Value.sqrMagnitude <= 0.0001f &&
+                    touchJoystick.KnobAnchoredPosition.sqrMagnitude <= 0.0001f &&
+                    controller.TouchMove.sqrMagnitude <= 0.0001f &&
+                    !controller.IsIPadSprinting &&
+                    touchJoystick.LastResetReason == "paused" &&
+                    pauseResetSequenceAfter == pauseResetSequenceBefore + 1 &&
+                    touchJoystick.ResetSequence == pauseResetSequenceAfter &&
+                    touchJoystick.PauseReleaseQAMarker ==
+                        "MOONLIGHT_IPAD_JOYSTICK_PAUSE_RELEASE_VERIFIED";
+                if (!pauseReleasePass)
+                {
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-joystick-pause-release " +
+                        $"armed={pauseInputArmed} pointer={touchJoystick.IsTrackingPointer} " +
+                        $"value={touchJoystick.Value:F3} knob={touchJoystick.KnobAnchoredPosition:F3} " +
+                        $"touch={controller.TouchMove:F3} sprint={controller.IsIPadSprinting} " +
+                        $"reason={touchJoystick.LastResetReason} " +
+                        $"sequence={pauseResetSequenceBefore}/{pauseResetSequenceAfter}/" +
+                        $"{touchJoystick.ResetSequence} marker={touchJoystick.PauseReleaseQAMarker}");
+                    Application.Quit(87);
+                    yield break;
+                }
+                Debug.Log($"[MoonlightGameplayQA][PASS] ipad-joystick-pause-release " +
+                    $"armed={pauseInputArmed} pointer={touchJoystick.IsTrackingPointer} " +
+                    $"value={touchJoystick.Value:F3} knob={touchJoystick.KnobAnchoredPosition:F3} " +
+                    $"touch={controller.TouchMove:F3} sprint={controller.IsIPadSprinting} " +
+                    $"reason={touchJoystick.LastResetReason} " +
+                    $"sequence={pauseResetSequenceBefore}/{pauseResetSequenceAfter}/" +
+                    $"{touchJoystick.ResetSequence} " +
+                    "marker=MOONLIGHT_IPAD_JOYSTICK_PAUSE_RELEASE_VERIFIED");
+
                 var activeNavigationZones = FindObjectsByType<MoonlightSpatialActionZone>(
                         FindObjectsSortMode.None)
                     .Where(candidate => candidate != null && candidate.gameObject.activeInHierarchy)
