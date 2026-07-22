@@ -516,6 +516,17 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-joystick-response {joystickResponseDetail} " +
                 "marker=MOONLIGHT_IPAD_JOYSTICK_RESPONSE_CONTRACT_VERIFIED");
+            if (!MoonlightPlayerController.ValidateTouchCameraRelativeContract(
+                    out string cameraRelativeTouchDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] touch-camera-relative-contract " +
+                    cameraRelativeTouchDetail);
+                Application.Quit(90);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] touch-camera-relative-contract " +
+                $"{cameraRelativeTouchDetail} " +
+                $"marker={MoonlightPlayerController.TouchCameraRelativeContractMarker}");
             if (!controller.ValidateIPadSprintRuntimeContract(out string sprintDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-sprint-contract {sprintDetail}");

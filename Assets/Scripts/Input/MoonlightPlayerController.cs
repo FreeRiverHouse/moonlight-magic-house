@@ -10,6 +10,8 @@ namespace MoonlightMagicHouse
         public const float IPadSprintSpeedMultiplier = 1.45f;
         public const float IPadSprintVisualMultiplier = 1.30f;
         public const string IPadSprintReadyMarker = "MOONLIGHT_IPAD_SPRINT_READY";
+        public const string TouchCameraRelativeContractMarker =
+            "MOONLIGHT_TOUCH_CAMERA_RELATIVE_CONTRACT_VERIFIED";
 
         [SerializeField] float moveSpeed = DefaultMoveSpeed;
         [SerializeField] Rect roomBounds = new Rect(-4.2f, -3.25f, 8.4f, 6.5f);
@@ -96,9 +98,21 @@ namespace MoonlightMagicHouse
 
             float movementThresholdSquared = MovementInputThreshold * MovementInputThreshold;
             bool usingTouchInput = _touchMove.sqrMagnitude > movementThresholdSquared;
-            var move = usingTouchInput ? _touchMove : ReadKeyboardMove();
+            Vector2 move;
+            if (usingTouchInput)
+            {
+                var mainCamera = Camera.main;
+                move = ResolveTouchMoveCameraRelative(
+                    _touchMove,
+                    mainCamera != null ? mainCamera.transform.forward : Vector3.zero,
+                    mainCamera != null ? mainCamera.transform.right : Vector3.zero);
+            }
+            else
+            {
+                move = ReadKeyboardMove();
+            }
             move = Vector2.ClampMagnitude(move, 1f);
-            SetIPadSprinting(ShouldSprint(move.magnitude, usingTouchInput));
+            SetIPadSprinting(ShouldSprint(_touchMove.magnitude, usingTouchInput));
 
             var delta = new Vector3(move.x, 0f, move.y) * (CurrentMoveSpeed * Time.deltaTime);
             bool clamped = !TryMove(delta);
@@ -137,6 +151,67 @@ namespace MoonlightMagicHouse
 
         public static bool ShouldSprint(float processedTouchMagnitude, bool isTouchInput) =>
             isTouchInput && processedTouchMagnitude >= IPadSprintProcessedInputThreshold;
+
+        public static Vector2 ResolveTouchMoveCameraRelative(
+            Vector2 touchMove,
+            Vector3 cameraForward,
+            Vector3 cameraRight)
+        {
+            Vector2 boundedTouch = Vector2.ClampMagnitude(touchMove, 1f);
+            var forwardXZ = new Vector2(cameraForward.x, cameraForward.z);
+            var rightXZ = new Vector2(cameraRight.x, cameraRight.z);
+            if (!IsFinite(forwardXZ) || !IsFinite(rightXZ) ||
+                forwardXZ.sqrMagnitude <= 0.000001f || rightXZ.sqrMagnitude <= 0.000001f)
+                return boundedTouch;
+
+            forwardXZ.Normalize();
+            rightXZ -= forwardXZ * Vector2.Dot(rightXZ, forwardXZ);
+            if (!IsFinite(rightXZ) || rightXZ.sqrMagnitude <= 0.000001f)
+                return boundedTouch;
+
+            rightXZ.Normalize();
+            return Vector2.ClampMagnitude(
+                rightXZ * boundedTouch.x + forwardXZ * boundedTouch.y,
+                1f);
+        }
+
+        public static bool ValidateTouchCameraRelativeContract(out string detail)
+        {
+            var cameraForward = new Vector3(3f, 7f, 4f);
+            var cameraRight = new Vector3(5f, 4f, -2f);
+            var expectedForward = new Vector2(0.6f, 0.8f);
+            var expectedRight = new Vector2(0.8f, -0.6f);
+
+            Vector2 resolvedUp = ResolveTouchMoveCameraRelative(
+                Vector2.up * 2f, cameraForward, cameraRight);
+            Vector2 resolvedRight = ResolveTouchMoveCameraRelative(
+                Vector2.right, cameraForward, cameraRight);
+            var halfInput = new Vector2(0.3f, 0.4f);
+            Vector2 resolvedHalf = ResolveTouchMoveCameraRelative(
+                halfInput, cameraForward, cameraRight);
+            Vector2 missingCameraFallback = ResolveTouchMoveCameraRelative(
+                halfInput, Vector3.zero, Vector3.zero);
+            Vector2 degenerateCameraFallback = ResolveTouchMoveCameraRelative(
+                halfInput, Vector3.forward, Vector3.forward);
+
+            float upDot = Vector2.Dot(resolvedUp.normalized, expectedForward);
+            float rightDot = Vector2.Dot(resolvedRight.normalized, expectedRight);
+            float headingErrorBefore = Vector2.Angle(Vector2.up, expectedForward);
+            float headingErrorAfter = Vector2.Angle(resolvedUp, expectedForward);
+            bool unitMagnitudePass = Mathf.Abs(resolvedUp.magnitude - 1f) <= 0.0001f &&
+                Mathf.Abs(resolvedRight.magnitude - 1f) <= 0.0001f;
+            bool halfMagnitudePass = Mathf.Abs(resolvedHalf.magnitude - halfInput.magnitude) <= 0.0001f;
+            bool fallbackPass = Vector2.Distance(missingCameraFallback, halfInput) <= 0.0001f &&
+                Vector2.Distance(degenerateCameraFallback, halfInput) <= 0.0001f;
+
+            detail = $"upDot={upDot:0.0000} rightDot={rightDot:0.0000} " +
+                $"unitMagnitude={resolvedUp.magnitude:0.0000}/{resolvedRight.magnitude:0.0000} " +
+                $"halfMagnitude={resolvedHalf.magnitude:0.0000}/{halfInput.magnitude:0.0000} " +
+                $"fallback={fallbackPass} headingErrorBefore={headingErrorBefore:0.00}deg " +
+                $"headingErrorAfter={headingErrorAfter:0.00}deg";
+            return upDot >= 0.999f && rightDot >= 0.999f && unitMagnitudePass &&
+                halfMagnitudePass && fallbackPass;
+        }
 
         public static bool ValidateIPadSprintContract(out string detail)
         {
@@ -333,6 +408,10 @@ namespace MoonlightMagicHouse
             if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow)) y += 1f;
             return Vector2.ClampMagnitude(new Vector2(x, y), 1f);
         }
+
+        static bool IsFinite(Vector2 value) =>
+            !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
+            !float.IsNaN(value.y) && !float.IsInfinity(value.y);
 
         void SetIPadSprinting(bool sprinting)
         {
