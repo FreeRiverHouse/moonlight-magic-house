@@ -17,6 +17,21 @@ namespace MoonlightMagicHouse
         Vector3  _startPos;
         Quaternion _startRotation;
 
+        public Vector3 SuspendForFreeHop()
+        {
+            Vector3 offset = transform.localPosition - _startPos;
+            enabled = false;
+            return offset;
+        }
+
+        public void ResumeFromNeutralAfterFreeHop(bool enableBob)
+        {
+            _t = 0f;
+            transform.localPosition = _startPos;
+            if (enableBob) transform.localRotation = _startRotation;
+            enabled = enableBob;
+        }
+
         void Start()
         {
             _startPos = transform.localPosition;

@@ -62,6 +62,12 @@ namespace MoonlightMagicHouse
 
         public bool HasAction => CurrentZone != null;
 
+        public void RescanNowForQA()
+        {
+            _zones = FindObjectsByType<MoonlightSpatialActionZone>(FindObjectsSortMode.None);
+            ScanNearestZone();
+        }
+
         public string ExecuteCurrent()
         {
             if (CurrentZone == null)

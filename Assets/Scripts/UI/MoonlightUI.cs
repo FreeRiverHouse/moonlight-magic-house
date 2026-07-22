@@ -70,6 +70,7 @@ namespace MoonlightMagicHouse
         TMP_Text _iPadNavigationLabel;
         RectTransform _iPadJoystickRect;
         MoonlightGesturePad _gesturePad;
+        MoonlightPlayerController _freeHopController;
         bool _iPadLayoutActive;
         bool _roomNavigationLocked;
         bool _activityPresentationWasVisible;
@@ -79,6 +80,8 @@ namespace MoonlightMagicHouse
         int _lastQAScreenHeight;
         Rect _lastQASafeArea;
         bool _qaReportPending;
+        bool _freeHopAvailable;
+        string _freeHopBlockReason = "";
 
         static readonly Vector2 IPadMinimumTouchTarget = new Vector2(96f, 88f);
         public const float NavigationCueSeparationPaddingPixels = 8f;
@@ -254,6 +257,14 @@ namespace MoonlightMagicHouse
         public string ActionButtonQAText => actionBtnLabel != null ? actionBtnLabel.text : "";
         public string ContextResultQAText => resultLabel != null ? resultLabel.text : "";
         public bool ActionButtonQAInteractable => actionBtn != null && actionBtn.interactable;
+        public bool FreeHopAvailable => _freeHopAvailable;
+        public string FreeHopBlockReason => _freeHopBlockReason;
+        public string FreeHopQAMarker => _iPadLayoutActive && _freeHopAvailable &&
+            actionBtn != null && actionBtn.gameObject.activeSelf && actionBtn.interactable &&
+            actionBtnLabel != null && actionBtnLabel.text == "TAP\nHOP" &&
+            ActionTouchTargetIsInsideSafeArea && VisibleTextDoesNotOverflow(actionBtnLabel)
+                ? "MOONLIGHT_IPAD_FREE_HOP_UI_READY"
+                : "MOONLIGHT_IPAD_FREE_HOP_UI_UNAVAILABLE";
         public bool FeedButtonIsHidden => feedBtn == null || !feedBtn.gameObject.activeSelf;
         public Rect ActionTouchTargetScreenRect => ScreenRect(actionBtn != null
             ? actionBtn.transform as RectTransform
@@ -486,15 +497,22 @@ namespace MoonlightMagicHouse
                 interactor != null && interactor.CurrentZone != null &&
                 interactor.CurrentZone.Kind == activityStage.CurrentKind;
             bool busy = performing || coolingDown || presenting;
+            _freeHopAvailable = EvaluateFreeHopAvailability(moonlight, interactor, feedback,
+                activityStage, out _freeHopBlockReason);
+            if (hasAction && _freeHopController != null && _freeHopController.IsFreeHopping)
+                _freeHopController.CancelFreeHopForContextAction();
+            bool freeHopInProgress = _iPadLayoutActive && _freeHopController != null &&
+                _freeHopController.IsFreeHopping;
             RefreshRoomNavigationState(interactor, presenting, busy);
             RefreshIPadNavigationCue(interactor, busy);
             _gesturePad?.SetGestureGuide(
                 interactor?.CurrentZone != null ? interactor.CurrentZone.RequiredGesture : MoonlightGestureKind.Tap,
-                _iPadLayoutActive && hasAction && !busy);
+                _iPadLayoutActive && !busy && (hasAction || _freeHopAvailable));
             if (actionBtn != null)
             {
-                actionBtn.gameObject.SetActive(hasAction || busy);
-                actionBtn.interactable = hasAction && !busy;
+                actionBtn.gameObject.SetActive(hasAction || busy || _freeHopAvailable ||
+                    freeHopInProgress);
+                actionBtn.interactable = !busy && (hasAction || _freeHopAvailable);
                 if (actionBtn.image != null)
                     actionBtn.image.color = ActionColor(interactor != null ? interactor.CurrentZone : null, busy);
             }
@@ -502,7 +520,8 @@ namespace MoonlightMagicHouse
             {
                 if (_iPadLayoutActive)
                     RefreshIPadActivityText(moonlight, interactor, feedback, activityStage,
-                        hasAction, performing, coolingDown, presenting);
+                        hasAction, performing, coolingDown, presenting, _freeHopAvailable,
+                        freeHopInProgress);
                 else
                 {
                     if (presenting) actionBtnLabel.text = "COMPLETE";
@@ -608,7 +627,8 @@ namespace MoonlightMagicHouse
 
         void RefreshIPadActivityText(MoonlightCharacter moonlight, MoonlightSpatialInteractor interactor,
             MoonlightActionFeedback feedback, MoonlightActivityStage activityStage,
-            bool hasAction, bool performing, bool coolingDown, bool presenting)
+            bool hasAction, bool performing, bool coolingDown, bool presenting,
+            bool freeHopAvailable, bool freeHopInProgress)
         {
             var zone = interactor != null ? interactor.CurrentZone : null;
             int step = 0;
@@ -688,6 +708,22 @@ namespace MoonlightMagicHouse
                 }
                 _activityPhaseMarker = "";
             }
+            else if (freeHopAvailable)
+            {
+                if (contextLabel != null)
+                    contextLabel.text = CompactDiscoveryPrompt(interactor);
+                actionBtnLabel.text = "TAP\nHOP";
+                _gestureCommandMarker = "TAP HOP";
+                _activityPhaseMarker = "";
+            }
+            else if (freeHopInProgress)
+            {
+                if (contextLabel != null)
+                    contextLabel.text = CompactDiscoveryPrompt(interactor);
+                actionBtnLabel.text = "HOP";
+                _gestureCommandMarker = "HOP ACTIVE";
+                _activityPhaseMarker = "";
+            }
             else
             {
                 if (contextLabel != null)
@@ -740,6 +776,25 @@ namespace MoonlightMagicHouse
         {
             requiredSteps = Mathf.Max(1, requiredSteps);
             return $"{Mathf.Clamp(step, 1, requiredSteps)}/{requiredSteps}";
+        }
+
+        public static bool ValidateFreeHopUIContract(out string detail)
+        {
+            const string label = "TAP\nHOP";
+            bool labelPass = label.Length == 7 && label.Split('\n').Length == 2 &&
+                label != "JUMP";
+            bool available = MoonlightPlayerController.ShouldAllowFreeHop(
+                true, false, false, false, false);
+            bool contextPriority = !MoonlightPlayerController.ShouldAllowFreeHop(
+                true, true, false, false, false);
+            bool desktopUnchanged = !MoonlightPlayerController.ShouldAllowFreeHop(
+                false, false, false, false, false);
+            bool touchTarget = IPadMinimumTouchTarget.x >= 96f &&
+                IPadMinimumTouchTarget.y >= 88f;
+            detail = $"label={label.Replace('\n', '/')} lines=2 available={available} " +
+                $"contextPriority={contextPriority} desktop={desktopUnchanged} " +
+                $"target={IPadMinimumTouchTarget.x:0}x{IPadMinimumTouchTarget.y:0}";
+            return labelPass && available && contextPriority && desktopUnchanged && touchTarget;
         }
 
         public static bool ValidateIPadProgressFeedbackContract(out string detail)
@@ -1268,10 +1323,87 @@ namespace MoonlightMagicHouse
                 : null;
             if (interactor == null) return;
 
+            var controller = interactor.GetComponent<MoonlightPlayerController>();
+            controller?.CancelFreeHopForContextAction();
+
             var result = interactor.ExecuteCurrent();
             ShowContextResult(result);
             if (MoonlightGameManager.Instance?.moonlight != null)
                 Refresh(MoonlightGameManager.Instance.moonlight);
+        }
+
+        bool EvaluateFreeHopAvailability(MoonlightCharacter moonlight,
+            MoonlightSpatialInteractor interactor, MoonlightActionFeedback feedback,
+            MoonlightActivityStage activityStage, out string reason)
+        {
+            if (moonlight == null || interactor == null)
+            {
+                reason = "INPUT STATE NOT READY";
+                return false;
+            }
+
+            if (_freeHopController == null || _freeHopController.gameObject != moonlight.gameObject)
+                _freeHopController = moonlight.GetComponent<MoonlightPlayerController>();
+            if (_freeHopController == null)
+            {
+                reason = "PLAYER NOT READY";
+                return false;
+            }
+
+            bool activityBusy = (feedback != null && !feedback.CanBeginAction) ||
+                (activityStage != null && activityStage.IsLingering);
+            bool storyModalOpen = StoryPageUI.Instance != null && StoryPageUI.Instance.IsOpen;
+            return _freeHopController.CanBeginFreeHop(_iPadLayoutActive,
+                interactor.CurrentZone != null, activityBusy, storyModalOpen, out reason);
+        }
+
+        public bool CanBeginFreeHop(out string reason)
+        {
+            var moonlight = MoonlightGameManager.Instance?.moonlight;
+            var interactor = moonlight != null
+                ? moonlight.GetComponent<MoonlightSpatialInteractor>()
+                : null;
+            var feedback = moonlight != null
+                ? moonlight.GetComponent<MoonlightActionFeedback>()
+                : null;
+            var activityStage = moonlight != null
+                ? moonlight.GetComponent<MoonlightActivityStage>()
+                : null;
+            return EvaluateFreeHopAvailability(moonlight, interactor, feedback,
+                activityStage, out reason);
+        }
+
+        public bool TryExecuteFreeHop(out string reason)
+        {
+            var moonlight = MoonlightGameManager.Instance?.moonlight;
+            var interactor = moonlight != null
+                ? moonlight.GetComponent<MoonlightSpatialInteractor>()
+                : null;
+            var feedback = moonlight != null
+                ? moonlight.GetComponent<MoonlightActionFeedback>()
+                : null;
+            var activityStage = moonlight != null
+                ? moonlight.GetComponent<MoonlightActivityStage>()
+                : null;
+            if (moonlight == null || interactor == null)
+            {
+                reason = "INPUT STATE NOT READY";
+                return false;
+            }
+
+            if (_freeHopController == null || _freeHopController.gameObject != moonlight.gameObject)
+                _freeHopController = moonlight.GetComponent<MoonlightPlayerController>();
+            if (_freeHopController == null)
+            {
+                reason = "PLAYER NOT READY";
+                return false;
+            }
+
+            bool activityBusy = (feedback != null && !feedback.CanBeginAction) ||
+                (activityStage != null && activityStage.IsLingering);
+            bool storyModalOpen = StoryPageUI.Instance != null && StoryPageUI.Instance.IsOpen;
+            return _freeHopController.TryBeginFreeHop(_iPadLayoutActive,
+                interactor.CurrentZone != null, activityBusy, storyModalOpen, out reason);
         }
 
         public void ExecuteContextGesture(MoonlightGestureKind gesture, float score,
@@ -1289,6 +1421,8 @@ namespace MoonlightMagicHouse
             if (interactor == null || interactor.CurrentZone == null) return;
 
             var zone = interactor.CurrentZone;
+            moonlight.GetComponent<MoonlightPlayerController>()
+                ?.CancelFreeHopForContextAction();
             string result = zone.ExecuteGesture(moonlight, gesture, sample,
                 acceptedHapticAlreadyPlayed);
             if (zone.LastGesturePassed && zone.RequiredSteps > 1)

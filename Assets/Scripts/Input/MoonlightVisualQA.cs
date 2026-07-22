@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.EventSystems;
 
 namespace MoonlightMagicHouse
 {
@@ -521,6 +522,24 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-live-hold-readiness " +
                 $"{liveHoldReadinessDetail} " +
                 "marker=MOONLIGHT_IPAD_LIVE_HOLD_STATIC_CONTRACT_VERIFIED");
+            bool freeHopControllerStatic =
+                MoonlightPlayerController.ValidateFreeHopStaticContract(
+                    out string freeHopControllerDetail);
+            bool freeHopGestureStatic = MoonlightGesturePad.ValidateFreeHopGestureContract(
+                out string freeHopGestureDetail);
+            bool freeHopUIStatic = MoonlightUI.ValidateFreeHopUIContract(
+                out string freeHopUIDetail);
+            if (!freeHopControllerStatic || !freeHopGestureStatic || !freeHopUIStatic)
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-free-hop-static " +
+                    $"controller=({freeHopControllerDetail}) gesture=({freeHopGestureDetail}) " +
+                    $"ui=({freeHopUIDetail})");
+                Application.Quit(132);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-free-hop-static " +
+                $"controller=({freeHopControllerDetail}) gesture=({freeHopGestureDetail}) " +
+                $"ui=({freeHopUIDetail}) marker=MOONLIGHT_IPAD_FREE_HOP_STATIC_VERIFIED");
             if (!MoonlightGesturePad.ValidateIPadCoordinateContract(out string coordinateDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] gesture-coordinates {coordinateDetail}");
@@ -994,6 +1013,315 @@ namespace MoonlightMagicHouse
                     $"promptOffset={ui.ActivityPromptCenterOffsetPixels:0.0} " +
                     $"roomNav={ui.RoomNavigationQAMarker} " +
                     "marker=MOONLIGHT_IPAD_HUD_VERIFIED");
+
+                Canvas.ForceUpdateCanvases();
+                yield return null;
+                bool freeHopAvailabilityPass = spatialInteractor.CurrentZone == null &&
+                    ui.FreeHopAvailable && ui.ActionButtonQAInteractable &&
+                    ui.ActionButtonQAText == "TAP\nHOP" &&
+                    ui.ActionTouchTargetIsInsideSafeArea &&
+                    ui.VisibleActionTextDoesNotOverflow &&
+                    ui.FreeHopQAMarker == "MOONLIGHT_IPAD_FREE_HOP_UI_READY";
+                if (!freeHopAvailabilityPass)
+                {
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-free-hop-availability " +
+                        $"zone={spatialInteractor.CurrentZone?.DisplayName ?? "none"} " +
+                        $"available={ui.FreeHopAvailable} reason={ui.FreeHopBlockReason} " +
+                        $"interactable={ui.ActionButtonQAInteractable} " +
+                        $"label={ui.ActionButtonQAText.Replace('\n', '/')} " +
+                        $"safe={ui.ActionTouchTargetIsInsideSafeArea} " +
+                        $"overflow={ui.VisibleActionTextDoesNotOverflow} marker={ui.FreeHopQAMarker}");
+                    Application.Quit(133);
+                    yield break;
+                }
+
+                int freeHopStartsBefore = controller.FreeHopStartCount;
+                bool lowTapRejected = !pad.SubmitSynthetic(MoonlightGestureKind.Tap,
+                    MoonlightGesturePad.FreeHopTapPassingScore - 0.01f) &&
+                    pad.LastRejectionReason == "TAP TO HOP" &&
+                    controller.FreeHopStartCount == freeHopStartsBefore;
+                bool desktopRejected = !controller.TryBeginFreeHop(false, false, false,
+                    false, out string desktopHopReason) && desktopHopReason == "IPAD ONLY";
+                bool contextRejected = !controller.TryBeginFreeHop(true, true, false,
+                    false, out string contextHopReason) &&
+                    contextHopReason == "CONTEXT ACTION AVAILABLE";
+                bool busyRejected = !controller.TryBeginFreeHop(true, false, true,
+                    false, out string busyHopReason) && busyHopReason == "ACTIVITY BUSY";
+                bool modalRejected = !controller.TryBeginFreeHop(true, false, false,
+                    true, out string modalHopReason) && modalHopReason == "STORY OPEN";
+                if (!lowTapRejected || !desktopRejected || !contextRejected ||
+                    !busyRejected || !modalRejected ||
+                    controller.FreeHopStartCount != freeHopStartsBefore)
+                {
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-free-hop-rejections " +
+                        $"lowTap={lowTapRejected}/{pad.LastRejectionReason} " +
+                        $"desktop={desktopRejected}/{desktopHopReason} " +
+                        $"context={contextRejected}/{contextHopReason} " +
+                        $"busy={busyRejected}/{busyHopReason} modal={modalRejected}/{modalHopReason} " +
+                        $"starts={freeHopStartsBefore}/{controller.FreeHopStartCount}");
+                    Application.Quit(134);
+                    yield break;
+                }
+
+                var freeHopFeedback = moonlight.GetComponent<MoonlightActionFeedback>();
+                var freeHopStage = moonlight.GetComponent<MoonlightActivityStage>();
+                var freeHopCollider = controller.GetComponent<CapsuleCollider>();
+                float rootYBeforeHop = controller.transform.position.y;
+                float colliderCenterYBeforeHop = freeHopCollider != null
+                    ? freeHopCollider.bounds.center.y
+                    : float.NaN;
+                Vector3 movementStart = controller.transform.position;
+                float baseSpeedBeforeHop = controller.BaseMoveSpeed;
+                float currentSpeedBeforeHop = controller.CurrentMoveSpeed;
+                float wonderBeforeHop = moonlight.stats.wonder;
+                float warmthBeforeHop = moonlight.stats.warmth;
+                float restBeforeHop = moonlight.stats.rest;
+                float magicBeforeHop = moonlight.stats.magic;
+                float hungerBeforeHop = moonlight.stats.hunger;
+                int xpBeforeHop = moonlight.xp;
+                int coinsBeforeHop = moonlight.coins;
+                int activityStepBeforeHop = freeHopFeedback != null
+                    ? freeHopFeedback.ActivityStep
+                    : 0;
+                int activityRequiredBeforeHop = freeHopFeedback != null
+                    ? freeHopFeedback.ActivityRequiredSteps
+                    : 0;
+                float activityProgressBeforeHop = freeHopFeedback != null
+                    ? freeHopFeedback.ActionProgress01
+                    : 0f;
+                var progressZones = FindObjectsByType<MoonlightSpatialActionZone>(
+                    FindObjectsSortMode.None);
+                int[] progressBeforeHop = progressZones.Select(zone => zone.ProgressStep).ToArray();
+
+                controller.SetTouchMove(Vector2.right * 0.20f);
+                var primaryPointer = new PointerEventData(EventSystem.current)
+                {
+                    pointerId = 7001,
+                    position = RectTransformUtility.WorldToScreenPoint(null,
+                        ui.actionBtn.transform.position)
+                };
+                var secondaryPointer = new PointerEventData(EventSystem.current)
+                {
+                    pointerId = 7002,
+                    position = primaryPointer.position
+                };
+                int multitouchRejectionsBefore = pad.MultitouchRejectionCount;
+                pad.OnPointerDown(primaryPointer);
+                bool primaryArmed = pad.IsTrackingGesture &&
+                    pad.ActivePointerIdForQA == primaryPointer.pointerId;
+                pad.OnPointerDown(secondaryPointer);
+                bool multitouchPass = primaryArmed && pad.IsTrackingGesture &&
+                    pad.ActivePointerIdForQA == primaryPointer.pointerId &&
+                    pad.MultitouchRejectionCount == multitouchRejectionsBefore + 1 &&
+                    pad.LastRejectionReason == "MULTITOUCH BLOCKED";
+                if (!multitouchPass)
+                {
+                    controller.ClearTouchMovementState();
+                    pad.OnCancel(null);
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-free-hop-multitouch " +
+                        $"armed={primaryArmed} tracking={pad.IsTrackingGesture} " +
+                        $"pointer={pad.ActivePointerIdForQA}/{primaryPointer.pointerId} " +
+                        $"rejections={multitouchRejectionsBefore}/{pad.MultitouchRejectionCount} " +
+                        $"reason={pad.LastRejectionReason}");
+                    Application.Quit(135);
+                    yield break;
+                }
+
+                pad.OnPointerUp(primaryPointer);
+                bool hopStarted = controller.IsFreeHopping &&
+                    controller.FreeHopStartCount == freeHopStartsBefore + 1;
+                yield return null;
+                bool hopFeedbackPersisted = ui.actionBtn.gameObject.activeSelf &&
+                    pad.isActiveAndEnabled && pad.IsResultFeedbackActive;
+                bool repeatRejected = !pad.SubmitSynthetic(MoonlightGestureKind.Tap, 0.95f) &&
+                    pad.LastRejectionReason == "HOP IN PROGRESS" &&
+                    controller.FreeHopStartCount == freeHopStartsBefore + 1;
+                float hopDeadline = Time.time + 1.2f;
+                float observedVisualPeak = controller.CurrentFreeHopAppliedOffsetY;
+                while (controller.IsFreeHopping && Time.time < hopDeadline)
+                {
+                    yield return null;
+                    observedVisualPeak = Mathf.Max(observedVisualPeak,
+                        controller.CurrentFreeHopAppliedOffsetY);
+                }
+                controller.ClearTouchMovementState();
+
+                float movementDistance = Vector2.Distance(
+                    new Vector2(movementStart.x, movementStart.z),
+                    new Vector2(controller.transform.position.x, controller.transform.position.z));
+                bool hopMotionPass = hopStarted && hopFeedbackPersisted && repeatRejected &&
+                    controller.LastFreeHopCompleted && !controller.IsFreeHopping &&
+                    Mathf.Abs(controller.LastFreeHopPeakHeight -
+                        MoonlightPlayerController.FreeHopHeight) <= 0.001f &&
+                    controller.LastFreeHopLandingError <=
+                        MoonlightPlayerController.FreeHopLandingTolerance &&
+                    controller.LastFreeHopRootVerticalDrift <=
+                        MoonlightPlayerController.FreeHopLandingTolerance &&
+                    observedVisualPeak >= MoonlightPlayerController.FreeHopHeight - 0.01f &&
+                    controller.CurrentFreeHopAppliedOffsetY <=
+                        MoonlightPlayerController.FreeHopLandingTolerance &&
+                    Mathf.Abs(controller.transform.position.y - rootYBeforeHop) <= 0.001f &&
+                    (freeHopCollider == null || Mathf.Abs(freeHopCollider.bounds.center.y -
+                        colliderCenterYBeforeHop) <= 0.001f) && movementDistance >= 0.02f &&
+                    controller.FreeHopQAMarker == MoonlightPlayerController.FreeHopReadyMarker;
+                if (!hopMotionPass)
+                {
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-free-hop-motion " +
+                        $"started={hopStarted} feedback={hopFeedbackPersisted} " +
+                        $"repeat={repeatRejected}/{pad.LastRejectionReason} " +
+                        $"completed={controller.LastFreeHopCompleted} active={controller.IsFreeHopping} " +
+                        $"peak={controller.LastFreeHopPeakHeight:0.000}/" +
+                        $"{MoonlightPlayerController.FreeHopHeight:0.000} " +
+                        $"landing={controller.LastFreeHopLandingError:0.0000} " +
+                        $"observedPeak={observedVisualPeak:0.000} " +
+                        $"rootDrift={controller.LastFreeHopRootVerticalDrift:0.0000} " +
+                        $"rootY={rootYBeforeHop:0.000}/{controller.transform.position.y:0.000} " +
+                        $"colliderY={colliderCenterYBeforeHop:0.000}/" +
+                        $"{(freeHopCollider != null ? freeHopCollider.bounds.center.y : float.NaN):0.000} " +
+                        $"movement={movementDistance:0.000} marker={controller.FreeHopQAMarker}");
+                    Application.Quit(138);
+                    yield break;
+                }
+
+                var handoffZone = progressZones.FirstOrDefault(zone => zone != null &&
+                    zone.isActiveAndEnabled && zone.gameObject.activeInHierarchy);
+                Vector3 handoffStartPosition = controller.transform.position;
+                bool handoffHopStarted = handoffZone != null &&
+                    pad.SubmitSynthetic(MoonlightGestureKind.Tap, 0.95f) &&
+                    controller.IsFreeHopping;
+                if (handoffHopStarted)
+                    yield return new WaitForSeconds(0.20f);
+                float handoffHeightBeforeZone = controller.CurrentFreeHopAppliedOffsetY;
+                if (handoffZone != null)
+                {
+                    controller.transform.position = new Vector3(handoffZone.transform.position.x,
+                        handoffStartPosition.y, handoffZone.transform.position.z);
+                    Physics.SyncTransforms();
+                    spatialInteractor.RescanNowForQA();
+                    yield return null;
+                }
+                bool contextHandoffPass = handoffHopStarted &&
+                    handoffHeightBeforeZone >= 0.10f &&
+                    spatialInteractor.CurrentZone == handoffZone &&
+                    !controller.IsFreeHopping &&
+                    controller.CurrentFreeHopAppliedOffsetY <=
+                        MoonlightPlayerController.FreeHopLandingTolerance;
+                controller.transform.position = handoffStartPosition;
+                Physics.SyncTransforms();
+                spatialInteractor.RescanNowForQA();
+                ui.Refresh(moonlight);
+                if (!contextHandoffPass)
+                {
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-free-hop-context-handoff " +
+                        $"started={handoffHopStarted} zone={handoffZone?.DisplayName ?? "none"} " +
+                        $"current={spatialInteractor.CurrentZone?.DisplayName ?? "none"} " +
+                        $"heightBefore={handoffHeightBeforeZone:0.000} " +
+                        $"activeAfter={controller.IsFreeHopping} " +
+                        $"heightAfter={controller.CurrentFreeHopVisualHeight:0.000}");
+                    Application.Quit(139);
+                    yield break;
+                }
+
+                // Repeat from a truly idle state so MoonlightBobber is enabled before takeoff.
+                yield return null;
+                int idleHopStartsBefore = controller.FreeHopStartCount;
+                var idleHopBobber = controller.GetComponentInChildren<MoonlightBobber>();
+                var idleHopKidAnimator = controller.GetComponentInChildren<MoonlightKidAnimator>();
+                bool idleBobberOriginalEnabled = idleHopBobber != null && idleHopBobber.enabled;
+                if (idleHopBobber != null && !idleHopBobber.enabled)
+                    idleHopBobber.ResumeFromNeutralAfterFreeHop(true);
+                bool idleVisualOwnerReady = idleHopBobber != null
+                    ? idleHopBobber.enabled
+                    : idleHopKidAnimator != null && idleHopKidAnimator.isActiveAndEnabled;
+                bool idleHopStarted = pad.SubmitSynthetic(MoonlightGestureKind.Tap, 0.95f) &&
+                    controller.IsFreeHopping &&
+                    controller.FreeHopStartCount == idleHopStartsBefore + 1;
+                bool idleBobberSuspended = idleHopBobber != null
+                    ? !idleHopBobber.enabled
+                    : idleHopKidAnimator != null && idleHopKidAnimator.isActiveAndEnabled;
+                float idleObservedVisualPeak = controller.CurrentFreeHopAppliedOffsetY;
+                float idleHopDeadline = Time.time + 1.2f;
+                while (controller.IsFreeHopping && Time.time < idleHopDeadline)
+                {
+                    yield return null;
+                    idleObservedVisualPeak = Mathf.Max(idleObservedVisualPeak,
+                        controller.CurrentFreeHopAppliedOffsetY);
+                }
+                bool idleBobberResumed = idleHopBobber != null
+                    ? idleHopBobber.enabled
+                    : idleHopKidAnimator != null && idleHopKidAnimator.isActiveAndEnabled;
+                bool idleHopPass = idleHopStarted && controller.LastFreeHopCompleted &&
+                    !controller.IsFreeHopping &&
+                    idleVisualOwnerReady && idleBobberSuspended && idleBobberResumed &&
+                    idleObservedVisualPeak >= MoonlightPlayerController.FreeHopHeight - 0.01f &&
+                    controller.LastFreeHopLandingError <=
+                        MoonlightPlayerController.FreeHopLandingTolerance &&
+                    Mathf.Abs(controller.transform.position.y - rootYBeforeHop) <= 0.001f;
+                if (idleHopBobber != null && !idleBobberOriginalEnabled)
+                    idleHopBobber.enabled = false;
+                if (!idleHopPass)
+                {
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-free-hop-idle " +
+                        $"started={idleHopStarted} completed={controller.LastFreeHopCompleted} " +
+                        $"active={controller.IsFreeHopping} " +
+                        $"bobberSuspended={idleBobberSuspended} " +
+                        $"bobberResumed={idleBobberResumed} " +
+                        $"observedPeak={idleObservedVisualPeak:0.000} " +
+                        $"landing={controller.LastFreeHopLandingError:0.0000}");
+                    Application.Quit(136);
+                    yield break;
+                }
+
+                bool zoneProgressUnchanged = progressZones.Length == progressBeforeHop.Length;
+                for (int zoneIndex = 0; zoneProgressUnchanged &&
+                        zoneIndex < progressZones.Length; zoneIndex++)
+                    zoneProgressUnchanged = progressZones[zoneIndex] != null &&
+                        progressZones[zoneIndex].ProgressStep == progressBeforeHop[zoneIndex];
+                bool invariantsPass = Approximately(controller.BaseMoveSpeed, baseSpeedBeforeHop) &&
+                    Approximately(controller.CurrentMoveSpeed, currentSpeedBeforeHop) &&
+                    Approximately(moonlight.stats.wonder, wonderBeforeHop) &&
+                    Approximately(moonlight.stats.warmth, warmthBeforeHop) &&
+                    Approximately(moonlight.stats.rest, restBeforeHop) &&
+                    Approximately(moonlight.stats.magic, magicBeforeHop) &&
+                    Approximately(moonlight.stats.hunger, hungerBeforeHop) &&
+                    moonlight.xp == xpBeforeHop && moonlight.coins == coinsBeforeHop &&
+                    (freeHopFeedback == null ||
+                        (!freeHopFeedback.IsPerformingAction &&
+                         !freeHopFeedback.IsCoolingDown &&
+                         freeHopFeedback.ActivityStep == activityStepBeforeHop &&
+                         freeHopFeedback.ActivityRequiredSteps == activityRequiredBeforeHop &&
+                         Approximately(freeHopFeedback.ActionProgress01,
+                             activityProgressBeforeHop))) &&
+                    (freeHopStage == null || !freeHopStage.IsLingering) && zoneProgressUnchanged;
+                if (!invariantsPass)
+                {
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-free-hop-invariants " +
+                        $"speed={baseSpeedBeforeHop:0.00}/{controller.BaseMoveSpeed:0.00} " +
+                        $"current={currentSpeedBeforeHop:0.00}/{controller.CurrentMoveSpeed:0.00} " +
+                        $"stats={wonderBeforeHop:0.0}/{moonlight.stats.wonder:0.0}," +
+                        $"{warmthBeforeHop:0.0}/{moonlight.stats.warmth:0.0}," +
+                        $"{restBeforeHop:0.0}/{moonlight.stats.rest:0.0}," +
+                        $"{magicBeforeHop:0.0}/{moonlight.stats.magic:0.0}," +
+                        $"{hungerBeforeHop:0.0}/{moonlight.stats.hunger:0.0} " +
+                        $"reward={xpBeforeHop}/{moonlight.xp},{coinsBeforeHop}/{moonlight.coins} " +
+                        $"activity={activityStepBeforeHop}/" +
+                        $"{(freeHopFeedback != null ? freeHopFeedback.ActivityStep : 0)} " +
+                        $"progress={activityProgressBeforeHop:0.000}/" +
+                        $"{(freeHopFeedback != null ? freeHopFeedback.ActionProgress01 : 0f):0.000} " +
+                        $"zones={zoneProgressUnchanged}");
+                    Application.Quit(137);
+                    yield break;
+                }
+                Debug.Log($"[MoonlightGameplayQA][PASS] ipad-free-hop-runtime " +
+                    $"availability=True rejections=True multitouch=True " +
+                    $"peak={controller.LastFreeHopPeakHeight:0.000}m " +
+                    $"observedPeak={observedVisualPeak:0.000}m feedback=True " +
+                    $"idlePeak={idleObservedVisualPeak:0.000}m " +
+                    $"contextHandoff=True " +
+                    $"landing={controller.LastFreeHopLandingError:0.0000}m " +
+                    $"rootDrift={controller.LastFreeHopRootVerticalDrift:0.0000}m " +
+                    $"movement={movementDistance:0.000}m invariants=True " +
+                    "marker=MOONLIGHT_IPAD_FREE_HOP_RUNTIME_VERIFIED");
             }
             else if (touchJoystick != null)
             {

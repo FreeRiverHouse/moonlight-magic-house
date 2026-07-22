@@ -198,6 +198,7 @@ namespace MoonlightMagicHouse
         const float ResultOverlayAnchorMax = 1f;
         const float ResultOverlayPeakAlpha = 0.46f;
         const bool ResultOverlayRaycastTarget = false;
+        public const float FreeHopTapPassingScore = 0.50f;
 
         readonly struct ResultFeedbackProfile
         {
@@ -247,12 +248,15 @@ namespace MoonlightMagicHouse
         bool _liveHoldReady;
         bool _liveHoldHapticPlayed;
         float _liveHoldScore;
+        bool _trackingFreeHop;
 
         public MoonlightGestureKind ActiveGesture => _gesture;
         public float LastScore { get; private set; }
         public MoonlightGestureSample LastSample { get; private set; }
         public string LastRejectionReason { get; private set; } = "";
         public bool IsTrackingGesture => _pointerId != int.MinValue;
+        public int ActivePointerIdForQA => _pointerId;
+        public int MultitouchRejectionCount { get; private set; }
         public int TraceDotPoolCount => _traceDots.Length;
         public int VisibleTraceDotCount => _traceDotCount;
         public int GuideDotPoolCount => _guideDots.Length;
@@ -266,6 +270,7 @@ namespace MoonlightMagicHouse
         public bool LiveHoldIsReady => _liveHoldReady;
         public bool LiveHoldReadinessHapticPlayed => _liveHoldHapticPlayed;
         public float LiveHoldScore => _liveHoldScore;
+        public bool IsResultFeedbackActive => _feedbackUntil > Time.unscaledTime;
         public string ResultFeedbackQAMarker =>
             ValidateResultFeedbackContract(out _) && ResultOverlayIsReady
                 ? "MOONLIGHT_IPAD_GESTURE_RESULT_FEEDBACK_READY"
@@ -387,7 +392,11 @@ namespace MoonlightMagicHouse
 
         public void OnPointerDown(PointerEventData eventData)
         {
-            if (_pointerId != int.MinValue) return;
+            if (_pointerId != int.MinValue)
+            {
+                RejectAdditionalPointer(eventData.pointerId);
+                return;
+            }
             var zone = CurrentZone();
             if (!CanAcceptGesture(zone, out string reason))
             {
@@ -397,13 +406,14 @@ namespace MoonlightMagicHouse
 
             _pointerId = eventData.pointerId;
             _startedZone = zone;
-            _gesture = zone.RequiredGesture;
+            _trackingFreeHop = zone == null;
+            _gesture = _trackingFreeHop ? MoonlightGestureKind.Tap : zone.RequiredGesture;
             _startedAt = Time.unscaledTime;
             _points.Clear();
             ResetLiveHoldReadiness(false);
             _liveHoldReadinessActive = ShouldUseLiveHoldReadiness(
                 _ui != null && _ui.IsIPadHUDLayoutActive,
-                zone.SupportsLiveHoldReadiness);
+                zone != null && zone.SupportsLiveHoldReadiness);
             ClearTrace();
             LastRejectionReason = "";
             SetTrackingVisual();
@@ -427,13 +437,21 @@ namespace MoonlightMagicHouse
             AddPoint(eventData);
             UpdateLiveHoldReadiness();
             var startedZone = _startedZone;
+            bool wasTrackingFreeHop = _trackingFreeHop;
             float duration = Time.unscaledTime - _startedAt;
             bool acceptedHapticAlreadyPlayed = _liveHoldHapticPlayed;
             _pointerId = int.MinValue;
             _startedZone = null;
+            _trackingFreeHop = false;
             ResetLiveHoldReadiness(true);
             RestoreTrackingVisual();
             RefreshGuideVisibility();
+
+            if (wasTrackingFreeHop)
+            {
+                CompleteFreeHopTap(duration);
+                return;
+            }
 
             if (startedZone == null || CurrentZone() != startedZone)
             {
@@ -469,6 +487,22 @@ namespace MoonlightMagicHouse
             LastScore = Mathf.Clamp01(score);
             LastSample = MoonlightGestureSample.Synthetic(gesture, LastScore);
             LastRejectionReason = "";
+            if (zone == null)
+            {
+                if (gesture != MoonlightGestureKind.Tap || LastScore < FreeHopTapPassingScore)
+                {
+                    Reject("TAP TO HOP");
+                    return false;
+                }
+                string freeHopReason = "INPUT NOT READY";
+                if (_ui == null || !_ui.TryExecuteFreeHop(out freeHopReason))
+                {
+                    Reject(freeHopReason);
+                    return false;
+                }
+                SetResultVisual(true, LastScore);
+                return true;
+            }
             _ui?.ExecuteContextGesture(gesture, LastSample);
             SetResultVisual(zone.LastGesturePassed, LastScore);
             return true;
@@ -493,6 +527,7 @@ namespace MoonlightMagicHouse
             bool wasTracking = _pointerId != int.MinValue;
             _pointerId = int.MinValue;
             _startedZone = null;
+            _trackingFreeHop = false;
             _points.Clear();
             ResetLiveHoldReadiness(true);
             ClearTrace();
@@ -539,8 +574,7 @@ namespace MoonlightMagicHouse
             }
             if (zone == null)
             {
-                reason = "MOVE CLOSER";
-                return false;
+                return _ui.CanBeginFreeHop(out reason);
             }
 
             var moonlight = MoonlightGameManager.Instance?.moonlight;
@@ -557,6 +591,69 @@ namespace MoonlightMagicHouse
                 return false;
             }
             return true;
+        }
+
+        void CompleteFreeHopTap(float duration)
+        {
+            if (CurrentZone() != null)
+            {
+                _points.Clear();
+                Reject("CONTEXT ACTION AVAILABLE");
+                return;
+            }
+            if (!CanAcceptGesture(null, out string reason))
+            {
+                _points.Clear();
+                Reject(reason);
+                return;
+            }
+
+            LastScore = ScoreGesture(MoonlightGestureKind.Tap, _points, duration);
+            LastSample = MoonlightGestureSample.Create(LastScore, duration, _points);
+            _points.Clear();
+            if (LastScore < FreeHopTapPassingScore)
+            {
+                Reject("TAP TO HOP");
+                return;
+            }
+            if (!_ui.TryExecuteFreeHop(out reason))
+            {
+                Reject(reason);
+                return;
+            }
+
+            LastRejectionReason = "";
+            SetResultVisual(true, LastScore);
+        }
+
+        void RejectAdditionalPointer(int pointerId)
+        {
+            if (!ShouldRejectAdditionalPointer(_pointerId, pointerId)) return;
+            MultitouchRejectionCount++;
+            LastRejectionReason = "MULTITOUCH BLOCKED";
+            Debug.Log($"[MoonlightActivityQA] gesture-rejected reason=\"{LastRejectionReason}\" " +
+                $"activePointer={_pointerId} rejectedPointer={pointerId}");
+        }
+
+        public static bool ShouldRejectAdditionalPointer(int activePointerId, int pointerId) =>
+            activePointerId != int.MinValue && activePointerId != pointerId;
+
+        public static bool ValidateFreeHopGestureContract(out string detail)
+        {
+            bool secondPointerRejected = ShouldRejectAdditionalPointer(17, 18);
+            bool samePointerRetained = !ShouldRejectAdditionalPointer(17, 17);
+            bool idlePointerAccepted = !ShouldRejectAdditionalPointer(int.MinValue, 18);
+            float goodTap = ScoreGesture(MoonlightGestureKind.Tap,
+                new[] { Vector2.zero }, 0.08f);
+            float drag = ScoreGesture(MoonlightGestureKind.Tap,
+                new[] { Vector2.zero, Vector2.right }, 0.08f);
+            bool thresholdPass = Mathf.Abs(FreeHopTapPassingScore - 0.50f) <= 0.0001f &&
+                goodTap >= FreeHopTapPassingScore && drag < FreeHopTapPassingScore;
+            detail = $"multitouch={secondPointerRejected} samePointer={samePointerRetained} " +
+                $"idlePointer={idlePointerAccepted} threshold={FreeHopTapPassingScore:0.00} " +
+                $"tap={goodTap:0.00} drag={drag:0.00}";
+            return secondPointerRejected && samePointerRetained && idlePointerAccepted &&
+                thresholdPass;
         }
 
         void Reject(string reason)

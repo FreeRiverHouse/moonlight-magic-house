@@ -3,6 +3,7 @@ using UnityEngine;
 
 namespace MoonlightMagicHouse
 {
+    [DefaultExecutionOrder(10000)]
     public class MoonlightPlayerController : MonoBehaviour
     {
         public const float MovementInputThreshold = 0.05f;
@@ -12,7 +13,11 @@ namespace MoonlightMagicHouse
         public const float IPadSprintVisualMultiplier = 1.30f;
         public const float ProceduralWholeRootBobScale = 0f;
         public const float ProceduralWholeRootSquashScale = 0f;
+        public const float FreeHopHeight = 0.32f;
+        public const float FreeHopDuration = 0.56f;
+        public const float FreeHopLandingTolerance = 0.001f;
         public const string IPadSprintReadyMarker = "MOONLIGHT_IPAD_SPRINT_READY";
+        public const string FreeHopReadyMarker = "MOONLIGHT_IPAD_FREE_HOP_READY";
         public const string TouchCameraRelativeContractMarker =
             "MOONLIGHT_TOUCH_CAMERA_RELATIVE_CONTRACT_VERIFIED";
 
@@ -52,12 +57,36 @@ namespace MoonlightMagicHouse
         readonly Collider[] _overlaps = new Collider[24];
         Vector3 _lastSafePosition;
         bool _hasSafePosition;
+        bool _isFreeHopping;
+        bool _freeHopPeakApplied;
+        float _freeHopElapsed;
+        float _freeHopRootStartY;
+        float _freeHopTakeoffOffsetY;
+        float _freeHopAppliedOffsetY;
+        bool _freeHopBobberShouldResume;
 
         public Rect RoomBounds => roomBounds;
         public Vector2 TouchMove => _touchMove;
         public float BaseMoveSpeed => moveSpeed;
         public bool IsIPadSprinting { get; private set; }
         public bool IsModalInputLocked => _modalInputLocked;
+        public bool IsFreeHopping => _isFreeHopping;
+        public int FreeHopStartCount { get; private set; }
+        public bool LastFreeHopCompleted { get; private set; }
+        public float LastFreeHopPeakHeight { get; private set; }
+        public float LastFreeHopLandingError { get; private set; } = float.MaxValue;
+        public float LastFreeHopRootVerticalDrift { get; private set; }
+        public string LastFreeHopRejectionReason { get; private set; } = "";
+        public float CurrentFreeHopVisualHeight => _visual != null
+            ? Mathf.Max(0f, _visual.localPosition.y - _visualBasePosition.y)
+            : 0f;
+        public float CurrentFreeHopAppliedOffsetY => _freeHopAppliedOffsetY;
+        public string FreeHopQAMarker => _visual != null && LastFreeHopCompleted &&
+            LastFreeHopPeakHeight >= FreeHopHeight - FreeHopLandingTolerance &&
+            LastFreeHopLandingError <= FreeHopLandingTolerance &&
+            LastFreeHopRootVerticalDrift <= FreeHopLandingTolerance
+                ? FreeHopReadyMarker
+                : "MOONLIGHT_IPAD_FREE_HOP_INCOMPLETE";
         public string ModalInputLockQAMarker => _modalInputLocked
             ? "MOONLIGHT_STORY_MODAL_INPUT_LOCKED"
             : "MOONLIGHT_STORY_MODAL_INPUT_RELEASED";
@@ -143,6 +172,7 @@ namespace MoonlightMagicHouse
         {
             if (_modalInputLocked)
             {
+                CancelFreeHop();
                 ClearTouchMovementState();
                 if (_idleBobber != null) _idleBobber.enabled = true;
                 _wasMoving = false;
@@ -154,6 +184,7 @@ namespace MoonlightMagicHouse
             bool performingAction = actionFeedback != null && actionFeedback.IsPerformingAction;
             if (performingAction)
             {
+                CancelFreeHop();
                 _touchMove = Vector2.zero;
                 _smoothedMove = Vector2.zero;
                 SetIPadSprinting(false);
@@ -236,6 +267,7 @@ namespace MoonlightMagicHouse
             ClearTouchMovementState();
             if (locked)
             {
+                CancelFreeHop();
                 _wasMoving = false;
                 if (_idleBobber != null) _idleBobber.enabled = true;
             }
@@ -253,6 +285,85 @@ namespace MoonlightMagicHouse
         }
 
         static bool ShouldBlockMovementForModal(bool modalInputLocked) => modalInputLocked;
+
+        public static bool ShouldAllowFreeHop(bool isIPadLayout, bool hasContextZone,
+            bool activityBusy, bool storyModalOpen, bool alreadyHopping) =>
+            isIPadLayout && !hasContextZone && !activityBusy && !storyModalOpen &&
+            !alreadyHopping;
+
+        public static float EvaluateFreeHopHeight(float normalizedTime)
+        {
+            float t = Mathf.Clamp01(normalizedTime);
+            return 4f * FreeHopHeight * t * (1f - t);
+        }
+
+        public static bool ValidateFreeHopStaticContract(out string detail)
+        {
+            bool available = ShouldAllowFreeHop(true, false, false, false, false);
+            bool desktopRejected = !ShouldAllowFreeHop(false, false, false, false, false);
+            bool contextRejected = !ShouldAllowFreeHop(true, true, false, false, false);
+            bool busyRejected = !ShouldAllowFreeHop(true, false, true, false, false);
+            bool modalRejected = !ShouldAllowFreeHop(true, false, false, true, false);
+            bool repeatRejected = !ShouldAllowFreeHop(true, false, false, false, true);
+            float takeoff = EvaluateFreeHopHeight(0f);
+            float peak = EvaluateFreeHopHeight(0.5f);
+            float landing = EvaluateFreeHopHeight(1f);
+            bool dimensions = Mathf.Abs(FreeHopHeight - 0.32f) <= 0.0001f &&
+                Mathf.Abs(FreeHopDuration - 0.56f) <= 0.0001f &&
+                Mathf.Abs(takeoff) <= FreeHopLandingTolerance &&
+                Mathf.Abs(peak - FreeHopHeight) <= 0.0001f &&
+                Mathf.Abs(landing) <= FreeHopLandingTolerance;
+            detail = $"available={available} desktop={desktopRejected} " +
+                $"context={contextRejected} busy={busyRejected} modal={modalRejected} " +
+                $"repeat={repeatRejected} height={FreeHopHeight:0.00}m " +
+                $"duration={FreeHopDuration:0.00}s curve={takeoff:0.000}/{peak:0.000}/{landing:0.000}";
+            return available && desktopRejected && contextRejected && busyRejected &&
+                modalRejected && repeatRejected && dimensions;
+        }
+
+        public bool CanBeginFreeHop(bool isIPadLayout, bool hasContextZone,
+            bool activityBusy, bool storyModalOpen, out string reason)
+        {
+            if (!isIPadLayout) reason = "IPAD ONLY";
+            else if (hasContextZone) reason = "CONTEXT ACTION AVAILABLE";
+            else if (activityBusy) reason = "ACTIVITY BUSY";
+            else if (storyModalOpen || _modalInputLocked) reason = "STORY OPEN";
+            else if (_isFreeHopping) reason = "HOP IN PROGRESS";
+            else if (_visual == null) reason = "VISUAL NOT READY";
+            else reason = "";
+            return string.IsNullOrEmpty(reason) && ShouldAllowFreeHop(isIPadLayout,
+                hasContextZone, activityBusy, storyModalOpen || _modalInputLocked,
+                _isFreeHopping);
+        }
+
+        public bool TryBeginFreeHop(bool isIPadLayout, bool hasContextZone,
+            bool activityBusy, bool storyModalOpen, out string reason)
+        {
+            if (!CanBeginFreeHop(isIPadLayout, hasContextZone, activityBusy,
+                    storyModalOpen, out reason))
+            {
+                LastFreeHopRejectionReason = reason;
+                return false;
+            }
+
+            _isFreeHopping = true;
+            _freeHopPeakApplied = false;
+            _freeHopElapsed = 0f;
+            _freeHopRootStartY = transform.position.y;
+            _freeHopAppliedOffsetY = 0f;
+            _freeHopBobberShouldResume = _idleBobber != null && _idleBobber.enabled;
+            _freeHopTakeoffOffsetY = _freeHopBobberShouldResume
+                ? _idleBobber.SuspendForFreeHop().y
+                : 0f;
+            LastFreeHopPeakHeight = 0f;
+            LastFreeHopLandingError = float.MaxValue;
+            LastFreeHopRootVerticalDrift = 0f;
+            LastFreeHopCompleted = false;
+            LastFreeHopRejectionReason = "";
+            FreeHopStartCount++;
+            if (_idleBobber != null) _idleBobber.enabled = false;
+            return true;
+        }
 
         public void SetProcessedTouchSprintForQA(Vector2 move)
         {
@@ -606,7 +717,7 @@ namespace MoonlightMagicHouse
             if (moving == _wasMoving) return;
 
             if (_idleBobber != null)
-                _idleBobber.enabled = !moving;
+                _idleBobber.enabled = !moving && !_isFreeHopping;
 
             Debug.Log($"[MoonlightVisualQA] movement-state state={(moving ? "moving" : "idle")} pos={transform.position:F2} input={move:F2} clamped={clamped}");
             _wasMoving = moving;
@@ -650,7 +761,11 @@ namespace MoonlightMagicHouse
             if (moving)
                 targetPosition.y += Mathf.Abs(step) * walkBobHeight * movementVisualMultiplier *
                     rootBobScale;
-            _visual.localPosition = Vector3.Lerp(_visual.localPosition, targetPosition, Time.deltaTime * visualReturnSpeed);
+            Vector3 visualPosition = Vector3.Lerp(
+                _visual.localPosition, targetPosition, Time.deltaTime * visualReturnSpeed);
+            if (_isFreeHopping)
+                visualPosition.y = targetPosition.y;
+            _visual.localPosition = visualPosition;
 
             if (CanApplyMovementScale())
             {
@@ -670,5 +785,60 @@ namespace MoonlightMagicHouse
             var actionFeedback = GetComponent<MoonlightActionFeedback>();
             return actionFeedback == null || !actionFeedback.IsCoolingDown;
         }
+
+        void LateUpdate()
+        {
+            if (!_isFreeHopping || _visual == null) return;
+
+            _freeHopElapsed += Time.deltaTime;
+            float normalizedTime = Mathf.Clamp01(_freeHopElapsed / FreeHopDuration);
+            float visualSampleTime = normalizedTime;
+            if (!_freeHopPeakApplied && normalizedTime >= 0.5f)
+            {
+                _freeHopPeakApplied = true;
+                visualSampleTime = 0.5f;
+            }
+
+            float hopHeight = EvaluateFreeHopHeight(visualSampleTime);
+            float takeoffBlend = Mathf.Clamp01(normalizedTime / 0.25f);
+            float takeoffContinuity = Mathf.Lerp(_freeHopTakeoffOffsetY, 0f, takeoffBlend);
+            _freeHopAppliedOffsetY = hopHeight + takeoffContinuity;
+            var position = _visual.localPosition;
+            position.y += _freeHopAppliedOffsetY;
+            _visual.localPosition = position;
+            LastFreeHopPeakHeight = Mathf.Max(LastFreeHopPeakHeight, hopHeight);
+            LastFreeHopRootVerticalDrift = Mathf.Max(LastFreeHopRootVerticalDrift,
+                Mathf.Abs(transform.position.y - _freeHopRootStartY));
+            if (normalizedTime < 1f) return;
+
+            _isFreeHopping = false;
+            _freeHopAppliedOffsetY = 0f;
+            LastFreeHopLandingError = Mathf.Abs(hopHeight + takeoffContinuity);
+            LastFreeHopCompleted = true;
+            if (_freeHopBobberShouldResume)
+                _idleBobber?.ResumeFromNeutralAfterFreeHop(!_wasMoving);
+            _freeHopBobberShouldResume = false;
+        }
+
+        void CancelFreeHop()
+        {
+            if (!_isFreeHopping) return;
+            _isFreeHopping = false;
+            if (_visual != null)
+            {
+                var position = _visual.localPosition;
+                position.y -= _freeHopAppliedOffsetY;
+                _visual.localPosition = position;
+            }
+            _freeHopAppliedOffsetY = 0f;
+            LastFreeHopLandingError = 0f;
+            if (_freeHopBobberShouldResume)
+                _idleBobber?.ResumeFromNeutralAfterFreeHop(!_wasMoving);
+            _freeHopBobberShouldResume = false;
+        }
+
+        public void CancelFreeHopForContextAction() => CancelFreeHop();
+
+        void OnDisable() => CancelFreeHop();
     }
 }
