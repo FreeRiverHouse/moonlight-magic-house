@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 namespace MoonlightMagicHouse
 {
@@ -14,7 +15,7 @@ namespace MoonlightMagicHouse
     }
 
     public sealed class MoonlightGesturePad : MonoBehaviour,
-        IPointerDownHandler, IDragHandler, IPointerUpHandler
+        IPointerDownHandler, IDragHandler, IPointerUpHandler, ICancelHandler
     {
         readonly List<Vector2> _points = new();
 
@@ -24,6 +25,11 @@ namespace MoonlightMagicHouse
         float _startedAt;
         int _pointerId = int.MinValue;
         MoonlightSpatialActionZone _startedZone;
+        Image _surface;
+        Color _baseColor = Color.white;
+        Vector3 _baseScale = Vector3.one;
+        float _feedbackUntil;
+        Color _feedbackColor;
 
         public MoonlightGestureKind ActiveGesture => _gesture;
         public float LastScore { get; private set; }
@@ -38,7 +44,28 @@ namespace MoonlightMagicHouse
             }
         }
 
-        void Awake() => _rect = transform as RectTransform;
+        void Awake()
+        {
+            _rect = transform as RectTransform;
+            _surface = GetComponent<Image>();
+            if (_surface != null) _baseColor = _surface.color;
+            _baseScale = transform.localScale;
+        }
+
+        void Update()
+        {
+            if (_pointerId != int.MinValue) return;
+
+            if (_surface != null)
+            {
+                float remaining = Mathf.Clamp01((_feedbackUntil - Time.unscaledTime) / 0.22f);
+                _surface.color = remaining > 0f
+                    ? Color.Lerp(_baseColor, _feedbackColor, remaining * 0.55f)
+                    : _baseColor;
+            }
+            transform.localScale = Vector3.Lerp(transform.localScale, _baseScale,
+                Time.unscaledDeltaTime * 18f);
+        }
 
         public void Bind(MoonlightUI ui) => _ui = ui;
 
@@ -58,6 +85,7 @@ namespace MoonlightMagicHouse
             _startedAt = Time.unscaledTime;
             _points.Clear();
             LastRejectionReason = "";
+            SetTrackingVisual();
             AddPoint(eventData);
         }
 
@@ -72,23 +100,29 @@ namespace MoonlightMagicHouse
             if (_pointerId != eventData.pointerId) return;
             AddPoint(eventData);
             var startedZone = _startedZone;
+            float duration = Time.unscaledTime - _startedAt;
             _pointerId = int.MinValue;
             _startedZone = null;
+            RestoreTrackingVisual();
 
             if (startedZone == null || CurrentZone() != startedZone)
             {
+                _points.Clear();
                 Reject("ZONE CHANGED");
                 return;
             }
             if (!CanAcceptGesture(startedZone, out string reason))
             {
+                _points.Clear();
                 Reject(reason);
                 return;
             }
 
-            LastScore = ScoreGesture(_gesture, _points, Time.unscaledTime - _startedAt);
+            LastScore = ScoreGesture(_gesture, _points, duration);
             Debug.Log($"[MoonlightActivityQA] gesture kind={_gesture} score={LastScore:0.00} points={_points.Count}");
             _ui?.ExecuteContextGesture(_gesture, LastScore);
+            SetResultVisual(startedZone.LastGesturePassed);
+            _points.Clear();
         }
 
         public bool SubmitSynthetic(MoonlightGestureKind gesture, float score)
@@ -104,14 +138,33 @@ namespace MoonlightMagicHouse
             LastScore = Mathf.Clamp01(score);
             LastRejectionReason = "";
             _ui?.ExecuteContextGesture(gesture, LastScore);
+            SetResultVisual(zone.LastGesturePassed);
             return true;
         }
 
-        void OnDisable()
+        public void OnCancel(BaseEventData eventData) => CancelTracking("event-cancel");
+
+        void OnDisable() => CancelTracking("disabled");
+
+        void OnApplicationFocus(bool hasFocus)
         {
+            if (!hasFocus) CancelTracking("focus-lost");
+        }
+
+        void OnApplicationPause(bool paused)
+        {
+            if (paused) CancelTracking("paused");
+        }
+
+        void CancelTracking(string reason)
+        {
+            bool wasTracking = _pointerId != int.MinValue;
             _pointerId = int.MinValue;
             _startedZone = null;
             _points.Clear();
+            RestoreTrackingVisual();
+            if (wasTracking)
+                Debug.Log($"[MoonlightActivityQA] gesture-cancelled reason={reason}");
         }
 
         void AddPoint(PointerEventData eventData)
@@ -169,7 +222,33 @@ namespace MoonlightMagicHouse
         {
             LastScore = 0f;
             LastRejectionReason = string.IsNullOrEmpty(reason) ? "INPUT BLOCKED" : reason;
+            SetResultVisual(false);
             Debug.Log($"[MoonlightActivityQA] gesture-rejected reason=\"{LastRejectionReason}\"");
+        }
+
+        void SetTrackingVisual()
+        {
+            _feedbackUntil = 0f;
+            transform.localScale = _baseScale * 1.035f;
+            if (_surface != null)
+                _surface.color = Color.Lerp(_baseColor, Color.white, 0.18f);
+        }
+
+        void RestoreTrackingVisual()
+        {
+            transform.localScale = _baseScale;
+            if (_surface != null && Time.unscaledTime >= _feedbackUntil)
+                _surface.color = _baseColor;
+        }
+
+        void SetResultVisual(bool passed)
+        {
+            _feedbackColor = passed
+                ? new Color(0.42f, 1f, 0.72f, _baseColor.a)
+                : new Color(1f, 0.38f, 0.42f, _baseColor.a);
+            _feedbackUntil = Time.unscaledTime + 0.22f;
+            if (_surface != null)
+                _surface.color = Color.Lerp(_baseColor, _feedbackColor, 0.55f);
         }
 
         public static float ScoreGesture(MoonlightGestureKind gesture,
