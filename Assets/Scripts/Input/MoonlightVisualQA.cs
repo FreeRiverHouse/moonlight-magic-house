@@ -29,6 +29,12 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_GESTURE_READ_RUNTIME_CONTRACT_VERIFIED";
         public const string GestureReadRuntimeContractFailureMarker =
             "MOONLIGHT_GESTURE_READ_RUNTIME_CONTRACT_FAILED";
+        public const string ActivityQualityReadoutStaticContractMarker =
+            "MOONLIGHT_IPAD_ACTIVITY_QUALITY_STATIC_CONTRACT_VERIFIED";
+        public const string ActivityQualityReadoutRuntimeContractMarker =
+            "MOONLIGHT_IPAD_ACTIVITY_QUALITY_RUNTIME_BINDING_VERIFIED";
+        public const string ActivityQualityReadoutZoneExitMarker =
+            "MOONLIGHT_IPAD_ACTIVITY_QUALITY_ZONE_EXIT_RESET_VERIFIED";
 
         static readonly string[] IntermediateActivityResults =
         {
@@ -156,6 +162,57 @@ namespace MoonlightMagicHouse
                 finalDurationCount == 5 && NonFinalActivityResultEdgeCases.Length == 6 &&
                 edgeCaseNonFinalCount == 6 && edgeCaseDurationCount == 6 &&
                 nonScoredResultsUnchanged;
+        }
+
+        static bool ValidateActivityQualityReadoutRuntimeBinding(MoonlightUI ui,
+            MoonlightSpatialActionZone zone, bool expectedVisible,
+            bool expectedCompletedSnapshot, out string detail)
+        {
+            if (ui == null || zone == null)
+            {
+                detail = $"ui={(ui != null)} zone={(zone != null)}";
+                return false;
+            }
+
+            if (!expectedVisible)
+            {
+                bool hidden = !ui.IsActivityQualityReadoutVisible &&
+                    string.IsNullOrEmpty(ui.ActivityQualityReadoutQAText);
+                detail = $"expected=hidden visible={ui.IsActivityQualityReadoutVisible} " +
+                    $"text=\"{ui.ActivityQualityReadoutQAText.Replace('\n', '/')}\"";
+                return hidden;
+            }
+
+            int expectedCombo = expectedCompletedSnapshot
+                ? zone.LastCompletedBestCombo
+                : zone.ActivityCurrentCombo;
+            float expectedAverage = expectedCompletedSnapshot
+                ? zone.LastCompletedAverageScore
+                : zone.ActivitySessionAverageScore;
+            string expectedText = MoonlightUI.ActivityQualityReadoutText(
+                zone.LastGestureScore, expectedCombo, expectedAverage);
+            bool pass = ui.IsActivityQualityReadoutVisible &&
+                ui.ActivityQualityUsesCompletedSnapshotForQA == expectedCompletedSnapshot &&
+                ui.ActivityQualityReadoutComboForQA == expectedCombo &&
+                Approximately(ui.ActivityQualityReadoutRunScoreForQA, expectedAverage) &&
+                ui.ActivityQualityReadoutQAText == expectedText &&
+                ui.ActivityQualityReadoutMatchesZoneState &&
+                ui.ActivityQualityReadoutIsInsideSafeArea &&
+                ui.ActivityQualityReadoutDoesNotOverlapPanels &&
+                ui.ActivityQualityReadoutGraphicsDoNotBlockRaycasts &&
+                ui.ActivityQualityReadoutQAMarker ==
+                    "MOONLIGHT_IPAD_ACTIVITY_QUALITY_READY";
+            detail = $"expected={expectedText.Replace('\n', '/')} " +
+                $"actual={ui.ActivityQualityReadoutQAText.Replace('\n', '/')} " +
+                $"combo={ui.ActivityQualityReadoutComboForQA}/{expectedCombo} " +
+                $"run={ui.ActivityQualityReadoutRunScoreForQA:0.000}/{expectedAverage:0.000} " +
+                $"completedSnapshot={ui.ActivityQualityUsesCompletedSnapshotForQA}/" +
+                $"{expectedCompletedSnapshot} zoneBound={ui.ActivityQualityReadoutMatchesZoneState} " +
+                $"safe={ui.ActivityQualityReadoutIsInsideSafeArea} " +
+                $"separated={ui.ActivityQualityReadoutDoesNotOverlapPanels} " +
+                $"raycasts={ui.ActivityQualityReadoutGraphicsDoNotBlockRaycasts} " +
+                $"marker={ui.ActivityQualityReadoutQAMarker}";
+            return pass;
         }
 
         IEnumerator ObserveContextResultVisibility(MoonlightUI ui,
@@ -617,6 +674,16 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-progress-feedback-contract " +
                 $"{progressFeedbackDetail} marker=MOONLIGHT_IPAD_PROGRESS_FEEDBACK_CONTRACT_VERIFIED");
+            if (!MoonlightUI.ValidateIPadActivityQualityReadoutContract(
+                    out string activityQualityDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] " +
+                    $"ipad-activity-quality-static-contract {activityQualityDetail}");
+                Application.Quit(152);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-activity-quality-static-contract " +
+                $"{activityQualityDetail} marker={ActivityQualityReadoutStaticContractMarker}");
             if (!MoonlightUI.ValidateFinalActivityCtaSemanticsContract(out string finalCtaDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-final-cta-semantics " +
@@ -1156,13 +1223,16 @@ namespace MoonlightMagicHouse
                     Approximately(ui.NavigationCueTargetDistance, spatialInteractor.NearestDistance) &&
                     ui.NavigationCueQAMarker == "MOONLIGHT_IPAD_NAVIGATION_CUE_READY";
                 bool layoutPass = ui.IsIPadHUDLayoutActive &&
-                    ui.HUDLayoutQAMarker == "ipad-activity-focus-v3" &&
+                    ui.HUDLayoutQAMarker == "ipad-activity-focus-v4" &&
                     ui.VisibleHUDTypographyQAMarker == "MOONLIGHT_VISIBLE_TMP_HUD_READY" &&
                     ui.ActionTouchTargetMeetsIPadMinimum &&
                     ui.ActionTouchTargetIsInsideSafeArea &&
                     ui.ActivityPromptIsInsideSafeArea &&
                     ui.ActivityResultIsInsideSafeArea &&
                     ui.ActivityProgressIsInsideSafeArea &&
+                    ui.ActivityQualityReadoutIsInsideSafeArea &&
+                    ui.ActivityQualityReadoutDoesNotOverlapPanels &&
+                    ui.ActivityQualityReadoutGraphicsDoNotBlockRaycasts &&
                     ui.VisibleActionTextIsInsideSafeArea &&
                     ui.VisibleActionTextDoesNotOverflow &&
                     ui.ActivityHUDPanelsDoNotOverlap &&
@@ -1186,7 +1256,11 @@ namespace MoonlightMagicHouse
                         $"promptSafe={ui.ActivityPromptIsInsideSafeArea} resultSafe={ui.ActivityResultIsInsideSafeArea} " +
                         $"actionTextSafe={ui.VisibleActionTextIsInsideSafeArea} " +
                         $"actionTextNonOverflow={ui.VisibleActionTextDoesNotOverflow} " +
-                        $"progressSafe={ui.ActivityProgressIsInsideSafeArea} separated={ui.ActivityHUDPanelsDoNotOverlap} " +
+                        $"progressSafe={ui.ActivityProgressIsInsideSafeArea} " +
+                        $"qualitySafe={ui.ActivityQualityReadoutIsInsideSafeArea} " +
+                        $"qualitySeparated={ui.ActivityQualityReadoutDoesNotOverlapPanels} " +
+                        $"qualityRaycasts={ui.ActivityQualityReadoutGraphicsDoNotBlockRaycasts} " +
+                        $"separated={ui.ActivityHUDPanelsDoNotOverlap} " +
                         $"gestureCoordinates={pad.CoordinateQAMarker} gestureSurface={pad.TouchSurfaceSize} " +
                         $"touchJoystick={(touchJoystick != null && touchJoystick.gameObject.activeInHierarchy)} " +
                         $"joystickMarker={(touchJoystick != null ? touchJoystick.ResponseQAMarker : "missing")} " +
@@ -1948,6 +2022,20 @@ namespace MoonlightMagicHouse
                 int rewardCoins = moonlight.coins;
                 controller.TeleportTo(zone.transform.position, controller.RoomBounds);
                 yield return new WaitForSeconds(0.65f);
+                string freshQualityDetail = "";
+                if (expectIPadHud &&
+                    !ValidateActivityQualityReadoutRuntimeBinding(ui, zone, false, false,
+                        out freshQualityDetail))
+                {
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] " +
+                        $"activity-quality-fresh-run action={zone.Kind} {freshQualityDetail}");
+                    Application.Quit(153);
+                    yield break;
+                }
+                if (expectIPadHud)
+                    Debug.Log($"[MoonlightGameplayQA][PASS] activity-quality-fresh-run " +
+                        $"action={zone.Kind} {freshQualityDetail} " +
+                        $"marker={ActivityQualityReadoutRuntimeContractMarker}");
                 if (expectIPadHud && (spatialInteractor.HasNavigationTarget ||
                     ui.IsIPadNavigationCueVisible ||
                     ui.NavigationCueQAMarker != "MOONLIGHT_IPAD_NAVIGATION_CUE_HIDDEN"))
@@ -1993,6 +2081,24 @@ namespace MoonlightMagicHouse
                 Debug.Log($"[MoonlightGameplayQA][PASS] fail-gesture action={zone.Kind} " +
                     $"score={zone.LastGestureScore:0.00} heldMovementRetained={rejectedMovementRetained} " +
                     "marker=MOONLIGHT_REJECTED_ACTIVITY_MOVEMENT_RETAINED");
+                string failedQualityDetail = "";
+                if (expectIPadHud &&
+                    (!ValidateActivityQualityReadoutRuntimeBinding(ui, zone, true, false,
+                         out failedQualityDetail) ||
+                     ui.ActivityQualityReadoutComboForQA != 0 ||
+                     ui.ActivityQualityReadoutRunScoreForQA != 0f ||
+                     !ui.ActivityQualityReadoutQAText.StartsWith("GOOD\nCOMBO x0\nRUN 00%",
+                         System.StringComparison.Ordinal)))
+                {
+                    Debug.LogError($"[MoonlightGameplayQA][FAIL] " +
+                        $"activity-quality-failure action={zone.Kind} {failedQualityDetail}");
+                    Application.Quit(154);
+                    yield break;
+                }
+                if (expectIPadHud)
+                    Debug.Log($"[MoonlightGameplayQA][PASS] activity-quality-failure " +
+                        $"action={zone.Kind} {failedQualityDetail} " +
+                        $"marker={ActivityQualityReadoutRuntimeContractMarker}");
                 if (expectIPadHud)
                     touchJoystick.ClearInputForQA();
 
@@ -2480,6 +2586,22 @@ namespace MoonlightMagicHouse
                         $"combo={(finalMasteryStep ? zone.LastCompletedBestCombo : zone.ActivityBestCombo)} " +
                         $"bonus={(finalMasteryStep ? zone.LastMasteryBonusCoins : 0)} " +
                         "marker=MOONLIGHT_ACTIVITY_MASTERY_STATE_VERIFIED");
+                    string acceptedQualityDetail = "";
+                    if (expectIPadHud &&
+                        !ValidateActivityQualityReadoutRuntimeBinding(ui, zone, true,
+                            finalMasteryStep, out acceptedQualityDetail))
+                    {
+                        Debug.LogError($"[MoonlightGameplayQA][FAIL] " +
+                            $"activity-quality-accepted action={zone.Kind} " +
+                            $"step={step + 1}/{zone.RequiredSteps} {acceptedQualityDetail}");
+                        Application.Quit(155);
+                        yield break;
+                    }
+                    if (expectIPadHud)
+                        Debug.Log($"[MoonlightGameplayQA][PASS] activity-quality-accepted " +
+                            $"action={zone.Kind} step={step + 1}/{zone.RequiredSteps} " +
+                            $"{acceptedQualityDetail} " +
+                            $"marker={ActivityQualityReadoutRuntimeContractMarker}");
                     if (expectIPadHud && ui != null &&
                         (ui.IsRoomNavigationVisible || !ui.IsRoomNavigationLocked))
                     {
@@ -3523,6 +3645,24 @@ namespace MoonlightMagicHouse
                            Time.time < deadline)
                         yield return null;
                     yield return new WaitForSeconds(0.12f);
+                    string postCooldownQualityDetail = "";
+                    if (expectIPadHud &&
+                        !ValidateActivityQualityReadoutRuntimeBinding(ui, zone, true,
+                            finalMasteryStep, out postCooldownQualityDetail))
+                    {
+                        Debug.LogError($"[MoonlightGameplayQA][FAIL] " +
+                            $"activity-quality-post-cooldown action={zone.Kind} " +
+                            $"step={step + 1}/{zone.RequiredSteps} " +
+                            $"{postCooldownQualityDetail}");
+                        Application.Quit(156);
+                        yield break;
+                    }
+                    if (expectIPadHud)
+                        Debug.Log($"[MoonlightGameplayQA][PASS] " +
+                            $"activity-quality-post-cooldown action={zone.Kind} " +
+                            $"step={step + 1}/{zone.RequiredSteps} " +
+                            $"{postCooldownQualityDetail} " +
+                            $"marker={ActivityQualityReadoutRuntimeContractMarker}");
                     if (expectIPadHud)
                     {
                         float postCooldownDrift = Vector3.Distance(
@@ -3690,6 +3830,10 @@ namespace MoonlightMagicHouse
                         bool finalActionTextValid = ui != null &&
                             MoonlightUI.TryParseFinalActivityCountdownLabel(
                                 ui.ActionButtonQAText, out finalCountdownSeconds);
+                        string finalQualityDetail = "";
+                        bool finalQualityValid = !expectIPadHud ||
+                            ValidateActivityQualityReadoutRuntimeBinding(ui, zone, true, true,
+                                out finalQualityDetail);
                         if (expectIPadHud && ui != null &&
                             (ui.ActivityProgressQAMarker != "4/4" ||
                              !Approximately(ui.ActivityProgressFill01, 1f) ||
@@ -3700,6 +3844,7 @@ namespace MoonlightMagicHouse
                              ui.ActionButtonQAInteractable ||
                              ui.ContextResultLineCount != 2 ||
                              ui.ContextResultIsOverflowing ||
+                             !finalQualityValid ||
                              ui.IsRoomNavigationVisible || !ui.IsRoomNavigationLocked))
                         {
                             Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-final-hud action={zone.Kind} " +
@@ -3711,7 +3856,8 @@ namespace MoonlightMagicHouse
                                 $"countdownSeconds={finalCountdownSeconds} " +
                                 $"actionInteractable={ui.ActionButtonQAInteractable} " +
                                 $"lines={ui.ContextResultLineCount} " +
-                                $"overflow={ui.ContextResultIsOverflowing} roomNav={ui.RoomNavigationQAMarker}");
+                                $"overflow={ui.ContextResultIsOverflowing} " +
+                                $"quality=({finalQualityDetail}) roomNav={ui.RoomNavigationQAMarker}");
                             Application.Quit(49);
                             yield break;
                         }
@@ -3722,8 +3868,10 @@ namespace MoonlightMagicHouse
                                 $"actionText={ui.ActionButtonQAText.Replace('\n', '/')} " +
                                 $"countdownSeconds={finalCountdownSeconds} " +
                                 $"actionInteractable={ui.ActionButtonQAInteractable} " +
+                                $"quality=({finalQualityDetail}) " +
                                 "marker=MOONLIGHT_ACTIVITY_FINAL_HUD_VERIFIED " +
-                                "marker=MOONLIGHT_ACTIVITY_FINAL_CTA_SEMANTICS_LIVE_VERIFIED");
+                                "marker=MOONLIGHT_ACTIVITY_FINAL_CTA_SEMANTICS_LIVE_VERIFIED " +
+                                $"marker={ActivityQualityReadoutRuntimeContractMarker}");
                         if (zone.Kind == MoonlightSpatialActionKind.Care)
                         {
                             string careResult = ui != null && ui.resultLabel != null
@@ -3920,6 +4068,36 @@ namespace MoonlightMagicHouse
                     if (expectIPadHud && ui != null)
                         Debug.Log($"[MoonlightGameplayQA][PASS] activity-room-navigation-restore " +
                             $"action={expectedKind} marker={ui.RoomNavigationQAMarker}");
+                    bool qualityReadoutReset = ui != null &&
+                        !ui.IsActivityQualityReadoutVisible &&
+                        string.IsNullOrEmpty(ui.ActivityQualityReadoutQAText) &&
+                        ui.ActivityQualityReadoutComboForQA == 0 &&
+                        Approximately(ui.ActivityQualityReadoutRunScoreForQA, 0f) &&
+                        !ui.ActivityQualityUsesCompletedSnapshotForQA &&
+                        ui.ActivityQualityReadoutGraphicsDoNotBlockRaycasts;
+                    if (expectIPadHud && !qualityReadoutReset)
+                    {
+                        Debug.LogError($"[MoonlightGameplayQA][FAIL] " +
+                            $"activity-quality-zone-exit action={expectedKind} " +
+                            $"ui={(ui != null)} " +
+                            $"visible={(ui != null && ui.IsActivityQualityReadoutVisible)} " +
+                            $"text=\"{(ui != null ? ui.ActivityQualityReadoutQAText.Replace('\n', '/') : "missing")}\" " +
+                            $"combo={(ui != null ? ui.ActivityQualityReadoutComboForQA : -1)}/0 " +
+                            $"run={(ui != null ? ui.ActivityQualityReadoutRunScoreForQA : -1f):0.000}/0.000 " +
+                            $"completedSnapshot={(ui != null && ui.ActivityQualityUsesCompletedSnapshotForQA)} " +
+                            $"nonBlocking={(ui != null && ui.ActivityQualityReadoutGraphicsDoNotBlockRaycasts)}");
+                        Application.Quit(157);
+                        yield break;
+                    }
+                    if (expectIPadHud)
+                        Debug.Log($"[MoonlightGameplayQA][PASS] activity-quality-zone-exit " +
+                            $"action={expectedKind} visible={ui.IsActivityQualityReadoutVisible} " +
+                            $"textEmpty={string.IsNullOrEmpty(ui.ActivityQualityReadoutQAText)} " +
+                            $"combo={ui.ActivityQualityReadoutComboForQA} " +
+                            $"run={ui.ActivityQualityReadoutRunScoreForQA:0.000} " +
+                            $"completedSnapshot={ui.ActivityQualityUsesCompletedSnapshotForQA} " +
+                            $"nonBlocking={ui.ActivityQualityReadoutGraphicsDoNotBlockRaycasts} " +
+                            $"marker={ActivityQualityReadoutZoneExitMarker}");
                     if (ui != null && (ui.HasContextResult || !ui.ContextResultMatchesCurrentZone))
                     {
                         Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-result-context action={expectedKind} " +

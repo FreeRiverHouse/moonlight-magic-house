@@ -65,6 +65,9 @@ namespace MoonlightMagicHouse
         TMP_Text _iPadProgressLabel;
         Image _iPadProgressFill;
         GameObject _iPadProgressRoot;
+        TMP_Text _iPadActivityQualityLabel;
+        GameObject _iPadActivityQualityRoot;
+        MoonlightSpatialActionZone _iPadActivityQualityZone;
         RectTransform _iPadNavigationCueRoot;
         RectTransform _iPadNavigationChevron;
         TMP_Text _iPadNavigationLabel;
@@ -74,6 +77,9 @@ namespace MoonlightMagicHouse
         bool _iPadLayoutActive;
         bool _roomNavigationLocked;
         bool _activityPresentationWasVisible;
+        bool _iPadActivityQualityRunActive;
+        bool _iPadActivityQualityWasCompletedRunVisible;
+        bool _iPadActivityQualityUsesCompletedSnapshot;
         string _gestureCommandMarker = "";
         string _activityPhaseMarker = "";
         int _lastQAScreenWidth;
@@ -100,7 +106,7 @@ namespace MoonlightMagicHouse
         // Runtime layout metrics used by iPad screenshot and touch-target QA.
         public const int RequiredVisibleTMPHUDLabelCount = 5;
         public bool IsIPadHUDLayoutActive => _iPadLayoutActive;
-        public string HUDLayoutQAMarker => _iPadLayoutActive ? "ipad-activity-focus-v3" : "desktop-hud";
+        public string HUDLayoutQAMarker => _iPadLayoutActive ? "ipad-activity-focus-v4" : "desktop-hud";
         public int VisibleTMPHUDLabelCount
         {
             get
@@ -212,6 +218,21 @@ namespace MoonlightMagicHouse
             _iPadProgressRoot != null && _iPadProgressRoot.activeSelf
                 ? "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_READY"
                 : "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_HIDDEN";
+        public bool IsActivityQualityReadoutVisible => _iPadActivityQualityRoot != null &&
+            _iPadActivityQualityRoot.activeSelf;
+        public string ActivityQualityReadoutQAText => IsActivityQualityReadoutVisible &&
+            _iPadActivityQualityLabel != null ? _iPadActivityQualityLabel.text : "";
+        public int ActivityQualityReadoutComboForQA { get; private set; }
+        public float ActivityQualityReadoutRunScoreForQA { get; private set; }
+        public bool ActivityQualityUsesCompletedSnapshotForQA =>
+            _iPadActivityQualityUsesCompletedSnapshot;
+        public string ActivityQualityReadoutQAMarker => IsActivityQualityReadoutVisible &&
+            ActivityQualityReadoutMatchesZoneState && ActivityQualityReadoutIsInsideSafeArea &&
+            ActivityQualityReadoutDoesNotOverlapPanels &&
+            ActivityQualityReadoutGraphicsDoNotBlockRaycasts &&
+            VisibleTextDoesNotOverflow(_iPadActivityQualityLabel)
+                ? "MOONLIGHT_IPAD_ACTIVITY_QUALITY_READY"
+                : "MOONLIGHT_IPAD_ACTIVITY_QUALITY_HIDDEN_OR_INVALID";
         public bool IsIPadNavigationCueVisible => _iPadNavigationCueRoot != null &&
             _iPadNavigationCueRoot.gameObject.activeSelf;
         public float NavigationCueAngleDegrees { get; private set; }
@@ -287,6 +308,10 @@ namespace MoonlightMagicHouse
         public Rect ActivityProgressScreenRect => ScreenRect(_iPadProgressRoot != null
             ? _iPadProgressRoot.transform as RectTransform
             : null);
+        public Rect ActivityQualityReadoutScreenRect => ScreenRect(
+            _iPadActivityQualityRoot != null
+                ? _iPadActivityQualityRoot.transform as RectTransform
+                : null);
         public Rect HUDSafeAreaScreenRect => Screen.safeArea;
         public Vector4 HUDSafeAreaInsetsPixels => new Vector4(
             Screen.safeArea.xMin,
@@ -309,18 +334,29 @@ namespace MoonlightMagicHouse
         public bool ActivityPromptIsInsideSafeArea => ContainsRect(Screen.safeArea, ActivityPromptScreenRect);
         public bool ActivityResultIsInsideSafeArea => ContainsRect(Screen.safeArea, ActivityResultScreenRect);
         public bool ActivityProgressIsInsideSafeArea => ContainsRect(Screen.safeArea, ActivityProgressScreenRect);
+        public bool ActivityQualityReadoutIsInsideSafeArea =>
+            ContainsRect(Screen.safeArea, ActivityQualityReadoutScreenRect);
         public bool VisibleActionTextIsInsideSafeArea =>
             VisibleTextIsInsideSafeArea(actionBtnLabel) &&
-            VisibleTextIsInsideSafeArea(contextLabel) && VisibleTextIsInsideSafeArea(resultLabel);
+            VisibleTextIsInsideSafeArea(contextLabel) && VisibleTextIsInsideSafeArea(resultLabel) &&
+            VisibleTextIsInsideSafeArea(_iPadActivityQualityLabel);
         public bool VisibleActionTextDoesNotOverflow =>
             VisibleTextDoesNotOverflow(actionBtnLabel) &&
-            VisibleTextDoesNotOverflow(contextLabel) && VisibleTextDoesNotOverflow(resultLabel);
+            VisibleTextDoesNotOverflow(contextLabel) && VisibleTextDoesNotOverflow(resultLabel) &&
+            VisibleTextDoesNotOverflow(_iPadActivityQualityLabel);
+        public bool ActivityQualityReadoutDoesNotOverlapPanels =>
+            !OverlapsWithPadding(ActivityQualityReadoutScreenRect, ActivityPromptScreenRect, 4f) &&
+            !OverlapsWithPadding(ActivityQualityReadoutScreenRect, ActivityResultScreenRect, 4f) &&
+            !OverlapsWithPadding(ActivityQualityReadoutScreenRect, ActivityProgressScreenRect, 4f) &&
+            !OverlapsWithPadding(ActivityQualityReadoutScreenRect,
+                ActionTouchTargetScreenRect, 4f);
         public bool ActivityHUDPanelsDoNotOverlap =>
             !OverlapsWithPadding(ActivityPromptScreenRect, ActivityProgressScreenRect, 4f) &&
             !OverlapsWithPadding(ActivityResultScreenRect, ActivityProgressScreenRect, 4f) &&
             !OverlapsWithPadding(ActivityPromptScreenRect, ActionTouchTargetScreenRect, 4f) &&
             !OverlapsWithPadding(ActivityResultScreenRect, ActionTouchTargetScreenRect, 4f) &&
-            !OverlapsWithPadding(ActivityProgressScreenRect, ActionTouchTargetScreenRect, 4f);
+            !OverlapsWithPadding(ActivityProgressScreenRect, ActionTouchTargetScreenRect, 4f) &&
+            ActivityQualityReadoutDoesNotOverlapPanels;
         public float ActivityPromptCenterOffsetPixels => Mathf.Abs(
             ActivityPromptScreenRect.center.x - Screen.safeArea.center.x);
         public bool HasContextResult => resultLabel != null && !string.IsNullOrEmpty(resultLabel.text);
@@ -338,6 +374,47 @@ namespace MoonlightMagicHouse
                     ? moonlight.GetComponent<MoonlightSpatialInteractor>()
                     : null;
                 return interactor != null && interactor.CurrentZone == _resultZone;
+            }
+        }
+        public bool ActivityQualityReadoutGraphicsDoNotBlockRaycasts
+        {
+            get
+            {
+                if (_iPadActivityQualityRoot == null) return false;
+                foreach (var graphic in
+                         _iPadActivityQualityRoot.GetComponentsInChildren<Graphic>(true))
+                    if (graphic.raycastTarget) return false;
+                return true;
+            }
+        }
+        public bool ActivityQualityReadoutMatchesZoneState
+        {
+            get
+            {
+                if (!IsActivityQualityReadoutVisible || _iPadActivityQualityZone == null)
+                    return false;
+                var moonlight = MoonlightGameManager.Instance?.moonlight;
+                var interactor = moonlight != null
+                    ? moonlight.GetComponent<MoonlightSpatialInteractor>()
+                    : null;
+                if (interactor == null || interactor.CurrentZone != _iPadActivityQualityZone ||
+                    !MoonlightSpatialActionZone.IsScoredActivityKind(
+                        _iPadActivityQualityZone.Kind) ||
+                    _iPadActivityQualityZone.RequiredSteps != 4)
+                    return false;
+
+                int expectedCombo = _iPadActivityQualityUsesCompletedSnapshot
+                    ? _iPadActivityQualityZone.LastCompletedBestCombo
+                    : _iPadActivityQualityZone.ActivityCurrentCombo;
+                float expectedAverage = _iPadActivityQualityUsesCompletedSnapshot
+                    ? _iPadActivityQualityZone.LastCompletedAverageScore
+                    : _iPadActivityQualityZone.ActivitySessionAverageScore;
+                return ActivityQualityReadoutComboForQA == expectedCombo &&
+                    Mathf.Approximately(ActivityQualityReadoutRunScoreForQA,
+                        expectedAverage) &&
+                    ActivityQualityReadoutQAText == ActivityQualityReadoutText(
+                        _iPadActivityQualityZone.LastGestureScore, expectedCombo,
+                        expectedAverage);
             }
         }
 
@@ -552,6 +629,20 @@ namespace MoonlightMagicHouse
                 else
                     contextLabel.text = interactor != null ? interactor.DiscoveryPrompt : "EXPLORE THIS ROOM";
             }
+            if (_iPadLayoutActive)
+            {
+                var qualityZone = interactor != null ? interactor.CurrentZone : null;
+                // Step 4 resets current mastery counters immediately, so retain the
+                // completed snapshot from performance through the linger presentation.
+                bool completedRunVisible = presenting ||
+                    (qualityZone != null && feedback != null &&
+                     (performing || coolingDown) &&
+                     feedback.ActiveActivityKind == qualityZone.Kind &&
+                     feedback.ActivityRequiredSteps == 4 && feedback.ActivityStep == 3 &&
+                     qualityZone.ActivitySessionAcceptedSteps == 0 &&
+                     qualityZone.LastCompletedBestCombo > 0);
+                RefreshIPadActivityQualityReadout(qualityZone, completedRunVisible);
+            }
             if (_iPadLayoutActive &&
                 (_lastQAScreenWidth != Screen.width || _lastQAScreenHeight != Screen.height ||
                  !_lastQASafeArea.Equals(Screen.safeArea)))
@@ -632,6 +723,42 @@ namespace MoonlightMagicHouse
             labelRect.offsetMin = Vector2.zero;
             labelRect.offsetMax = Vector2.zero;
             _iPadProgressRoot.SetActive(false);
+
+            _iPadActivityQualityRoot = new GameObject("IPadActivityQualityReadoutQA");
+            _iPadActivityQualityRoot.transform.SetParent(actionBtn.transform.parent, false);
+            var qualityBackground = _iPadActivityQualityRoot.AddComponent<Image>();
+            qualityBackground.color = new Color(0.08f, 0.09f, 0.11f, 0.84f);
+            qualityBackground.raycastTarget = false;
+            var qualityRect = _iPadActivityQualityRoot.GetComponent<RectTransform>();
+            qualityRect.anchoredPosition = new Vector2(335f, 50f);
+            qualityRect.sizeDelta = new Vector2(92f, 52f);
+
+            var qualityLabelObject = new GameObject("QualityLabel");
+            qualityLabelObject.transform.SetParent(_iPadActivityQualityRoot.transform, false);
+            _iPadActivityQualityLabel = qualityLabelObject.AddComponent<TextMeshProUGUI>();
+            EnsureRuntimeFont(_iPadActivityQualityLabel);
+            _iPadActivityQualityLabel.fontSize = 14f;
+            _iPadActivityQualityLabel.fontStyle = FontStyles.Bold;
+            _iPadActivityQualityLabel.color = new Color(1f, 0.96f, 0.82f);
+            _iPadActivityQualityLabel.alignment = TextAlignmentOptions.Center;
+            _iPadActivityQualityLabel.enableAutoSizing = true;
+            _iPadActivityQualityLabel.fontSizeMin = 11f;
+            _iPadActivityQualityLabel.fontSizeMax = 14f;
+            _iPadActivityQualityLabel.enableWordWrapping = false;
+            _iPadActivityQualityLabel.overflowMode = TextOverflowModes.Ellipsis;
+            _iPadActivityQualityLabel.lineSpacing = -5f;
+            _iPadActivityQualityLabel.characterSpacing = 0f;
+            _iPadActivityQualityLabel.raycastTarget = false;
+            var qualityShadow = qualityLabelObject.AddComponent<Shadow>();
+            qualityShadow.effectColor = new Color(0.03f, 0.04f, 0.06f, 0.92f);
+            qualityShadow.effectDistance = new Vector2(1.5f, -1.5f);
+            qualityShadow.useGraphicAlpha = true;
+            var qualityLabelRect = qualityLabelObject.GetComponent<RectTransform>();
+            qualityLabelRect.anchorMin = Vector2.zero;
+            qualityLabelRect.anchorMax = Vector2.one;
+            qualityLabelRect.offsetMin = new Vector2(4f, 2f);
+            qualityLabelRect.offsetMax = new Vector2(-4f, -2f);
+            _iPadActivityQualityRoot.SetActive(false);
         }
 
         void RefreshIPadActivityText(MoonlightCharacter moonlight, MoonlightSpatialInteractor interactor,
@@ -763,6 +890,86 @@ namespace MoonlightMagicHouse
             _iPadProgressFill.color = color;
         }
 
+        void RefreshIPadActivityQualityReadout(MoonlightSpatialActionZone zone,
+            bool completedRunVisible)
+        {
+            bool scoredActivity = zone != null && zone.RequiredSteps == 4 &&
+                MoonlightSpatialActionZone.IsScoredActivityKind(zone.Kind);
+            if (!scoredActivity)
+            {
+                ClearIPadActivityQualityReadout();
+                _iPadActivityQualityZone = null;
+                return;
+            }
+
+            if (_iPadActivityQualityZone != zone)
+            {
+                ClearIPadActivityQualityReadout();
+                _iPadActivityQualityZone = zone;
+            }
+
+            bool sessionHasProgress = zone.ActivitySessionAcceptedSteps > 0 ||
+                zone.ProgressStep > 0;
+            if (_iPadActivityQualityWasCompletedRunVisible && !completedRunVisible &&
+                !sessionHasProgress)
+                _iPadActivityQualityRunActive = false;
+            if (sessionHasProgress || completedRunVisible)
+                _iPadActivityQualityRunActive = true;
+            _iPadActivityQualityWasCompletedRunVisible = completedRunVisible;
+
+            bool show = ShouldShowIPadActivityQualityReadout(_iPadLayoutActive,
+                scoredActivity, _iPadActivityQualityRunActive, completedRunVisible);
+            bool completedSnapshot = ShouldUseCompletedActivityQualitySnapshot(
+                completedRunVisible, zone.ActivitySessionAcceptedSteps);
+            int combo = completedSnapshot
+                ? zone.LastCompletedBestCombo
+                : zone.ActivityCurrentCombo;
+            float average = completedSnapshot
+                ? zone.LastCompletedAverageScore
+                : zone.ActivitySessionAverageScore;
+
+            _iPadActivityQualityUsesCompletedSnapshot = show && completedSnapshot;
+            ActivityQualityReadoutComboForQA = show ? combo : 0;
+            ActivityQualityReadoutRunScoreForQA = show ? average : 0f;
+            if (_iPadActivityQualityLabel != null)
+                _iPadActivityQualityLabel.text = show
+                    ? ActivityQualityReadoutText(zone.LastGestureScore, combo, average)
+                    : "";
+            if (_iPadActivityQualityRoot != null)
+                _iPadActivityQualityRoot.SetActive(show);
+        }
+
+        void ClearIPadActivityQualityReadout()
+        {
+            _iPadActivityQualityRunActive = false;
+            _iPadActivityQualityWasCompletedRunVisible = false;
+            _iPadActivityQualityUsesCompletedSnapshot = false;
+            ActivityQualityReadoutComboForQA = 0;
+            ActivityQualityReadoutRunScoreForQA = 0f;
+            if (_iPadActivityQualityLabel != null)
+                _iPadActivityQualityLabel.text = "";
+            if (_iPadActivityQualityRoot != null)
+                _iPadActivityQualityRoot.SetActive(false);
+        }
+
+        public static bool ShouldShowIPadActivityQualityReadout(bool isIPadLayout,
+            bool isScoredActivity, bool runActive, bool finalPresentation) =>
+            isIPadLayout && isScoredActivity && (runActive || finalPresentation);
+
+        public static bool ShouldUseCompletedActivityQualitySnapshot(
+            bool finalPresentation, int currentAcceptedSteps) =>
+            finalPresentation && currentAcceptedSteps == 0;
+
+        public static string ActivityQualityGrade(float lastGestureScore) =>
+            MoonlightActionFeedback.ActionQualityTierFor(lastGestureScore)
+                .ToString().ToUpperInvariant();
+
+        public static string ActivityQualityReadoutText(float lastGestureScore,
+            int combo, float runAverageScore) =>
+            $"{ActivityQualityGrade(lastGestureScore)}\n" +
+            $"COMBO x{Mathf.Max(0, combo)}\n" +
+            $"RUN {Mathf.RoundToInt(Mathf.Clamp01(runAverageScore) * 100f):00}%";
+
         public static float CalculateActivityProgress01(int completedSteps,
             float activeStepProgress, int requiredSteps)
         {
@@ -824,6 +1031,44 @@ namespace MoonlightMagicHouse
                 $"firstComplete={firstComplete:F3} thirdHalf={thirdHalf:F3} " +
                 $"complete={complete:F3} track={IPadProgressTrackWidth:F0}px";
             return pass;
+        }
+
+        public static bool ValidateIPadActivityQualityReadoutContract(out string detail)
+        {
+            string good = ActivityQualityReadoutText(0.58f, 0, 0f);
+            string great = ActivityQualityReadoutText(
+                MoonlightActionFeedback.GreatActionQualityScore, 2, 0.75f);
+            string perfect = ActivityQualityReadoutText(0.95f, 4, 0.95f);
+            string clamped = ActivityQualityReadoutText(2f, -1, 2f);
+            bool gradesPass = good == "GOOD\nCOMBO x0\nRUN 00%" &&
+                great == "GREAT\nCOMBO x2\nRUN 75%" &&
+                perfect == "PERFECT\nCOMBO x4\nRUN 95%" &&
+                clamped == "PERFECT\nCOMBO x0\nRUN 100%";
+            bool visibilityPass =
+                ShouldShowIPadActivityQualityReadout(true, true, true, false) &&
+                ShouldShowIPadActivityQualityReadout(true, true, false, true) &&
+                !ShouldShowIPadActivityQualityReadout(true, true, false, false) &&
+                !ShouldShowIPadActivityQualityReadout(true, false, true, false) &&
+                !ShouldShowIPadActivityQualityReadout(false, true, true, true);
+            bool snapshotPass =
+                ShouldUseCompletedActivityQualitySnapshot(true, 0) &&
+                !ShouldUseCompletedActivityQualitySnapshot(true, 4) &&
+                !ShouldUseCompletedActivityQualitySnapshot(false, 0);
+
+            const string receipt = "MOON SPA COMPLETE  /  RUN PERFECT 95 x4  /  " +
+                "+18 WARMTH  +12 REST  +6 MAGIC  +12 XP  +5 COINS";
+            string formattedBefore = FormatIPadResult(receipt);
+            _ = ActivityQualityReadoutText(0.95f, 4, 0.95f);
+            string formattedAfter = FormatIPadResult(receipt);
+            bool receiptIsolated = formattedBefore == formattedAfter &&
+                formattedAfter.Contains("MOON SPA COMPLETE") &&
+                formattedAfter.Contains("RUN PERFECT 95 x4") &&
+                formattedAfter.Contains("+5 COINS");
+            detail = $"good={good.Replace('\n', '/')} great={great.Replace('\n', '/')} " +
+                $"perfect={perfect.Replace('\n', '/')} visibility={visibilityPass} " +
+                $"finalSnapshot={snapshotPass} receiptIsolated={receiptIsolated} " +
+                "layout=92x52px lines=3";
+            return gradesPass && visibilityPass && snapshotPass && receiptIsolated;
         }
 
         public static string FinalActivityCountdownLabel(float lingerSecondsRemaining)
@@ -1219,7 +1464,11 @@ namespace MoonlightMagicHouse
                 $"safe={Screen.safeArea} touchPixels={touchRect.size} touchLayout={ActionTouchTargetLayoutSize} " +
                 $"touchMinimumPass={ActionTouchTargetMeetsIPadMinimum} insideSafeArea={ActionTouchTargetIsInsideSafeArea} " +
                 $"promptSafe={ActivityPromptIsInsideSafeArea} resultSafe={ActivityResultIsInsideSafeArea} " +
-                $"progressSafe={ActivityProgressIsInsideSafeArea} panelsSeparated={ActivityHUDPanelsDoNotOverlap} " +
+                $"progressSafe={ActivityProgressIsInsideSafeArea} " +
+                $"qualitySafe={ActivityQualityReadoutIsInsideSafeArea} " +
+                $"qualitySeparated={ActivityQualityReadoutDoesNotOverlapPanels} " +
+                $"qualityRaycasts={ActivityQualityReadoutGraphicsDoNotBlockRaycasts} " +
+                $"panelsSeparated={ActivityHUDPanelsDoNotOverlap} " +
                 $"promptCenterOffset={ActivityPromptCenterOffsetPixels:0.0}px " +
                 $"navigationCue={NavigationCueQAMarker} cueSafe={NavigationCueIsInsideSafeArea} " +
                 $"cueJoystickSeparated={NavigationCueDoesNotOverlapJoystick} " +
@@ -1434,11 +1683,23 @@ namespace MoonlightMagicHouse
                 ?.CancelFreeHopForContextAction();
             string result = zone.ExecuteGesture(moonlight, gesture, sample,
                 acceptedHapticAlreadyPlayed);
+            if (_iPadLayoutActive && zone.RequiredSteps == 4 &&
+                MoonlightSpatialActionZone.IsScoredActivityKind(zone.Kind))
+            {
+                if (_iPadActivityQualityZone != zone)
+                {
+                    ClearIPadActivityQualityReadout();
+                    _iPadActivityQualityZone = zone;
+                }
+                _iPadActivityQualityRunActive = true;
+            }
             if (zone.LastGesturePassed && zone.RequiredSteps > 1)
                 SetRoomNavigationLocked(true);
             MoonlightVisualQA.Instance?.LogContextAction(zone, moonlight.transform.position, result);
             ShowContextResult(result);
             Refresh(moonlight);
+            if (_iPadLayoutActive)
+                RefreshContextAction();
         }
 
         public void Refresh(MoonlightCharacter m)
