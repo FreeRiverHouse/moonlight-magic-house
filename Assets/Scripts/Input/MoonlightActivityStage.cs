@@ -21,6 +21,18 @@ namespace MoonlightMagicHouse
         const float BakeDoorReopenEnd = 0.66f;
         const float BakeExtractStart = 0.68f;
         const float BakeExtractEnd = 0.92f;
+        const float CookCircleMaximumX = 0.18f;
+        const float CookCircleMaximumZ = 0.14f;
+        const float CookGestureMinimumY = 0.90f;
+        const float CookGestureMaximumY = 0.98f;
+        const float CookGestureY = 0.94f;
+        const float CookDecorCenterX = 0.30f;
+        const float CookDecorCenterZ = 0.16f;
+        const float CookDecorMinimumX = -0.35f;
+        const float CookDecorMaximumX = 0.75f;
+        const float CookDecorMinimumZ = -0.18f;
+        const float CookDecorMaximumZ = 0.42f;
+        static readonly Vector3 CookDecorParkedPosition = new(-0.43f, 0.72f, 0.30f);
         public const float PlayMinimumThrowExtent = 1.05f;
         public const float PlayMaximumThrowExtent = 2.30f;
         public const float PlayMinimumJumpExtent = 0.80f;
@@ -45,6 +57,10 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_COOK_PRESENT_CHOREOGRAPHY_READY";
         public const string CookChoreographyIncompleteMarker =
             "MOONLIGHT_COOK_CHOREOGRAPHY_INCOMPLETE";
+        public const string CookGesturePersonalizedResultMarker =
+            "MOONLIGHT_COOK_GESTURE_RESULT_PERSONALIZED";
+        public const string CookGestureIncompleteResultMarker =
+            "MOONLIGHT_COOK_GESTURE_RESULT_INCOMPLETE";
 
         enum ActivitySurfaceProfile
         {
@@ -222,6 +238,44 @@ namespace MoonlightMagicHouse
             ActiveRendererCount > 0 && ActiveRendererCount <= CookRendererBudget &&
             ActiveUniqueMaterialCount > 0 && ActiveUniqueMaterialCount <= CookMaterialBudget &&
             ActiveLightCount == CookLightBudget;
+        public Vector3 CookGesturePropLocalPosition => CurrentStep switch
+        {
+            1 when _whisk != null => _whisk.localPosition,
+            3 when _decorateProps != null && _decorateProps.Length > 0 &&
+                _decorateProps[0] != null => _decorateProps[0].localPosition,
+            _ => new Vector3(float.NaN, float.NaN, float.NaN)
+        };
+        public Vector3 CookExpectedGesturePropLocalPosition =>
+            EvaluateCookGesturePropPosition(CurrentStep, CookCurrentPhaseProgress,
+                _gestureSample);
+        public bool CookGesturePathTransformAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Cook &&
+            (CurrentStep == 1 || CurrentStep == 3) &&
+            IsFinite(CookGesturePropLocalPosition) &&
+            CookGesturePropLocalPosition.Equals(CookExpectedGesturePropLocalPosition);
+        public bool CookCookieMarksRetainGestureImprint =>
+            CurrentKind == MoonlightSpatialActionKind.Cook && CurrentStep == 3 &&
+            CookCookieMarkTransformsMatch(CookCurrentPhaseProgress);
+        public bool CookGestureHasMinimumPathSpan =>
+            CurrentKind == MoonlightSpatialActionKind.Cook &&
+            (CurrentStep == 1 || CurrentStep == 3) &&
+            CookGestureSampleHasMinimumPathSpan(CurrentStep, _gestureSample);
+        public bool CookGestureTraversalDirectionAgreement =>
+            CurrentKind == MoonlightSpatialActionKind.Cook &&
+            (CurrentStep == 1 || CurrentStep == 3) &&
+            CookGestureTraversalMatchesPath(CurrentStep, _gestureSample);
+        public int CookDistinctGestureImprintCount =>
+            CurrentKind == MoonlightSpatialActionKind.Cook && CurrentStep == 3
+                ? CookGestureDistinctImprintCount(_gestureSample)
+                : 0;
+        public bool CookGestureInputReady => CookGestureHasMinimumPathSpan &&
+            CookGestureTraversalDirectionAgreement &&
+            (CurrentStep != 3 || CookDistinctGestureImprintCount == 9);
+        public string CookGestureResultQAMarker =>
+            CookGestureInputReady && CookCookieMarksRetainGestureImprint &&
+            AllActive(_cookieDetails)
+                ? CookGesturePersonalizedResultMarker
+                : CookGestureIncompleteResultMarker;
         public string CookBudgetEvidence =>
             $"renderers={ActiveRendererCount}/{CookRendererBudget} " +
             $"materials={ActiveUniqueMaterialCount}/{CookMaterialBudget} " +
@@ -1083,14 +1137,12 @@ namespace MoonlightMagicHouse
                 _batter.localScale = new Vector3(batterSize, 0.055f * batterPulse, batterSize);
             }
 
-            float whiskAngle = t * Mathf.PI * 12f;
             if (_whisk != null)
             {
                 _whisk.gameObject.SetActive(step == 1);
                 if (step == 1)
                 {
-                    _whisk.localPosition = new Vector3(Mathf.Cos(whiskAngle) * 0.16f, 0.94f,
-                        Mathf.Sin(whiskAngle) * 0.12f);
+                    _whisk.localPosition = EvaluateCookGesturePath(step, t, _gestureSample);
                     _whisk.localRotation = Quaternion.Euler(18f, t * 900f, -22f);
                 }
             }
@@ -1194,11 +1246,14 @@ namespace MoonlightMagicHouse
                         ? Mathf.Clamp01((t - 0.18f - detailIndex * 0.025f) * 5f)
                         : 0f;
                     _cookieDetails[detailIndex].gameObject.SetActive(decorReveal > 0.65f);
-                    _cookieDetails[detailIndex].localPosition = cookiePosition
-                        + new Vector3(-0.055f + mark * 0.055f, step == 3 ? 0.050f : 0.028f,
-                            step == 3 ? 0.00f : 0.012f);
+                    Vector3 imprintOffset = CookGestureImprintOffset(detailIndex, _gestureSample);
+                    Quaternion imprintRotation = CookGestureImprintRotation(
+                        detailIndex, _gestureSample);
+                    _cookieDetails[detailIndex].localPosition = cookiePosition +
+                        _cookies[i].localRotation * imprintOffset;
                     _cookieDetails[detailIndex].localScale = new Vector3(0.05f, 0.012f, 0.012f) * decorReveal;
-                    _cookieDetails[detailIndex].localRotation = Quaternion.Euler(0f, 24f + i * 32f, 0f);
+                    _cookieDetails[detailIndex].localRotation =
+                        _cookies[i].localRotation * imprintRotation;
                 }
             }
 
@@ -1206,9 +1261,8 @@ namespace MoonlightMagicHouse
             {
                 float working = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((t - 0.68f) * 3.125f));
                 float squeeze = Mathf.Sin(t * Mathf.PI * 4f) * 0.08f * working;
-                _decorateProps[0].localPosition = Vector3.Lerp(
-                    new Vector3(Mathf.Lerp(-0.35f, 0.30f, t), 0.91f + squeeze, 0.16f),
-                    new Vector3(-0.43f, 0.72f, 0.30f), 1f - working);
+                _decorateProps[0].localPosition =
+                    EvaluateCookGesturePropPosition(step, t, _gestureSample);
                 _decorateProps[0].localRotation = Quaternion.Euler(22f, t * 120f, 34f - squeeze * 80f);
                 float sprinklePass = Mathf.Sin(Mathf.Clamp01((t - 0.18f) * 2.2f) * Mathf.PI);
                 _decorateProps[1].localPosition = new Vector3(0.67f - sprinklePass * 0.34f,
@@ -1385,10 +1439,8 @@ namespace MoonlightMagicHouse
                     new Vector3(batterSize, 0.055f * batterPulse, batterSize)))
                 matches++;
 
-            float whiskAngle = t * Mathf.PI * 12f;
             if (TransformMatches(_whisk, true,
-                    new Vector3(Mathf.Cos(whiskAngle) * 0.16f, 0.94f,
-                        Mathf.Sin(whiskAngle) * 0.12f),
+                    EvaluateCookGesturePath(1, t, _gestureSample),
                     Quaternion.Euler(18f, t * 900f, -22f),
                     new Vector3(0.07f, 0.40f, 0.07f)))
                 matches++;
@@ -1479,9 +1531,7 @@ namespace MoonlightMagicHouse
             float working = 1f - present;
             float squeeze = Mathf.Sin(t * Mathf.PI * 4f) * 0.08f * working;
             if (TransformMatches(_decorateProps[0], true,
-                    Vector3.Lerp(new Vector3(Mathf.Lerp(-0.35f, 0.30f, t),
-                            0.91f + squeeze, 0.16f),
-                        new Vector3(-0.43f, 0.72f, 0.30f), 1f - working),
+                    EvaluateCookGesturePropPosition(3, t, _gestureSample),
                     Quaternion.Euler(22f, t * 120f, 34f - squeeze * 80f),
                     new Vector3(0.10f, 0.34f, 0.10f)))
                 matches++;
@@ -1520,8 +1570,9 @@ namespace MoonlightMagicHouse
                 Vector3 cookieScale = Vector3.Lerp(new Vector3(0.16f, 0.035f, 0.16f),
                     new Vector3(0.19f, 0.045f, 0.19f), Mathf.Clamp01(t * 3f)) *
                     (1f + Mathf.Sin(t * Mathf.PI * 4f + i) * 0.05f);
-                if (TransformMatches(_cookies[i], true, cookiePosition,
-                        Quaternion.Euler(0f, 24f + i * 32f + t * 65f, 0f), cookieScale))
+                Quaternion cookieRotation = Quaternion.Euler(
+                    0f, 24f + i * 32f + t * 65f, 0f);
+                if (TransformMatches(_cookies[i], true, cookiePosition, cookieRotation, cookieScale))
                     matches++;
 
                 for (int mark = 0; mark < 3; mark++)
@@ -1529,8 +1580,10 @@ namespace MoonlightMagicHouse
                     int detailIndex = i * 3 + mark;
                     float decorReveal = CookDetailReveal(t, detailIndex);
                     if (TransformMatches(_cookieDetails[detailIndex], decorReveal > 0.65f,
-                            cookiePosition + new Vector3(-0.055f + mark * 0.055f, 0.050f, 0f),
-                            Quaternion.Euler(0f, 24f + i * 32f, 0f),
+                            cookiePosition + cookieRotation *
+                                CookGestureImprintOffset(detailIndex, _gestureSample),
+                            cookieRotation * CookGestureImprintRotation(
+                                detailIndex, _gestureSample),
                             new Vector3(0.05f, 0.012f, 0.012f) * decorReveal))
                         matches++;
                 }
@@ -1638,6 +1691,46 @@ namespace MoonlightMagicHouse
         static float CookDetailReveal(float t, int detailIndex) =>
             Mathf.Clamp01((t - 0.18f - detailIndex * 0.025f) * 5f);
 
+        static Vector3 CookGestureImprintOffset(int detailIndex,
+            MoonlightGestureSample sample)
+        {
+            float progress = Mathf.Clamp(detailIndex, 0, 8) / 8f;
+            Vector3 point = EvaluateCookGesturePath(3, progress, sample);
+            return new Vector3((point.x - CookDecorCenterX) * 0.22f, 0.050f,
+                (point.z - CookDecorCenterZ) * 0.28f);
+        }
+
+        static Quaternion CookGestureImprintRotation(int detailIndex,
+            MoonlightGestureSample sample)
+        {
+            float progress = Mathf.Clamp(detailIndex, 0, 8) / 8f;
+            Vector3 before = EvaluateCookGesturePath(3, progress - 0.02f, sample);
+            Vector3 after = EvaluateCookGesturePath(3, progress + 0.02f, sample);
+            Vector3 tangent = after - before;
+            if (tangent.sqrMagnitude <= 0.000001f) return Quaternion.identity;
+            float yaw = -Mathf.Atan2(tangent.z, tangent.x) * Mathf.Rad2Deg;
+            return Quaternion.Euler(0f, yaw, 0f);
+        }
+
+        bool CookCookieMarkTransformsMatch(float t)
+        {
+            if (!AllAssigned(_cookies, 3) || !AllAssigned(_cookieDetails, 9)) return false;
+            for (int detailIndex = 0; detailIndex < 9; detailIndex++)
+            {
+                int cookieIndex = detailIndex / 3;
+                float reveal = CookDetailReveal(t, detailIndex);
+                Transform cookie = _cookies[cookieIndex];
+                if (!TransformMatches(_cookieDetails[detailIndex], reveal > 0.65f,
+                        cookie.localPosition + cookie.localRotation *
+                            CookGestureImprintOffset(detailIndex, _gestureSample),
+                        cookie.localRotation * CookGestureImprintRotation(
+                            detailIndex, _gestureSample),
+                        new Vector3(0.05f, 0.012f, 0.012f) * reveal))
+                    return false;
+            }
+            return true;
+        }
+
         static Vector3 BakeTrayCenter(float t)
         {
             float load = Mathf.SmoothStep(0f, 1f,
@@ -1696,6 +1789,244 @@ namespace MoonlightMagicHouse
             for (int i = 0; i < transforms.Length; i++)
                 if (IsActive(transforms[i])) return true;
             return false;
+        }
+
+        public static Vector3 EvaluateCookGesturePath(int stepIndex, float progress,
+            MoonlightGestureSample sample)
+        {
+            int step = Mathf.Clamp(stepIndex, 0, 3);
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            if (step != 1 && step != 3) return Vector3.zero;
+
+            Vector2 minimum = sample[0];
+            Vector2 maximum = minimum;
+            for (int i = 1; i < MoonlightGestureSample.ResampledPointCount; i++)
+            {
+                Vector2 point = sample[i];
+                minimum = Vector2.Min(minimum, point);
+                maximum = Vector2.Max(maximum, point);
+            }
+
+            Vector2 center = (minimum + maximum) * 0.5f;
+            Vector2 gesturePoint = InterpolateSamplePoint(sample, t) - center;
+            if (step == 1)
+            {
+                return new Vector3(
+                    Mathf.Clamp(gesturePoint.x * 0.50f,
+                        -CookCircleMaximumX, CookCircleMaximumX),
+                    CookGestureY,
+                    Mathf.Clamp(gesturePoint.y * 0.375f,
+                        -CookCircleMaximumZ, CookCircleMaximumZ));
+            }
+
+            return new Vector3(
+                Mathf.Clamp(CookDecorCenterX + gesturePoint.x * 0.72f,
+                    CookDecorMinimumX, CookDecorMaximumX),
+                CookGestureY,
+                Mathf.Clamp(CookDecorCenterZ + gesturePoint.y * 0.36f,
+                    CookDecorMinimumZ, CookDecorMaximumZ));
+        }
+
+        public static Vector3 EvaluateCookGesturePropPosition(int stepIndex, float progress,
+            MoonlightGestureSample sample)
+        {
+            float t = Mathf.Clamp01(IsFinite(progress) ? progress : 0f);
+            Vector3 gesturePosition = EvaluateCookGesturePath(stepIndex, t, sample);
+            return stepIndex == 3
+                ? Vector3.Lerp(gesturePosition, CookDecorParkedPosition,
+                    CookPresentProgress(t))
+                : gesturePosition;
+        }
+
+        public static bool ValidateGestureResponsiveCookContract(out string detail)
+        {
+            MoonlightGestureSample clockwise = CookCircleSample(0.34f, true);
+            MoonlightGestureSample counterClockwise = CookCircleSample(0.34f, false);
+            MoonlightGestureSample narrowCircle = CookCircleSample(0.16f, false);
+            MoonlightGestureSample wideCircle = CookCircleSample(0.34f, false);
+            MoonlightGestureSample narrowZigZag = CookZigZagSample(0.15f, 0.28f, false);
+            MoonlightGestureSample wideZigZag = CookZigZagSample(0.40f, 0.46f, false);
+            MoonlightGestureSample reverseZigZag = CookZigZagSample(0.40f, 0.46f, true);
+
+            bool oppositeCircleTraversal = true;
+            bool finiteAndBounded = true;
+            for (int i = 0; i <= 40; i++)
+            {
+                float t = i / 40f;
+                Vector3 clockwisePoint = EvaluateCookGesturePath(1, t, clockwise);
+                Vector3 oppositePoint = EvaluateCookGesturePath(1, 1f - t, counterClockwise);
+                oppositeCircleTraversal &=
+                    Vector3.SqrMagnitude(clockwisePoint - oppositePoint) <= 0.000001f;
+
+                finiteAndBounded &= CookGesturePointIsFiniteAndBounded(1,
+                    clockwisePoint) && CookGesturePointIsFiniteAndBounded(1,
+                    EvaluateCookGesturePath(1, t, narrowCircle)) &&
+                    CookGesturePointIsFiniteAndBounded(3,
+                        EvaluateCookGesturePath(3, t, wideZigZag)) &&
+                    CookGesturePointIsFiniteAndBounded(3,
+                        EvaluateCookGesturePath(3, t, reverseZigZag));
+            }
+            oppositeCircleTraversal &=
+                EvaluateCookGesturePath(1, 0.25f, clockwise).z < 0f &&
+                EvaluateCookGesturePath(1, 0.25f, counterClockwise).z > 0f;
+
+            float narrowCircleSpan = CookGesturePathSpan(1, narrowCircle, true);
+            float wideCircleSpan = CookGesturePathSpan(1, wideCircle, true);
+            float narrowDecorSpan = CookGesturePathSpan(3, narrowZigZag, true);
+            float wideDecorSpan = CookGesturePathSpan(3, wideZigZag, true);
+            bool distinctSpans = wideCircleSpan > narrowCircleSpan + 0.10f &&
+                wideDecorSpan > narrowDecorSpan + 0.20f;
+            bool oppositeDecorDirection = Vector3.Distance(
+                    EvaluateCookGesturePath(3, 0f, wideZigZag),
+                    EvaluateCookGesturePath(3, 1f, reverseZigZag)) <= 0.0001f &&
+                Vector3.Distance(EvaluateCookGesturePath(3, 1f, wideZigZag),
+                    EvaluateCookGesturePath(3, 0f, reverseZigZag)) <= 0.0001f;
+            bool runtimeShapeGate = CookGestureSampleHasMinimumPathSpan(1, narrowCircle) &&
+                CookGestureSampleHasMinimumPathSpan(3, narrowZigZag) &&
+                CookGestureTraversalMatchesPath(1, clockwise) &&
+                CookGestureTraversalMatchesPath(1, counterClockwise) &&
+                CookGestureTraversalMatchesPath(3, wideZigZag) &&
+                CookGestureTraversalMatchesPath(3, reverseZigZag) &&
+                CookGestureDistinctImprintCount(wideZigZag) == 9;
+            MoonlightGestureSample flat = MoonlightGestureSample.Synthetic(
+                MoonlightGestureKind.Tap, 0.95f);
+            bool rejectsFlatGesture = !CookGestureSampleHasMinimumPathSpan(1, flat) &&
+                !CookGestureSampleHasMinimumPathSpan(3, flat) &&
+                !CookGestureTraversalMatchesPath(1, flat) &&
+                !CookGestureTraversalMatchesPath(3, flat) &&
+                CookGestureDistinctImprintCount(flat) == 1;
+            finiteAndBounded &= CookGesturePointIsFiniteAndBounded(1,
+                    EvaluateCookGesturePath(1, float.NaN, clockwise)) &&
+                CookGesturePointIsFiniteAndBounded(3,
+                    EvaluateCookGesturePath(3, float.PositiveInfinity, wideZigZag));
+
+            detail = $"points={clockwise.PointCount} clockwiseOpposite={oppositeCircleTraversal} " +
+                $"zigDirectionOpposite={oppositeDecorDirection} " +
+                $"circleSpan={narrowCircleSpan:0.000}/{wideCircleSpan:0.000} " +
+                $"decorSpan={narrowDecorSpan:0.000}/{wideDecorSpan:0.000} " +
+                $"runtimeShape={runtimeShapeGate} rejectsFlat={rejectsFlatGesture} " +
+                $"finiteBounds={finiteAndBounded} " +
+                $"budgets={CookRendererBudget}r/{CookMaterialBudget}m/{CookLightBudget}l";
+            return clockwise.HasSevenFiniteNormalizedPoints &&
+                counterClockwise.HasSevenFiniteNormalizedPoints &&
+                oppositeCircleTraversal && oppositeDecorDirection && distinctSpans &&
+                runtimeShapeGate && rejectsFlatGesture &&
+                finiteAndBounded && CookRendererBudget == 36 &&
+                CookMaterialBudget == 24 && CookLightBudget == 1;
+        }
+
+        static MoonlightGestureSample CookCircleSample(float radius, bool clockwise)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++)
+            {
+                float angle = i / (float)(points.Length - 1) * Mathf.PI * 2f;
+                if (clockwise) angle = -angle;
+                points[i] = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+            }
+            return MoonlightGestureSample.Create(0.95f, 0.8f, points);
+        }
+
+        static MoonlightGestureSample CookZigZagSample(float amplitude, float travel,
+            bool reverse)
+        {
+            var points = new Vector2[MoonlightGestureSample.ResampledPointCount];
+            for (int i = 0; i < points.Length; i++)
+            {
+                int sourceIndex = reverse ? points.Length - 1 - i : i;
+                points[i] = new Vector2(sourceIndex % 2 == 0 ? -amplitude : amplitude,
+                    Mathf.Lerp(-travel, travel, sourceIndex / (float)(points.Length - 1)));
+            }
+            return MoonlightGestureSample.Create(0.95f, 0.8f, points);
+        }
+
+        static float CookGesturePathSpan(int stepIndex, MoonlightGestureSample sample,
+            bool xAxis)
+        {
+            float minimum = float.PositiveInfinity;
+            float maximum = float.NegativeInfinity;
+            for (int i = 0; i <= 40; i++)
+            {
+                Vector3 point = EvaluateCookGesturePath(stepIndex, i / 40f, sample);
+                float coordinate = xAxis ? point.x : point.z;
+                minimum = Mathf.Min(minimum, coordinate);
+                maximum = Mathf.Max(maximum, coordinate);
+            }
+            return maximum - minimum;
+        }
+
+        static bool CookGestureSampleHasMinimumPathSpan(int stepIndex,
+            MoonlightGestureSample sample)
+        {
+            if (!sample.HasSevenFiniteNormalizedPoints) return false;
+            float xSpan = CookGesturePathSpan(stepIndex, sample, true);
+            float zSpan = CookGesturePathSpan(stepIndex, sample, false);
+            return stepIndex == 1
+                ? xSpan >= 0.12f && zSpan >= 0.08f
+                : stepIndex == 3 && xSpan >= 0.16f && zSpan >= 0.12f;
+        }
+
+        static bool CookGestureTraversalMatchesPath(int stepIndex,
+            MoonlightGestureSample sample)
+        {
+            if (!sample.HasSevenFiniteNormalizedPoints) return false;
+            if (stepIndex == 1)
+            {
+                float sampleArea = 0f;
+                float pathArea = 0f;
+                for (int i = 0; i < MoonlightGestureSample.ResampledPointCount - 1; i++)
+                {
+                    Vector2 from = sample[i];
+                    Vector2 to = sample[i + 1];
+                    sampleArea += from.x * to.y - to.x * from.y;
+                    Vector3 pathFrom = EvaluateCookGesturePath(1,
+                        i / (float)(MoonlightGestureSample.ResampledPointCount - 1), sample);
+                    Vector3 pathTo = EvaluateCookGesturePath(1,
+                        (i + 1f) / (MoonlightGestureSample.ResampledPointCount - 1), sample);
+                    pathArea += pathFrom.x * pathTo.z - pathTo.x * pathFrom.z;
+                }
+                return Mathf.Abs(sampleArea) >= 0.08f && Mathf.Abs(pathArea) >= 0.004f &&
+                    Mathf.Sign(sampleArea) == Mathf.Sign(pathArea);
+            }
+            if (stepIndex != 3) return false;
+            float sampleDirection = sample.End.y - sample.Start.y;
+            float pathDirection = EvaluateCookGesturePath(3, 1f, sample).z -
+                EvaluateCookGesturePath(3, 0f, sample).z;
+            return Mathf.Abs(sampleDirection) >= 0.12f && Mathf.Abs(pathDirection) >= 0.04f &&
+                Mathf.Sign(sampleDirection) == Mathf.Sign(pathDirection);
+        }
+
+        static int CookGestureDistinctImprintCount(MoonlightGestureSample sample)
+        {
+            int distinctCount = 0;
+            for (int i = 0; i < 9; i++)
+            {
+                Vector3 candidate = CookGestureImprintOffset(i, sample);
+                bool distinct = true;
+                for (int previous = 0; previous < i; previous++)
+                {
+                    if (Vector3.SqrMagnitude(candidate -
+                            CookGestureImprintOffset(previous, sample)) <= 0.000004f)
+                    {
+                        distinct = false;
+                        break;
+                    }
+                }
+                if (distinct) distinctCount++;
+            }
+            return distinctCount;
+        }
+
+        static bool CookGesturePointIsFiniteAndBounded(int stepIndex, Vector3 point)
+        {
+            if (!IsFinite(point)) return false;
+            if (stepIndex == 1)
+                return Mathf.Abs(point.x) <= CookCircleMaximumX + 0.0001f &&
+                    Mathf.Abs(point.z) <= CookCircleMaximumZ + 0.0001f &&
+                    point.y >= CookGestureMinimumY && point.y <= CookGestureMaximumY;
+            return point.x >= CookDecorMinimumX && point.x <= CookDecorMaximumX &&
+                point.z >= CookDecorMinimumZ && point.z <= CookDecorMaximumZ &&
+                point.y >= CookGestureMinimumY && point.y <= CookGestureMaximumY;
         }
 
         public static Vector3 EvaluatePlayTrajectory(int stepIndex, float progress,

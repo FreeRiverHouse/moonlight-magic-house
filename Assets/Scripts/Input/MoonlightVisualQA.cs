@@ -413,6 +413,17 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightGameplayQA][PASS] cook-choreography-contract " +
                 $"{cookChoreographyDetail} " +
                 "marker=MOONLIGHT_COOK_CHOREOGRAPHY_CONTRACT_VERIFIED");
+            if (!MoonlightActivityStage.ValidateGestureResponsiveCookContract(
+                    out string responsiveCookDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] gesture-cook-contract " +
+                    responsiveCookDetail);
+                Application.Quit(116);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] gesture-cook-contract " +
+                $"{responsiveCookDetail} " +
+                "marker=MOONLIGHT_GESTURE_COOK_CONTRACT_VERIFIED");
             if (!MoonlightUI.ValidateIPadProgressFeedbackContract(out string progressFeedbackDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-progress-feedback-contract " +
@@ -1781,6 +1792,81 @@ namespace MoonlightMagicHouse
 
                         if (zone.Kind == MoonlightSpatialActionKind.Cook)
                         {
+                            bool cookSampleEqualityPass = pad != null &&
+                                zone.LastGestureSample.PointCount ==
+                                    MoonlightGestureSample.ResampledPointCount &&
+                                zone.LastGestureSample.HasSevenFiniteNormalizedPoints &&
+                                feedback.ActiveGestureSample.PointCount ==
+                                    MoonlightGestureSample.ResampledPointCount &&
+                                feedback.ActiveGestureSample.HasSevenFiniteNormalizedPoints &&
+                                stage.ActiveGestureSample.PointCount ==
+                                    MoonlightGestureSample.ResampledPointCount &&
+                                stage.ActiveGestureSample.HasSevenFiniteNormalizedPoints &&
+                                pad.LastSample.ContentEquals(zone.LastGestureSample) &&
+                                zone.LastGestureSample.ContentEquals(
+                                    feedback.ActiveGestureSample) &&
+                                feedback.ActiveGestureSample.ContentEquals(
+                                    stage.ActiveGestureSample);
+                            bool gesturePathStep = step == 1 || step == 3;
+                            bool cookGestureKindPass = step switch
+                            {
+                                1 => expected == MoonlightGestureKind.Circle,
+                                3 => expected == MoonlightGestureKind.ZigZag,
+                                _ => true
+                            };
+                            bool cookTransformAgreementPass = !gesturePathStep ||
+                                stage.CookGesturePathTransformAgreement;
+                            bool cookGestureShapePass = !gesturePathStep ||
+                                stage.CookGestureInputReady;
+                            bool cookImprintPass = step != 3 ||
+                                (stage.CookCookieMarksRetainGestureImprint &&
+                                 stage.CookGestureResultQAMarker ==
+                                     MoonlightActivityStage.CookGesturePersonalizedResultMarker);
+                            bool unchangedCookBudgets =
+                                MoonlightActivityStage.CookRendererBudget == 36 &&
+                                MoonlightActivityStage.CookMaterialBudget == 24 &&
+                                MoonlightActivityStage.CookLightBudget == 1 &&
+                                stage.ActiveRendererCount <=
+                                    MoonlightActivityStage.CookRendererBudget &&
+                                stage.ActiveUniqueMaterialCount <=
+                                    MoonlightActivityStage.CookMaterialBudget &&
+                                stage.ActiveLightCount == MoonlightActivityStage.CookLightBudget;
+                            if (!cookSampleEqualityPass || !cookGestureKindPass ||
+                                !cookTransformAgreementPass || !cookGestureShapePass ||
+                                !cookImprintPass || !unchangedCookBudgets)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] gesture-cook-runtime " +
+                                    $"step={step + 1}/4 padPoints=" +
+                                    $"{(pad != null ? pad.LastSample.PointCount : 0)} " +
+                                    $"zonePoints={zone.LastGestureSample.PointCount} " +
+                                    $"feedbackPoints={feedback.ActiveGestureSample.PointCount} " +
+                                    $"stagePoints={stage.ActiveGestureSample.PointCount} " +
+                                    $"sampleEquality={cookSampleEqualityPass} " +
+                                    $"kind={expected}/{cookGestureKindPass} " +
+                                    $"transformAgreement={cookTransformAgreementPass} " +
+                                    $"shape={cookGestureShapePass} span=" +
+                                    $"{stage.CookGestureHasMinimumPathSpan} traversal=" +
+                                    $"{stage.CookGestureTraversalDirectionAgreement} distinct=" +
+                                    $"{stage.CookDistinctGestureImprintCount}/9 " +
+                                    $"actual={stage.CookGesturePropLocalPosition:F3} " +
+                                    $"expected={stage.CookExpectedGesturePropLocalPosition:F3} " +
+                                    $"imprint={stage.CookCookieMarksRetainGestureImprint} " +
+                                    $"resultMarker={stage.CookGestureResultQAMarker} " +
+                                    $"budget=({stage.CookBudgetEvidence})");
+                                Application.Quit(117);
+                                yield break;
+                            }
+                            Debug.Log("[MoonlightGameplayQA][PASS] gesture-cook-runtime " +
+                                $"step={step + 1}/4 points={stage.ActiveGestureSample.PointCount} " +
+                                $"sampleEquality={cookSampleEqualityPass} " +
+                                $"kind={expected} shape={cookGestureShapePass} " +
+                                $"transformAgreement={cookTransformAgreementPass} " +
+                                $"actual={stage.CookGesturePropLocalPosition:F3} " +
+                                $"expected={stage.CookExpectedGesturePropLocalPosition:F3} " +
+                                $"imprint={cookImprintPass} resultMarker={stage.CookGestureResultQAMarker} " +
+                                $"budget=({stage.CookBudgetEvidence}) " +
+                                "marker=MOONLIGHT_GESTURE_COOK_RUNTIME_VERIFIED");
+
                             bool authoredWorkbenchPass = stage.HasAuthoredCookWorkbench &&
                                 stage.AuthoredCookWorkbenchRendererCount >= 8 &&
                                 stage.AuthoredCookWorkbenchRendererCount <= 12 &&
@@ -2300,6 +2386,41 @@ namespace MoonlightMagicHouse
                                 $"remaining={(stage != null ? stage.LingerSecondsRemaining : 0f):0.00}s");
                             Application.Quit(47);
                             yield break;
+                        }
+                        if (zone.Kind == MoonlightSpatialActionKind.Cook)
+                        {
+                            bool lingeringCookImprintPass =
+                                stage.ActiveGestureSample.ContentEquals(
+                                    zone.LastGestureSample) &&
+                                stage.CookGesturePathTransformAgreement &&
+                                stage.CookGestureInputReady &&
+                                stage.CookDistinctGestureImprintCount == 9 &&
+                                stage.CookCookieMarksRetainGestureImprint &&
+                                stage.CookGestureResultQAMarker ==
+                                    MoonlightActivityStage.CookGesturePersonalizedResultMarker &&
+                                MoonlightActivityStage.CookRendererBudget == 36 &&
+                                MoonlightActivityStage.CookMaterialBudget == 24 &&
+                                MoonlightActivityStage.CookLightBudget == 1 &&
+                                stage.CookBudgetReady;
+                            if (!lingeringCookImprintPass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                    "gesture-cook-linger " +
+                                    $"sample={stage.ActiveGestureSample.ContentEquals(zone.LastGestureSample)} " +
+                                    $"transform={stage.CookGesturePathTransformAgreement} " +
+                                    $"shape={stage.CookGestureInputReady} distinct=" +
+                                    $"{stage.CookDistinctGestureImprintCount}/9 " +
+                                    $"marks={stage.CookCookieMarksRetainGestureImprint} " +
+                                    $"resultMarker={stage.CookGestureResultQAMarker} " +
+                                    $"budget=({stage.CookBudgetEvidence})");
+                                Application.Quit(118);
+                                yield break;
+                            }
+                            Debug.Log("[MoonlightGameplayQA][PASS] gesture-cook-linger " +
+                                $"marks={stage.CookCookieMarksRetainGestureImprint} " +
+                                $"resultMarker={stage.CookGestureResultQAMarker} " +
+                                $"budget=({stage.CookBudgetEvidence}) " +
+                                "marker=MOONLIGHT_COOK_GESTURE_LINGER_VERIFIED");
                         }
                         int finalCountdownSeconds = 0;
                         bool finalActionTextValid = ui != null &&
