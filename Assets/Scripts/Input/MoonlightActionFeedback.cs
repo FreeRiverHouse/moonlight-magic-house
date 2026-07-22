@@ -52,6 +52,7 @@ namespace MoonlightMagicHouse
                     ? $"READY IN {CooldownRemaining:0.0}s"
                     : "";
         public string StateText => _stateText;
+        public float ActionProgress01 { get; private set; }
         public int ActivityStep => _activityStep;
         public int ActivityRequiredSteps => _activityRequiredSteps;
         public int ActiveStageRenderers => _activityStage != null ? _activityStage.ActiveRendererCount : 0;
@@ -134,6 +135,7 @@ namespace MoonlightMagicHouse
             }
 
             _stateText = shortState;
+            ActionProgress01 = 0f;
             _activityKind = kind;
             _activityStep = Mathf.Max(0, activityStep);
             _activityRequiredSteps = Mathf.Max(1, activityRequiredSteps);
@@ -246,6 +248,7 @@ namespace MoonlightMagicHouse
             {
                 elapsed += Time.deltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
+                ActionProgress01 = t;
                 if (kind != MoonlightSpatialActionKind.SleepCuddle)
                     UpdateContactQA(kind, t);
                 ApplyPose(kind, state, t);
@@ -257,6 +260,7 @@ namespace MoonlightMagicHouse
             }
 
             RestoreVisualPose();
+            ActionProgress01 = 1f;
             bool finalActivityStep = _activityRequiredSteps > 1 &&
                 _activityStep == _activityRequiredSteps - 1;
             bool heldFinalPresentation = finalActivityStep &&
@@ -279,6 +283,7 @@ namespace MoonlightMagicHouse
             ResetContactQA();
             _masteryCelebrationQueued = false;
             _running = null;
+            ActionProgress01 = 0f;
         }
 
         void PlayMasteryCelebration()
@@ -1177,6 +1182,7 @@ namespace MoonlightMagicHouse
             ResetContactQA();
             _masteryCelebrationQueued = false;
             _running = null;
+            ActionProgress01 = 0f;
         }
 
         void BeginCameraFocus(MoonlightSpatialActionKind kind)

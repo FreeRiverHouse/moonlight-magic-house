@@ -63,6 +63,7 @@ namespace MoonlightMagicHouse
         MoonlightSpatialActionZone _resultZone;
         GameObject _roomNavigationRoot;
         TMP_Text _iPadProgressLabel;
+        Image _iPadProgressFill;
         GameObject _iPadProgressRoot;
         bool _iPadLayoutActive;
         bool _roomNavigationLocked;
@@ -74,6 +75,7 @@ namespace MoonlightMagicHouse
         bool _qaReportPending;
 
         static readonly Vector2 IPadMinimumTouchTarget = new Vector2(96f, 88f);
+        const float IPadProgressTrackWidth = 84f;
 
         static readonly string[] MoodEmojis = { "😴", "😠", "😑", "🌸", "✨", "🌟" };
         // The character's name is Moonlight. "Stage" is still tracked internally for evolution/achievements,
@@ -93,6 +95,11 @@ namespace MoonlightMagicHouse
         public string ActivityProgressQAMarker => _iPadProgressLabel != null && _iPadProgressRoot.activeSelf
             ? _iPadProgressLabel.text
             : "";
+        public float ActivityProgressFill01 { get; private set; }
+        public string ActivityProgressFillQAMarker => _iPadProgressFill != null &&
+            _iPadProgressRoot != null && _iPadProgressRoot.activeSelf
+                ? "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_READY"
+                : "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_HIDDEN";
         public string GestureCommandQAMarker => _gestureCommandMarker;
         public Rect ActionTouchTargetScreenRect => ScreenRect(actionBtn != null
             ? actionBtn.transform as RectTransform
@@ -377,6 +384,18 @@ namespace MoonlightMagicHouse
             progressRect.anchoredPosition = new Vector2(335f, 106f);
             progressRect.sizeDelta = new Vector2(92f, 42f);
 
+            var fillObject = new GameObject("ProgressFill");
+            fillObject.transform.SetParent(_iPadProgressRoot.transform, false);
+            _iPadProgressFill = fillObject.AddComponent<Image>();
+            _iPadProgressFill.color = new Color(0.42f, 0.86f, 1f, 0.68f);
+            _iPadProgressFill.raycastTarget = false;
+            var fillRect = fillObject.GetComponent<RectTransform>();
+            fillRect.anchorMin = new Vector2(0f, 0.5f);
+            fillRect.anchorMax = new Vector2(0f, 0.5f);
+            fillRect.pivot = new Vector2(0f, 0.5f);
+            fillRect.anchoredPosition = new Vector2(4f, 0f);
+            fillRect.sizeDelta = new Vector2(0f, 34f);
+
             var labelObject = new GameObject("ProgressLabel");
             labelObject.transform.SetParent(_iPadProgressRoot.transform, false);
             _iPadProgressLabel = labelObject.AddComponent<TextMeshProUGUI>();
@@ -386,6 +405,10 @@ namespace MoonlightMagicHouse
             _iPadProgressLabel.alignment = TextAlignmentOptions.Center;
             _iPadProgressLabel.raycastTarget = false;
             _iPadProgressLabel.characterSpacing = 0f;
+            var progressShadow = labelObject.AddComponent<Shadow>();
+            progressShadow.effectColor = new Color(0.03f, 0.04f, 0.06f, 0.92f);
+            progressShadow.effectDistance = new Vector2(1.5f, -1.5f);
+            progressShadow.useGraphicAlpha = true;
             var labelRect = labelObject.GetComponent<RectTransform>();
             labelRect.anchorMin = Vector2.zero;
             labelRect.anchorMax = Vector2.one;
@@ -402,12 +425,14 @@ namespace MoonlightMagicHouse
             int step = 0;
             int requiredSteps = 1;
             bool showProgress = false;
+            float progressFill = 0f;
 
             if (presenting && activityStage != null)
             {
                 step = 4;
                 requiredSteps = 4;
                 showProgress = true;
+                progressFill = 1f;
                 string activityName = zone != null && zone.Kind == activityStage.CurrentKind
                     ? zone.DisplayName.ToUpperInvariant()
                     : activityStage.CurrentKind.ToString().ToUpperInvariant();
@@ -421,6 +446,8 @@ namespace MoonlightMagicHouse
                 step = feedback.ActivityStep + 1;
                 requiredSteps = feedback.ActivityRequiredSteps;
                 showProgress = requiredSteps > 1;
+                progressFill = CalculateActivityProgress01(feedback.ActivityStep,
+                    feedback.ActionProgress01, requiredSteps);
                 string verb = ProgressVerb(feedback.ProgressText);
                 if (contextLabel != null)
                     contextLabel.text = zone != null
@@ -434,6 +461,8 @@ namespace MoonlightMagicHouse
                 step = feedback.ActivityStep + 1;
                 requiredSteps = feedback.ActivityRequiredSteps;
                 showProgress = requiredSteps > 1;
+                progressFill = CalculateActivityProgress01(feedback.ActivityStep + 1,
+                    0f, requiredSteps);
                 bool finishing = showProgress && step >= requiredSteps;
                 if (contextLabel != null)
                     contextLabel.text = finishing
@@ -447,6 +476,7 @@ namespace MoonlightMagicHouse
                 step = zone.ProgressStep + 1;
                 requiredSteps = zone.RequiredSteps;
                 showProgress = requiredSteps > 1;
+                progressFill = CalculateActivityProgress01(zone.ProgressStep, 0f, requiredSteps);
                 string action = zone.GetActionLabel(moonlight);
                 string gesture = CompactGestureCommand(zone.RequiredGesture);
                 if (contextLabel != null)
@@ -467,7 +497,49 @@ namespace MoonlightMagicHouse
                 _iPadProgressRoot.SetActive(showProgress);
                 if (showProgress && _iPadProgressLabel != null)
                     _iPadProgressLabel.text = $"{Mathf.Clamp(step, 1, requiredSteps)}/{requiredSteps}";
+                SetIPadProgressFill(showProgress ? progressFill : 0f,
+                    zone != null ? ActionColor(zone, false) : new Color(0.42f, 0.86f, 1f, 0.96f));
             }
+        }
+
+        void SetIPadProgressFill(float progress, Color color)
+        {
+            ActivityProgressFill01 = Mathf.Clamp01(progress);
+            if (_iPadProgressFill == null) return;
+            var rect = _iPadProgressFill.transform as RectTransform;
+            if (rect != null)
+                rect.sizeDelta = new Vector2(IPadProgressTrackWidth * ActivityProgressFill01, 34f);
+            color.a = 0.68f;
+            _iPadProgressFill.color = color;
+        }
+
+        public static float CalculateActivityProgress01(int completedSteps,
+            float activeStepProgress, int requiredSteps)
+        {
+            requiredSteps = Mathf.Max(1, requiredSteps);
+            float total = Mathf.Clamp(completedSteps, 0, requiredSteps) +
+                (completedSteps < requiredSteps ? Mathf.Clamp01(activeStepProgress) : 0f);
+            return Mathf.Clamp01(total / requiredSteps);
+        }
+
+        public static bool ValidateIPadProgressFeedbackContract(out string detail)
+        {
+            float start = CalculateActivityProgress01(0, 0f, 4);
+            float firstHalf = CalculateActivityProgress01(0, 0.5f, 4);
+            float firstComplete = CalculateActivityProgress01(1, 0f, 4);
+            float thirdHalf = CalculateActivityProgress01(2, 0.5f, 4);
+            float complete = CalculateActivityProgress01(4, 0f, 4);
+            bool pass = Mathf.Approximately(start, 0f) &&
+                Mathf.Approximately(firstHalf, 0.125f) &&
+                Mathf.Approximately(firstComplete, 0.25f) &&
+                Mathf.Approximately(thirdHalf, 0.625f) &&
+                Mathf.Approximately(complete, 1f) &&
+                start < firstHalf && firstHalf < firstComplete &&
+                firstComplete < thirdHalf && thirdHalf < complete;
+            detail = $"start={start:F3} firstHalf={firstHalf:F3} " +
+                $"firstComplete={firstComplete:F3} thirdHalf={thirdHalf:F3} " +
+                $"complete={complete:F3} track={IPadProgressTrackWidth:F0}px";
+            return pass;
         }
 
         static void ConfigureActivityLabel(TMP_Text label, Vector2 position, Vector2 size,

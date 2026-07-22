@@ -275,6 +275,15 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] activity-surface-depth-contract " +
                 $"{surfaceDepthDetail} marker=MOONLIGHT_ACTIVITY_SURFACE_DEPTH_CONTRACT_VERIFIED");
+            if (!MoonlightUI.ValidateIPadProgressFeedbackContract(out string progressFeedbackDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-progress-feedback-contract " +
+                    progressFeedbackDetail);
+                Application.Quit(68);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-progress-feedback-contract " +
+                $"{progressFeedbackDetail} marker=MOONLIGHT_IPAD_PROGRESS_FEEDBACK_CONTRACT_VERIFIED");
 
             bool recognizerPass = MoonlightGesturePad.ValidateRecognizerContract(
                 out string recognizerDetail);
@@ -546,7 +555,11 @@ namespace MoonlightMagicHouse
                     {
                         yield return null;
                         string expectedProgress = $"{step + 1}/{zone.RequiredSteps}";
+                        float expectedFill = step / (float)zone.RequiredSteps;
                         bool stepHudPass = ui.ActivityProgressQAMarker == expectedProgress &&
+                            Approximately(ui.ActivityProgressFill01, expectedFill) &&
+                            ui.ActivityProgressFillQAMarker ==
+                                "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_READY" &&
                             !string.IsNullOrEmpty(ui.GestureCommandQAMarker) &&
                             ui.ActionTouchTargetMeetsIPadMinimum && ui.ActionTouchTargetIsInsideSafeArea &&
                             ui.ActivityPromptIsInsideSafeArea && ui.ActivityResultIsInsideSafeArea &&
@@ -555,6 +568,8 @@ namespace MoonlightMagicHouse
                         {
                             Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-activity-hud action={zone.Kind} " +
                                 $"step={step + 1} progress={ui.ActivityProgressQAMarker} " +
+                                $"fill={ui.ActivityProgressFill01:0.000}/{expectedFill:0.000} " +
+                                $"fillMarker={ui.ActivityProgressFillQAMarker} " +
                                 $"gesture={ui.GestureCommandQAMarker} touch={ui.ActionTouchTargetLayoutSize} " +
                                 $"insideSafe={ui.ActionTouchTargetIsInsideSafeArea} " +
                                 $"panelsSeparated={ui.ActivityHUDPanelsDoNotOverlap}");
@@ -563,17 +578,27 @@ namespace MoonlightMagicHouse
                         }
                         Debug.Log($"[MoonlightGameplayQA][PASS] ipad-activity-hud action={zone.Kind} " +
                             $"step={step + 1} progress={ui.ActivityProgressQAMarker} " +
+                            $"fill={ui.ActivityProgressFill01:0.000} " +
                             $"gesture=\"{ui.GestureCommandQAMarker}\"");
                     }
                     pad.SubmitSynthetic(expected, 0.95f);
                     yield return new WaitForSeconds(0.08f);
                     int acceptedProgress = zone.ProgressStep;
+                    float inFlightProgressFill = ui != null ? ui.ActivityProgressFill01 : 0f;
+                    float completedFill = step / (float)zone.RequiredSteps;
+                    float stepCeiling = (step + 1f) / zone.RequiredSteps;
+                    bool inFlightFillPass = !expectIPadHud || ui == null ||
+                        (inFlightProgressFill > completedFill &&
+                         inFlightProgressFill < stepCeiling);
                     bool acceptedWhileBusy = pad.SubmitSynthetic(expected, 0.95f);
-                    if (acceptedWhileBusy || zone.ProgressStep != acceptedProgress ||
+                    if (acceptedWhileBusy || !inFlightFillPass ||
+                        zone.ProgressStep != acceptedProgress ||
                         string.IsNullOrEmpty(pad.LastRejectionReason))
                     {
                         Debug.LogError($"[MoonlightGameplayQA][FAIL] busy-gesture action={zone.Kind} " +
                             $"step={step + 1} accepted={acceptedWhileBusy} progress={zone.ProgressStep} " +
+                            $"fill={inFlightProgressFill:0.000} range={completedFill:0.000}-" +
+                            $"{stepCeiling:0.000} " +
                             $"reason=\"{pad.LastRejectionReason}\"");
                         Application.Quit(54);
                         yield break;
@@ -1250,6 +1275,9 @@ namespace MoonlightMagicHouse
                         }
                         if (expectIPadHud && ui != null &&
                             (ui.ActivityProgressQAMarker != "4/4" ||
+                             !Approximately(ui.ActivityProgressFill01, 1f) ||
+                             ui.ActivityProgressFillQAMarker !=
+                                 "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_READY" ||
                              ui.GestureCommandQAMarker != "FINAL PRESENTATION" ||
                              ui.ContextResultLineCount != 2 ||
                              ui.ContextResultIsOverflowing ||
@@ -1257,6 +1285,8 @@ namespace MoonlightMagicHouse
                         {
                             Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-final-hud action={zone.Kind} " +
                                 $"progress={ui.ActivityProgressQAMarker} " +
+                                $"fill={ui.ActivityProgressFill01:0.000} " +
+                                $"fillMarker={ui.ActivityProgressFillQAMarker} " +
                                 $"command={ui.GestureCommandQAMarker} lines={ui.ContextResultLineCount} " +
                                 $"overflow={ui.ContextResultIsOverflowing} roomNav={ui.RoomNavigationQAMarker}");
                             Application.Quit(49);
@@ -1265,6 +1295,7 @@ namespace MoonlightMagicHouse
                         if (expectIPadHud && ui != null)
                             Debug.Log($"[MoonlightGameplayQA][PASS] activity-final-hud action={zone.Kind} " +
                                 $"progress={ui.ActivityProgressQAMarker} command={ui.GestureCommandQAMarker} " +
+                                $"fill={ui.ActivityProgressFill01:0.000} " +
                                 "marker=MOONLIGHT_ACTIVITY_FINAL_HUD_VERIFIED");
                         string presentationPrefix = zone.Kind switch
                         {
