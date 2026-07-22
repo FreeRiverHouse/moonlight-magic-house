@@ -355,6 +355,15 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-progress-feedback-contract " +
                 $"{progressFeedbackDetail} marker=MOONLIGHT_IPAD_PROGRESS_FEEDBACK_CONTRACT_VERIFIED");
+            if (!MoonlightUI.ValidateActivityPhaseFeedbackContract(out string phaseFeedbackDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-activity-phase-feedback " +
+                    phaseFeedbackDetail);
+                Application.Quit(77);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-activity-phase-feedback " +
+                $"{phaseFeedbackDetail} marker=MOONLIGHT_IPAD_ACTIVITY_PHASE_FEEDBACK_VERIFIED");
 
             bool recognizerPass = MoonlightGesturePad.ValidateRecognizerContract(
                 out string recognizerDetail);

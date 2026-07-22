@@ -70,6 +70,7 @@ namespace MoonlightMagicHouse
         bool _roomNavigationLocked;
         bool _activityPresentationWasVisible;
         string _gestureCommandMarker = "";
+        string _activityPhaseMarker = "";
         int _lastQAScreenWidth;
         int _lastQAScreenHeight;
         Rect _lastQASafeArea;
@@ -102,6 +103,7 @@ namespace MoonlightMagicHouse
                 ? "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_READY"
                 : "MOONLIGHT_IPAD_ACTIVITY_PROGRESS_FILL_HIDDEN";
         public string GestureCommandQAMarker => _gestureCommandMarker;
+        public string ActivityPhaseQAMarker => _activityPhaseMarker;
         public Rect ActionTouchTargetScreenRect => ScreenRect(actionBtn != null
             ? actionBtn.transform as RectTransform
             : null);
@@ -444,6 +446,7 @@ namespace MoonlightMagicHouse
                     contextLabel.text = $"{activityName}  /  COMPLETE";
                 actionBtnLabel.text = "CONTINUE";
                 _gestureCommandMarker = "FINAL PRESENTATION";
+                _activityPhaseMarker = "COMPLETE";
             }
             else if (performing && feedback != null)
             {
@@ -453,12 +456,14 @@ namespace MoonlightMagicHouse
                 progressFill = CalculateActivityProgress01(feedback.ActivityStep,
                     feedback.ActionProgress01, requiredSteps);
                 string verb = ProgressVerb(feedback.ProgressText);
+                string phase = ActivityPhaseLabel(feedback.ActionContactPhase);
                 if (contextLabel != null)
                     contextLabel.text = zone != null
-                        ? $"{zone.DisplayName.ToUpperInvariant()}  /  {verb}"
-                        : verb;
-                actionBtnLabel.text = "IN PROGRESS";
-                _gestureCommandMarker = "IN PROGRESS";
+                        ? $"{zone.DisplayName.ToUpperInvariant()}  /  {verb}  /  {phase}"
+                        : $"{verb}  /  {phase}";
+                actionBtnLabel.text = $"{phase}\n{Mathf.RoundToInt(feedback.ActionProgress01 * 100f)}%";
+                _gestureCommandMarker = $"IN PROGRESS {phase}";
+                _activityPhaseMarker = phase;
             }
             else if (coolingDown && feedback != null)
             {
@@ -474,6 +479,7 @@ namespace MoonlightMagicHouse
                         : zone != null ? $"NEXT  /  {zone.GetActionLabel(moonlight)}" : "GET READY";
                 actionBtnLabel.text = $"READY IN\n{feedback.CooldownRemaining:0.0}s";
                 _gestureCommandMarker = "COOLDOWN";
+                _activityPhaseMarker = "GET READY";
             }
             else if (hasAction && zone != null)
             {
@@ -487,6 +493,7 @@ namespace MoonlightMagicHouse
                     contextLabel.text = $"{zone.DisplayName.ToUpperInvariant()}  /  {action}";
                 actionBtnLabel.text = $"{gesture}\n{action}";
                 _gestureCommandMarker = $"{gesture} {action}";
+                _activityPhaseMarker = "";
             }
             else
             {
@@ -494,6 +501,7 @@ namespace MoonlightMagicHouse
                     contextLabel.text = CompactDiscoveryPrompt(interactor);
                 actionBtnLabel.text = "";
                 _gestureCommandMarker = "";
+                _activityPhaseMarker = "";
             }
 
             if (_iPadProgressRoot != null)
@@ -601,6 +609,36 @@ namespace MoonlightMagicHouse
             if (string.IsNullOrEmpty(progressText)) return "IN PROGRESS";
             int separator = progressText.IndexOf("  ", StringComparison.Ordinal);
             return separator > 0 ? progressText.Substring(0, separator) : progressText;
+        }
+
+        public static string ActivityPhaseLabel(string phase) => phase switch
+        {
+            "anticipation" => "GET READY",
+            "approach" => "REACH",
+            "contact" => "MAKE CONTACT",
+            "follow-through" => "FOLLOW THROUGH",
+            "recovery" => "SETTLE",
+            _ => "IN MOTION"
+        };
+
+        public static bool ValidateActivityPhaseFeedbackContract(out string detail)
+        {
+            string[] source =
+                { "anticipation", "approach", "contact", "follow-through", "recovery" };
+            var labels = new HashSet<string>();
+            int longest = 0;
+            foreach (string phase in source)
+            {
+                string label = ActivityPhaseLabel(phase);
+                labels.Add(label);
+                longest = Mathf.Max(longest, label.Length);
+            }
+            bool semanticPass = ActivityPhaseLabel("contact") == "MAKE CONTACT" &&
+                ActivityPhaseLabel("follow-through") == "FOLLOW THROUGH" &&
+                ActivityPhaseLabel("") == "IN MOTION";
+            detail = $"phases={source.Length} unique={labels.Count} longest={longest} " +
+                $"semantic={semanticPass}";
+            return source.Length == 5 && labels.Count == 5 && longest <= 14 && semanticPass;
         }
 
         void RefreshRoomNavigationState(MoonlightSpatialInteractor interactor, bool presenting, bool busy)
