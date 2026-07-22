@@ -7,19 +7,39 @@ namespace MoonlightMagicHouse
 {
     public static class HapticFeedback
     {
+        const string LightPreset = "LightImpact";
+        const string MediumPreset = "MediumImpact";
+        const string SuccessPreset = "Success";
+        const string FailurePreset = "Failure";
+
         public static void Light()
         {
-            PlayPreset("LightImpact");
+            PlayPreset(LightPreset);
         }
 
         public static void Medium()
         {
-            PlayPreset("MediumImpact");
+            PlayPreset(MediumPreset);
         }
 
         public static void Success()
         {
-            PlayPreset("Success");
+            PlayPreset(SuccessPreset);
+        }
+
+        public static void Failure()
+        {
+            PlayPreset(FailurePreset);
+        }
+
+        public static bool ValidateSemanticContract(out string detail)
+        {
+            string[] presets = { LightPreset, MediumPreset, SuccessPreset, FailurePreset };
+            bool named = presets.All(name => !string.IsNullOrWhiteSpace(name));
+            bool distinct = presets.Distinct(StringComparer.Ordinal).Count() == presets.Length;
+            detail = $"start={LightPreset} step={MediumPreset} pass={SuccessPreset} fail={FailurePreset} " +
+                     $"distinct={distinct}";
+            return named && distinct && FailurePreset == "Failure";
         }
 
         static void PlayPreset(string presetName)

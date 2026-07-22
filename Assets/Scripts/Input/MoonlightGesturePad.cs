@@ -19,6 +19,9 @@ namespace MoonlightMagicHouse
     {
         public const int GestureTraceDotCapacity = 24;
         const float GestureTraceFadeSeconds = 0.48f;
+        const float ResultFeedbackSeconds = 0.34f;
+        const float PassedResultScale = 1.055f;
+        const float FailedResultScale = 0.965f;
 
         readonly List<Vector2> _points = new();
         readonly RectTransform[] _traceDots = new RectTransform[GestureTraceDotCapacity];
@@ -35,6 +38,8 @@ namespace MoonlightMagicHouse
         Vector3 _baseScale = Vector3.one;
         float _feedbackUntil;
         Color _feedbackColor;
+        float _feedbackScale = 1f;
+        bool _lastResultPassed;
         int _traceDotCursor;
         int _traceDotCount;
         float _traceFadeUntil;
@@ -46,6 +51,11 @@ namespace MoonlightMagicHouse
         public bool IsTrackingGesture => _pointerId != int.MinValue;
         public int TraceDotPoolCount => _traceDots.Length;
         public int VisibleTraceDotCount => _traceDotCount;
+        public bool LastResultPassed => _lastResultPassed;
+        public string ResultFeedbackQAMarker =>
+            ValidateResultFeedbackContract(out _)
+                ? "MOONLIGHT_IPAD_GESTURE_RESULT_FEEDBACK_READY"
+                : "MOONLIGHT_IPAD_GESTURE_RESULT_FEEDBACK_INVALID";
         public Vector2 TouchSurfaceSize => _rect != null ? _rect.rect.size : Vector2.zero;
         public string CoordinateQAMarker =>
             ValidateCoordinateNormalization(TouchSurfaceSize, out _)
@@ -86,12 +96,16 @@ namespace MoonlightMagicHouse
 
             if (_surface != null)
             {
-                float remaining = Mathf.Clamp01((_feedbackUntil - Time.unscaledTime) / 0.22f);
+                float remaining = Mathf.Clamp01(
+                    (_feedbackUntil - Time.unscaledTime) / ResultFeedbackSeconds);
                 _surface.color = remaining > 0f
                     ? Color.Lerp(_baseColor, _feedbackColor, remaining * 0.55f)
                     : _baseColor;
             }
-            transform.localScale = Vector3.Lerp(transform.localScale, _baseScale,
+            Vector3 targetScale = Time.unscaledTime < _feedbackUntil
+                ? _baseScale * _feedbackScale
+                : _baseScale;
+            transform.localScale = Vector3.Lerp(transform.localScale, targetScale,
                 Time.unscaledDeltaTime * 18f);
             UpdateTraceFade();
         }
@@ -280,13 +294,33 @@ namespace MoonlightMagicHouse
 
         void SetResultVisual(bool passed)
         {
+            _lastResultPassed = passed;
             _feedbackColor = passed
                 ? new Color(0.42f, 1f, 0.72f, _baseColor.a)
                 : new Color(1f, 0.38f, 0.42f, _baseColor.a);
-            _feedbackUntil = Time.unscaledTime + 0.22f;
+            _feedbackScale = passed ? PassedResultScale : FailedResultScale;
+            _feedbackUntil = Time.unscaledTime + ResultFeedbackSeconds;
+            transform.localScale = _baseScale * _feedbackScale;
             if (_surface != null)
                 _surface.color = Color.Lerp(_baseColor, _feedbackColor, 0.55f);
             BeginTraceFade(passed);
+        }
+
+        public static bool ValidateResultFeedbackContract(out string detail)
+        {
+            Color passed = new Color(0.42f, 1f, 0.72f, 1f);
+            Color failed = new Color(1f, 0.38f, 0.42f, 1f);
+            float colorDistance = Mathf.Sqrt(
+                Mathf.Pow(passed.r - failed.r, 2f) +
+                Mathf.Pow(passed.g - failed.g, 2f) +
+                Mathf.Pow(passed.b - failed.b, 2f));
+            float passDelta = PassedResultScale - 1f;
+            float failDelta = 1f - FailedResultScale;
+            detail = $"duration={ResultFeedbackSeconds:0.00}s passScale={PassedResultScale:0.000} " +
+                     $"failScale={FailedResultScale:0.000} colorDistance={colorDistance:0.00}";
+            return ResultFeedbackSeconds >= 0.32f &&
+                   passDelta >= 0.05f && failDelta >= 0.03f &&
+                   colorDistance >= 0.80f && GestureTraceFadeSeconds > ResultFeedbackSeconds;
         }
 
         void BuildTracePool()

@@ -303,6 +303,23 @@ namespace MoonlightMagicHouse
             }
             Debug.Log($"[MoonlightGameplayQA][PASS] gesture-coordinates {coordinateDetail} " +
                 "marker=MOONLIGHT_GESTURE_COORDINATES_VERIFIED");
+            if (!MoonlightGesturePad.ValidateResultFeedbackContract(out string resultFeedbackDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-gesture-result-feedback " +
+                    resultFeedbackDetail);
+                Application.Quit(69);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] ipad-gesture-result-feedback " +
+                $"{resultFeedbackDetail} marker=MOONLIGHT_IPAD_GESTURE_RESULT_FEEDBACK_VERIFIED");
+            if (!HapticFeedback.ValidateSemanticContract(out string hapticDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-haptic-semantics {hapticDetail}");
+                Application.Quit(70);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] activity-haptic-semantics {hapticDetail} " +
+                "marker=MOONLIGHT_ACTIVITY_HAPTIC_SEMANTICS_VERIFIED");
             if (!MoonlightSpatialActionZone.ValidateMasteryContract(out string masteryDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-mastery {masteryDetail}");

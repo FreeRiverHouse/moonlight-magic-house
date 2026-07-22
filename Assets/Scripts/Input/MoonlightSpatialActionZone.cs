@@ -156,7 +156,7 @@ namespace MoonlightMagicHouse
                 _currentCombo = 0;
                 LastCueKey = "activity-try-again";
                 AudioManager.Instance?.Play(LastCueKey);
-                HapticFeedback.Light();
+                HapticFeedback.Failure();
                 Debug.Log($"[MoonlightActivityQA] gesture-fail kind={kind} expected={RequiredGesture} " +
                     $"actual={gesture} score={LastGestureScore:0.00} step={_progressStep + 1}/{RequiredSteps}");
                 return $"TRY AGAIN  /  {GestureInstruction(RequiredGesture)}  /  SCORE {Mathf.RoundToInt(LastGestureScore * 100f)}";
