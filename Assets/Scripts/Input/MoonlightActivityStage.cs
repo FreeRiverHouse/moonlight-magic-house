@@ -8,9 +8,25 @@ namespace MoonlightMagicHouse
         const string MagicFlowerResourcePath = "Models/Props/Garden/MagicFlowerBloom";
         const int GardenMagicFlowerRequiredInstances = 5;
         const int GardenMagicFlowerMaxRenderers = 10;
+        const float ActivityLightRange = 3.2f;
+        const float ActivityLightSpotAngle = 72f;
+        const float ActivityLightBaseIntensity = 0.32f;
+        const float ActivityLightPulseIntensity = 0.53f;
+
+        enum ActivitySurfaceProfile
+        {
+            Matte,
+            Fabric,
+            Wood,
+            Ceramic,
+            Metal,
+            Glass,
+            Magic
+        }
 
         readonly List<Material> _materials = new();
         readonly Dictionary<MaterialKey, Material> _materialCache = new();
+        readonly HashSet<ActivitySurfaceProfile> _configuredSurfaceProfiles = new();
         readonly List<Renderer> _renderers = new();
         readonly HashSet<int> _gardenMagicFlowerMaterialIds = new();
         int[] _activeMaterialIds = System.Array.Empty<int>();
@@ -69,6 +85,40 @@ namespace MoonlightMagicHouse
         public int ActiveRendererCount { get; private set; }
         public int ActiveUniqueMaterialCount { get; private set; }
         public int ActiveLightCount { get; private set; }
+        public int ConfiguredSurfaceProfileCount => _configuredSurfaceProfiles.Count;
+        public bool HasDepthLighting => _activityLight != null &&
+            _activityLight.type == LightType.Spot &&
+            _activityLight.shadows == LightShadows.Soft &&
+            _activityLight.range >= ActivityLightRange &&
+            _activityLight.spotAngle >= ActivityLightSpotAngle &&
+            _activityLight.intensity >= ActivityLightBaseIntensity;
+        public string SurfaceDepthQAMarker =>
+            ConfiguredSurfaceProfileCount >= 3 && HasDepthLighting
+                ? "MOONLIGHT_ACTIVITY_SURFACE_DEPTH_READY"
+                : "MOONLIGHT_ACTIVITY_SURFACE_DEPTH_INCOMPLETE";
+
+        public static bool ValidateSurfaceDepthContract(out string detail)
+        {
+            GetSurfaceResponse(ActivitySurfaceProfile.Fabric,
+                out float fabricSmoothness, out float fabricMetallic);
+            GetSurfaceResponse(ActivitySurfaceProfile.Metal,
+                out float metalSmoothness, out float metalMetallic);
+            GetSurfaceResponse(ActivitySurfaceProfile.Ceramic,
+                out float ceramicSmoothness, out float ceramicMetallic);
+            bool pass = fabricSmoothness <= 0.10f && fabricMetallic == 0f &&
+                ceramicSmoothness >= 0.50f && ceramicMetallic == 0f &&
+                metalSmoothness >= 0.65f && metalMetallic >= 0.65f &&
+                metalSmoothness - fabricSmoothness >= 0.60f &&
+                ActivityLightRange >= 3f && ActivityLightSpotAngle >= 68f &&
+                ActivityLightBaseIntensity >= 0.30f && ActivityLightPulseIntensity >= 0.50f;
+            detail = $"fabric={fabricSmoothness:F2}/{fabricMetallic:F2} " +
+                $"ceramic={ceramicSmoothness:F2}/{ceramicMetallic:F2} " +
+                $"metal={metalSmoothness:F2}/{metalMetallic:F2} " +
+                $"contrast={metalSmoothness - fabricSmoothness:F2} " +
+                $"spot={ActivityLightRange:F1}m/{ActivityLightSpotAngle:F0}deg " +
+                $"intensity={ActivityLightBaseIntensity:F2}+{ActivityLightPulseIntensity:F2}";
+            return pass;
+        }
         public bool HasAuthoredCookWorkbench => _authoredCookWorkbench != null;
         public int AuthoredCookWorkbenchRendererCount { get; private set; }
         public int AuthoredCookWorkbenchMaterialCount { get; private set; }
@@ -198,7 +248,8 @@ namespace MoonlightMagicHouse
             else if (CurrentKind == MoonlightSpatialActionKind.Read) UpdateRead(t);
 
             if (_activityLight != null)
-                _activityLight.intensity = Mathf.Sin(t * Mathf.PI) * 0.7f;
+                _activityLight.intensity = ActivityLightBaseIntensity +
+                    Mathf.Sin(t * Mathf.PI) * ActivityLightPulseIntensity;
 
             UpdateActivityCounts();
         }
@@ -344,6 +395,7 @@ namespace MoonlightMagicHouse
                 if (material != null) Destroy(material);
             _materials.Clear();
             _materialCache.Clear();
+            _configuredSurfaceProfiles.Clear();
             _renderers.Clear();
             _root = null;
             _bowl = null;
@@ -775,7 +827,8 @@ namespace MoonlightMagicHouse
             _ballTrail.endWidth = 0f;
             _ballTrail.startColor = new Color(0.98f, 0.82f, 0.38f);
             _ballTrail.endColor = new Color(0.42f, 0.86f, 1f, 0f);
-            _ballTrail.sharedMaterial = NewMaterial(Color.white, 0.25f, true);
+            _ballTrail.sharedMaterial = NewMaterial(Color.white, 0.25f, true,
+                ActivitySurfaceProfile.Magic);
             _ballTrail.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             _ballTrail.receiveShadows = false;
             _renderers.Add(_ballTrail);
@@ -1508,7 +1561,8 @@ namespace MoonlightMagicHouse
             var collider = go.GetComponent<Collider>();
             if (collider != null) Destroy(collider);
             var renderer = go.GetComponent<Renderer>();
-            renderer.sharedMaterial = NewMaterial(color, emission, transparent);
+            ActivitySurfaceProfile surface = ResolveSurfaceProfile(name, emission, transparent);
+            renderer.sharedMaterial = NewMaterial(color, emission, transparent, surface);
             renderer.shadowCastingMode = transparent
                 ? UnityEngine.Rendering.ShadowCastingMode.Off
                 : UnityEngine.Rendering.ShadowCastingMode.On;
@@ -1517,17 +1571,24 @@ namespace MoonlightMagicHouse
             return go.transform;
         }
 
-        Material NewMaterial(Color color, float emission, bool transparent)
+        Material NewMaterial(Color color, float emission, bool transparent,
+            ActivitySurfaceProfile surface)
         {
-            var key = new MaterialKey(color, emission, transparent);
+            var key = new MaterialKey(color, emission, transparent, surface);
             if (_materialCache.TryGetValue(key, out var cachedMaterial)) return cachedMaterial;
 
             var shader = Shader.Find(transparent ? "Sprites/Default" : "Universal Render Pipeline/Lit")
                 ?? Shader.Find("Standard")
                 ?? Shader.Find("Sprites/Default");
-            var material = new Material(shader) { color = color };
+            var material = new Material(shader)
+            {
+                name = $"MoonlightActivity_{surface}",
+                color = color
+            };
             if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
-            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0.24f);
+            GetSurfaceResponse(surface, out float smoothness, out float metallic);
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", smoothness);
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", metallic);
             if (material.HasProperty("_EmissionColor") && emission > 0f)
             {
                 material.EnableKeyword("_EMISSION");
@@ -1535,7 +1596,59 @@ namespace MoonlightMagicHouse
             }
             _materials.Add(material);
             _materialCache.Add(key, material);
+            _configuredSurfaceProfiles.Add(surface);
             return material;
+        }
+
+        static ActivitySurfaceProfile ResolveSurfaceProfile(string name, float emission,
+            bool transparent)
+        {
+            string normalized = name.ToLowerInvariant();
+            if (transparent || emission >= 0.18f || normalized.Contains("spark") ||
+                normalized.Contains("mote") || normalized.Contains("magic"))
+                return ActivitySurfaceProfile.Magic;
+            if (normalized.Contains("window")) return ActivitySurfaceProfile.Glass;
+            if (normalized.Contains("cloth") || normalized.Contains("ribbon") ||
+                normalized.Contains("flag") || normalized.Contains("bookmark") ||
+                normalized.Contains("cover"))
+                return ActivitySurfaceProfile.Fabric;
+            if (normalized.Contains("whisk") || normalized.Contains("tray") ||
+                normalized.Contains("platter") || normalized.Contains("handle") ||
+                normalized.Contains("spoon") || normalized.Contains("oven") ||
+                normalized.Contains("wateringcan") || normalized.Contains("medal") ||
+                normalized.Contains("pole"))
+                return ActivitySurfaceProfile.Metal;
+            if (normalized.Contains("bowl") || normalized.Contains("cup") ||
+                normalized.Contains("pot") || normalized.Contains("pedestal") ||
+                normalized.Contains("ball"))
+                return ActivitySurfaceProfile.Ceramic;
+            if (normalized.Contains("counter") || normalized.Contains("rolling") ||
+                normalized.Contains("bench") || normalized.Contains("planter") ||
+                normalized.Contains("block") || normalized.Contains("spine"))
+                return ActivitySurfaceProfile.Wood;
+            return ActivitySurfaceProfile.Matte;
+        }
+
+        static void GetSurfaceResponse(ActivitySurfaceProfile surface,
+            out float smoothness, out float metallic)
+        {
+            smoothness = surface switch
+            {
+                ActivitySurfaceProfile.Fabric => 0.08f,
+                ActivitySurfaceProfile.Wood => 0.26f,
+                ActivitySurfaceProfile.Ceramic => 0.58f,
+                ActivitySurfaceProfile.Metal => 0.72f,
+                ActivitySurfaceProfile.Glass => 0.82f,
+                ActivitySurfaceProfile.Magic => 0.48f,
+                _ => 0.18f
+            };
+            metallic = surface switch
+            {
+                ActivitySurfaceProfile.Metal => 0.70f,
+                ActivitySurfaceProfile.Glass => 0.08f,
+                ActivitySurfaceProfile.Magic => 0.05f,
+                _ => 0f
+            };
         }
 
         static int CountEnabled(Collider[] components)
@@ -1558,13 +1671,19 @@ namespace MoonlightMagicHouse
         {
             var lightObject = new GameObject("ActivityLight");
             lightObject.transform.SetParent(_root.transform, false);
-            lightObject.transform.localPosition = new Vector3(0f, 1.0f, -0.1f);
+            lightObject.transform.localPosition = new Vector3(0f, 1.55f, -1.10f);
+            lightObject.transform.localRotation = Quaternion.LookRotation(
+                new Vector3(0f, -1.10f, 1.15f).normalized, Vector3.up);
             _activityLight = lightObject.AddComponent<Light>();
-            _activityLight.type = LightType.Point;
+            _activityLight.type = LightType.Spot;
             _activityLight.color = color;
-            _activityLight.range = 2.5f;
-            _activityLight.intensity = 0f;
-            _activityLight.shadows = LightShadows.None;
+            _activityLight.range = ActivityLightRange;
+            _activityLight.spotAngle = ActivityLightSpotAngle;
+            _activityLight.intensity = ActivityLightBaseIntensity;
+            _activityLight.shadows = LightShadows.Soft;
+            _activityLight.shadowResolution = UnityEngine.Rendering.LightShadowResolution.Low;
+            _activityLight.shadowBias = 0.06f;
+            _activityLight.shadowNormalBias = 0.35f;
         }
 
         void SetActive(Transform[] transforms, bool active)
@@ -1618,17 +1737,21 @@ namespace MoonlightMagicHouse
             readonly Color32 _color;
             readonly int _emission;
             readonly bool _transparent;
+            readonly ActivitySurfaceProfile _surface;
 
-            public MaterialKey(Color color, float emission, bool transparent)
+            public MaterialKey(Color color, float emission, bool transparent,
+                ActivitySurfaceProfile surface)
             {
                 _color = color;
                 _emission = Mathf.RoundToInt(emission * 1000f);
                 _transparent = transparent;
+                _surface = surface;
             }
 
             public bool Equals(MaterialKey other)
             {
-                return _color.Equals(other._color) && _emission == other._emission && _transparent == other._transparent;
+                return _color.Equals(other._color) && _emission == other._emission &&
+                    _transparent == other._transparent && _surface == other._surface;
             }
 
             public override bool Equals(object obj)
@@ -1643,6 +1766,7 @@ namespace MoonlightMagicHouse
                     int hash = _color.GetHashCode();
                     hash = (hash * 397) ^ _emission;
                     hash = (hash * 397) ^ (_transparent ? 1 : 0);
+                    hash = (hash * 397) ^ (int)_surface;
                     return hash;
                 }
             }

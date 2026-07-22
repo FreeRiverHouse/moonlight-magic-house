@@ -266,6 +266,16 @@ namespace MoonlightMagicHouse
                 yield break;
             }
 
+            if (!MoonlightActivityStage.ValidateSurfaceDepthContract(out string surfaceDepthDetail))
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-surface-depth-contract " +
+                    surfaceDepthDetail);
+                Application.Quit(67);
+                yield break;
+            }
+            Debug.Log($"[MoonlightGameplayQA][PASS] activity-surface-depth-contract " +
+                $"{surfaceDepthDetail} marker=MOONLIGHT_ACTIVITY_SURFACE_DEPTH_CONTRACT_VERIFIED");
+
             bool recognizerPass = MoonlightGesturePad.ValidateRecognizerContract(
                 out string recognizerDetail);
             if (!recognizerPass)
@@ -911,6 +921,22 @@ namespace MoonlightMagicHouse
                             Application.Quit(29);
                             yield break;
                         }
+
+                        bool surfaceDepthPass = stage.ConfiguredSurfaceProfileCount >= 3 &&
+                            stage.HasDepthLighting &&
+                            stage.SurfaceDepthQAMarker == "MOONLIGHT_ACTIVITY_SURFACE_DEPTH_READY";
+                        if (!surfaceDepthPass)
+                        {
+                            Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-surface-depth " +
+                                $"action={zone.Kind} profiles={stage.ConfiguredSurfaceProfileCount}/3 " +
+                                $"depthLight={stage.HasDepthLighting} marker={stage.SurfaceDepthQAMarker}");
+                            Application.Quit(53);
+                            yield break;
+                        }
+                        Debug.Log($"[MoonlightGameplayQA][PASS] activity-surface-depth " +
+                            $"action={zone.Kind} profiles={stage.ConfiguredSurfaceProfileCount} " +
+                            $"depthLight={stage.HasDepthLighting} " +
+                            "marker=MOONLIGHT_ACTIVITY_SURFACE_DEPTH_VERIFIED");
 
                         if (zone.Kind == MoonlightSpatialActionKind.Cook)
                         {
