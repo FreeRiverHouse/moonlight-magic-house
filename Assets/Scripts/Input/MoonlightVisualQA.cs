@@ -249,9 +249,13 @@ namespace MoonlightMagicHouse
                 Canvas.ForceUpdateCanvases();
                 yield return new WaitForEndOfFrame();
                 bool layoutPass = ui.IsIPadHUDLayoutActive &&
-                    ui.HUDLayoutQAMarker == "ipad-activity-focus-v2" &&
+                    ui.HUDLayoutQAMarker == "ipad-activity-focus-v3" &&
                     ui.ActionTouchTargetMeetsIPadMinimum &&
                     ui.ActionTouchTargetIsInsideSafeArea &&
+                    ui.ActivityPromptIsInsideSafeArea &&
+                    ui.ActivityResultIsInsideSafeArea &&
+                    ui.ActivityProgressIsInsideSafeArea &&
+                    ui.ActivityHUDPanelsDoNotOverlap &&
                     ui.ActivityPromptCenterOffsetPixels <= Screen.width * 0.10f &&
                     ui.IsRoomNavigationVisible && !ui.IsRoomNavigationLocked;
                 if (!layoutPass)
@@ -260,6 +264,8 @@ namespace MoonlightMagicHouse
                         $"active={ui.IsIPadHUDLayoutActive} marker={ui.HUDLayoutQAMarker} " +
                         $"touch={ui.ActionTouchTargetLayoutSize} minimum={ui.IPadMinimumTouchTargetLayoutSize} " +
                         $"insideSafe={ui.ActionTouchTargetIsInsideSafeArea} " +
+                        $"promptSafe={ui.ActivityPromptIsInsideSafeArea} resultSafe={ui.ActivityResultIsInsideSafeArea} " +
+                        $"progressSafe={ui.ActivityProgressIsInsideSafeArea} separated={ui.ActivityHUDPanelsDoNotOverlap} " +
                         $"promptOffset={ui.ActivityPromptCenterOffsetPixels:0.0} " +
                         $"roomNav={ui.RoomNavigationQAMarker}");
                     Application.Quit(42);
@@ -267,7 +273,8 @@ namespace MoonlightMagicHouse
                 }
                 Debug.Log("[MoonlightGameplayQA][PASS] ipad-hud-layout " +
                     $"marker={ui.HUDLayoutQAMarker} touch={ui.ActionTouchTargetLayoutSize} " +
-                    $"safe={ui.HUDSafeAreaScreenRect} promptOffset={ui.ActivityPromptCenterOffsetPixels:0.0} " +
+                    $"safe={ui.HUDSafeAreaScreenRect} panelsSeparated={ui.ActivityHUDPanelsDoNotOverlap} " +
+                    $"promptOffset={ui.ActivityPromptCenterOffsetPixels:0.0} " +
                     $"roomNav={ui.RoomNavigationQAMarker} " +
                     "marker=MOONLIGHT_IPAD_HUD_VERIFIED");
             }
@@ -434,13 +441,16 @@ namespace MoonlightMagicHouse
                         string expectedProgress = $"{step + 1}/{zone.RequiredSteps}";
                         bool stepHudPass = ui.ActivityProgressQAMarker == expectedProgress &&
                             !string.IsNullOrEmpty(ui.GestureCommandQAMarker) &&
-                            ui.ActionTouchTargetMeetsIPadMinimum && ui.ActionTouchTargetIsInsideSafeArea;
+                            ui.ActionTouchTargetMeetsIPadMinimum && ui.ActionTouchTargetIsInsideSafeArea &&
+                            ui.ActivityPromptIsInsideSafeArea && ui.ActivityResultIsInsideSafeArea &&
+                            ui.ActivityProgressIsInsideSafeArea && ui.ActivityHUDPanelsDoNotOverlap;
                         if (!stepHudPass)
                         {
                             Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-activity-hud action={zone.Kind} " +
                                 $"step={step + 1} progress={ui.ActivityProgressQAMarker} " +
                                 $"gesture={ui.GestureCommandQAMarker} touch={ui.ActionTouchTargetLayoutSize} " +
-                                $"insideSafe={ui.ActionTouchTargetIsInsideSafeArea}");
+                                $"insideSafe={ui.ActionTouchTargetIsInsideSafeArea} " +
+                                $"panelsSeparated={ui.ActivityHUDPanelsDoNotOverlap}");
                             Application.Quit(43);
                             yield break;
                         }

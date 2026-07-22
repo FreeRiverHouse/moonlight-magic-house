@@ -84,7 +84,7 @@ namespace MoonlightMagicHouse
 
         // Runtime layout metrics used by iPad screenshot and touch-target QA.
         public bool IsIPadHUDLayoutActive => _iPadLayoutActive;
-        public string HUDLayoutQAMarker => _iPadLayoutActive ? "ipad-activity-focus-v2" : "desktop-hud";
+        public string HUDLayoutQAMarker => _iPadLayoutActive ? "ipad-activity-focus-v3" : "desktop-hud";
         public bool IsRoomNavigationVisible => _roomNavigationRoot != null && _roomNavigationRoot.activeSelf;
         public bool IsRoomNavigationLocked => _roomNavigationLocked;
         public string RoomNavigationQAMarker => _roomNavigationLocked
@@ -99,6 +99,9 @@ namespace MoonlightMagicHouse
             : null);
         public Rect ActivityPromptScreenRect => ScreenRect(contextLabel != null
             ? contextLabel.transform as RectTransform
+            : null);
+        public Rect ActivityResultScreenRect => ScreenRect(resultLabel != null
+            ? resultLabel.transform as RectTransform
             : null);
         public Rect ActivityProgressScreenRect => ScreenRect(_iPadProgressRoot != null
             ? _iPadProgressRoot.transform as RectTransform
@@ -122,6 +125,15 @@ namespace MoonlightMagicHouse
             ActionTouchTargetLayoutSize.x >= IPadMinimumTouchTarget.x &&
             ActionTouchTargetLayoutSize.y >= IPadMinimumTouchTarget.y;
         public bool ActionTouchTargetIsInsideSafeArea => ContainsRect(Screen.safeArea, ActionTouchTargetScreenRect);
+        public bool ActivityPromptIsInsideSafeArea => ContainsRect(Screen.safeArea, ActivityPromptScreenRect);
+        public bool ActivityResultIsInsideSafeArea => ContainsRect(Screen.safeArea, ActivityResultScreenRect);
+        public bool ActivityProgressIsInsideSafeArea => ContainsRect(Screen.safeArea, ActivityProgressScreenRect);
+        public bool ActivityHUDPanelsDoNotOverlap =>
+            !OverlapsWithPadding(ActivityPromptScreenRect, ActivityProgressScreenRect, 4f) &&
+            !OverlapsWithPadding(ActivityResultScreenRect, ActivityProgressScreenRect, 4f) &&
+            !OverlapsWithPadding(ActivityPromptScreenRect, ActionTouchTargetScreenRect, 4f) &&
+            !OverlapsWithPadding(ActivityResultScreenRect, ActionTouchTargetScreenRect, 4f) &&
+            !OverlapsWithPadding(ActivityProgressScreenRect, ActionTouchTargetScreenRect, 4f);
         public float ActivityPromptCenterOffsetPixels => Mathf.Abs(
             ActivityPromptScreenRect.center.x - Screen.safeArea.center.x);
         public bool HasContextResult => resultLabel != null && !string.IsNullOrEmpty(resultLabel.text);
@@ -335,9 +347,9 @@ namespace MoonlightMagicHouse
                 }
             }
 
-            ConfigureActivityLabel(contextLabel, new Vector2(-45f, 106f), new Vector2(670f, 42f),
+            ConfigureActivityLabel(contextLabel, new Vector2(-45f, 106f), new Vector2(650f, 42f),
                 27f, 21f, 28f, FontStyles.Bold, Color.white);
-            ConfigureActivityLabel(resultLabel, new Vector2(-45f, 58f), new Vector2(670f, 52f),
+            ConfigureActivityLabel(resultLabel, new Vector2(-45f, 58f), new Vector2(650f, 52f),
                 18f, 14f, 19f, FontStyles.Bold, new Color(1f, 0.86f, 0.58f));
             if (resultLabel != null)
             {
@@ -584,6 +596,8 @@ namespace MoonlightMagicHouse
             Debug.Log($"[MoonlightHUDQA] marker={HUDLayoutQAMarker} screen={Screen.width}x{Screen.height} " +
                 $"safe={Screen.safeArea} touchPixels={touchRect.size} touchLayout={ActionTouchTargetLayoutSize} " +
                 $"touchMinimumPass={ActionTouchTargetMeetsIPadMinimum} insideSafeArea={ActionTouchTargetIsInsideSafeArea} " +
+                $"promptSafe={ActivityPromptIsInsideSafeArea} resultSafe={ActivityResultIsInsideSafeArea} " +
+                $"progressSafe={ActivityProgressIsInsideSafeArea} panelsSeparated={ActivityHUDPanelsDoNotOverlap} " +
                 $"promptCenterOffset={ActivityPromptCenterOffsetPixels:0.0}px");
         }
 
@@ -601,6 +615,23 @@ namespace MoonlightMagicHouse
             const float tolerance = 1f;
             return inner.xMin >= outer.xMin - tolerance && inner.xMax <= outer.xMax + tolerance &&
                 inner.yMin >= outer.yMin - tolerance && inner.yMax <= outer.yMax + tolerance;
+        }
+
+        static bool OverlapsWithPadding(Rect first, Rect second, float padding)
+        {
+            if (first.width <= 0f || first.height <= 0f || second.width <= 0f || second.height <= 0f)
+                return true;
+
+            float halfPadding = Mathf.Max(0f, padding) * 0.5f;
+            first.xMin -= halfPadding;
+            first.xMax += halfPadding;
+            first.yMin -= halfPadding;
+            first.yMax += halfPadding;
+            second.xMin -= halfPadding;
+            second.xMax += halfPadding;
+            second.yMin -= halfPadding;
+            second.yMax += halfPadding;
+            return first.Overlaps(second);
         }
 
         static Color ActionColor(MoonlightSpatialActionZone zone, bool coolingDown)
