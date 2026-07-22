@@ -563,7 +563,7 @@ namespace MoonlightMagicHouse
                 _roomNavigationRoot.SetActive(!_roomNavigationLocked);
         }
 
-        static bool ShouldUseIPadLayout()
+        public static bool ShouldUseIPadLayout()
         {
             foreach (string argument in Environment.GetCommandLineArgs())
                 if (string.Equals(argument, "-moonlightIPadHudQa", StringComparison.OrdinalIgnoreCase))

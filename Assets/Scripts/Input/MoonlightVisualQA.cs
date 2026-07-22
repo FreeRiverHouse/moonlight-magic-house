@@ -244,6 +244,7 @@ namespace MoonlightMagicHouse
             }
 
             bool expectIPadHud = args.Contains("-moonlightIPadHudQa");
+            var touchJoystick = FindAnyObjectByType<MoonlightTouchJoystick>();
             if (expectIPadHud)
             {
                 Canvas.ForceUpdateCanvases();
@@ -257,6 +258,7 @@ namespace MoonlightMagicHouse
                     ui.ActivityProgressIsInsideSafeArea &&
                     ui.ActivityHUDPanelsDoNotOverlap &&
                     ui.ActivityPromptCenterOffsetPixels <= Screen.width * 0.10f &&
+                    touchJoystick != null && touchJoystick.gameObject.activeInHierarchy &&
                     ui.IsRoomNavigationVisible && !ui.IsRoomNavigationLocked;
                 if (!layoutPass)
                 {
@@ -266,6 +268,7 @@ namespace MoonlightMagicHouse
                         $"insideSafe={ui.ActionTouchTargetIsInsideSafeArea} " +
                         $"promptSafe={ui.ActivityPromptIsInsideSafeArea} resultSafe={ui.ActivityResultIsInsideSafeArea} " +
                         $"progressSafe={ui.ActivityProgressIsInsideSafeArea} separated={ui.ActivityHUDPanelsDoNotOverlap} " +
+                        $"touchJoystick={(touchJoystick != null && touchJoystick.gameObject.activeInHierarchy)} " +
                         $"promptOffset={ui.ActivityPromptCenterOffsetPixels:0.0} " +
                         $"roomNav={ui.RoomNavigationQAMarker}");
                     Application.Quit(42);
@@ -274,9 +277,21 @@ namespace MoonlightMagicHouse
                 Debug.Log("[MoonlightGameplayQA][PASS] ipad-hud-layout " +
                     $"marker={ui.HUDLayoutQAMarker} touch={ui.ActionTouchTargetLayoutSize} " +
                     $"safe={ui.HUDSafeAreaScreenRect} panelsSeparated={ui.ActivityHUDPanelsDoNotOverlap} " +
+                    $"touchJoystick={touchJoystick.gameObject.activeInHierarchy} " +
                     $"promptOffset={ui.ActivityPromptCenterOffsetPixels:0.0} " +
                     $"roomNav={ui.RoomNavigationQAMarker} " +
                     "marker=MOONLIGHT_IPAD_HUD_VERIFIED");
+            }
+            else if (touchJoystick != null)
+            {
+                Debug.LogError("[MoonlightGameplayQA][FAIL] desktop-touch-joystick-visible");
+                Application.Quit(56);
+                yield break;
+            }
+            else
+            {
+                Debug.Log("[MoonlightGameplayQA][PASS] desktop-touch-joystick-hidden " +
+                    "marker=MOONLIGHT_DESKTOP_INPUT_CLEAN");
             }
 
             audio.SetDeterministicTestMode(true);

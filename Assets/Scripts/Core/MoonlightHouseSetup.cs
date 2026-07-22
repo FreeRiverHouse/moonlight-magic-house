@@ -3115,6 +3115,7 @@ namespace MoonlightMagicHouse
             var actionBtnLabel = MakeTMPButtonLabel("ActionBtnLabel", actionBtn.transform, "ACTION", 24, Color.white);
 
             var joystick = MakeJoystick(btnPanel.transform);
+            joystick.gameObject.SetActive(MoonlightUI.ShouldUseIPadLayout());
 
             // Visual feedback: particle bursts on button click (finds Moonlight by name at click time)
             AttachBurst(feedBtn,   new Color(1.0f, 0.75f, 0.35f), 14);
@@ -3190,6 +3191,8 @@ namespace MoonlightMagicHouse
                 feedMenu, contentGO.transform);
             ui.WireSpatialAction(actionBtn, actionBtnLabel, contextLabel, resultLabel);
             joystick.Bind(FindAnyObjectByType<MoonlightPlayerController>());
+            Debug.Log($"[MoonlightHUDQA] touch-joystick visible={joystick.gameObject.activeSelf} " +
+                $"marker={(joystick.gameObject.activeSelf ? "ipad-touch-navigation" : "desktop-keyboard-navigation")}");
 
             // Extra UI components
             canvasGO.AddComponent<DayNightCycleUI>();
