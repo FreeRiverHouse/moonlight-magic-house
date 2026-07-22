@@ -21,12 +21,37 @@ namespace MoonlightMagicHouse
         public const int GestureGuideDotCapacity = 12;
         const float GestureTraceFadeSeconds = 0.48f;
         const float ResultFeedbackSeconds = 0.34f;
-        const float PassedResultScale = 1.055f;
-        const float FailedResultScale = 0.965f;
+        const float FailedResultFillScale = 0.70f;
+        const float GoodResultFillScale = 0.82f;
+        const float GreatResultFillScale = 0.90f;
+        const float PerfectResultFillScale = 0.98f;
+        const float MinimumResultFillScale = 0.65f;
+        const float MaximumResultFillScale = 1f;
+        const float MinimumSuccessScaleSeparation = 0.07f;
+        const float ResultParentScaleMultiplier = 1f;
+        const string ResultOverlayObjectName = "GestureResultOverlay";
+        const int ResultOverlaySiblingIndex = 0;
+        const float ResultOverlayAnchorMin = 0f;
+        const float ResultOverlayAnchorMax = 1f;
+        const float ResultOverlayPeakAlpha = 0.46f;
+        const bool ResultOverlayRaycastTarget = false;
+
+        readonly struct ResultFeedbackProfile
+        {
+            public readonly Color Color;
+            public readonly float FillScale;
+
+            public ResultFeedbackProfile(Color color, float fillScale)
+            {
+                Color = color;
+                FillScale = fillScale;
+            }
+        }
 
         readonly List<Vector2> _points = new();
         readonly RectTransform[] _traceDots = new RectTransform[GestureTraceDotCapacity];
         readonly Image[] _traceImages = new Image[GestureTraceDotCapacity];
+        readonly float[] _traceDrawScales = new float[GestureTraceDotCapacity];
         readonly RectTransform[] _guideDots = new RectTransform[GestureGuideDotCapacity];
         readonly Image[] _guideImages = new Image[GestureGuideDotCapacity];
 
@@ -37,16 +62,19 @@ namespace MoonlightMagicHouse
         int _pointerId = int.MinValue;
         MoonlightSpatialActionZone _startedZone;
         Image _surface;
+        RectTransform _resultOverlayRect;
+        Image _resultOverlay;
         Color _baseColor = Color.white;
         Vector3 _baseScale = Vector3.one;
         float _feedbackUntil;
         Color _feedbackColor;
-        float _feedbackScale = 1f;
+        float _feedbackFillScale = 1f;
         bool _lastResultPassed;
         int _traceDotCursor;
         int _traceDotCount;
         float _traceFadeUntil;
         Color _traceResultColor = Color.white;
+        float _traceResultFillScale = 1f;
         MoonlightGestureKind _guideGesture;
         MoonlightGestureKind _appliedGuideGesture;
         bool _guideRequested;
@@ -67,9 +95,51 @@ namespace MoonlightMagicHouse
             : "MOONLIGHT_IPAD_GESTURE_GUIDE_INVALID";
         public bool LastResultPassed => _lastResultPassed;
         public string ResultFeedbackQAMarker =>
-            ValidateResultFeedbackContract(out _)
+            ValidateResultFeedbackContract(out _) && ResultOverlayIsReady
                 ? "MOONLIGHT_IPAD_GESTURE_RESULT_FEEDBACK_READY"
                 : "MOONLIGHT_IPAD_GESTURE_RESULT_FEEDBACK_INVALID";
+        public bool ResultOverlayIsReady
+        {
+            get
+            {
+                if (_resultOverlayRect == null || _resultOverlay == null ||
+                    _resultOverlay.transform != _resultOverlayRect ||
+                    _resultOverlayRect.gameObject.name != ResultOverlayObjectName ||
+                    _resultOverlayRect.parent != transform ||
+                    !_resultOverlayRect.gameObject.activeSelf ||
+                    _resultOverlayRect.GetSiblingIndex() != ResultOverlaySiblingIndex ||
+                    _resultOverlayRect.anchorMin != Vector2.one * ResultOverlayAnchorMin ||
+                    _resultOverlayRect.anchorMax != Vector2.one * ResultOverlayAnchorMax ||
+                    _resultOverlayRect.offsetMin != Vector2.zero ||
+                    _resultOverlayRect.offsetMax != Vector2.zero ||
+                    _resultOverlay.raycastTarget != ResultOverlayRaycastTarget)
+                    return false;
+
+                Vector3 overlayScale = _resultOverlayRect.localScale;
+                if (!ScaleComponentIsFinite(overlayScale.x) ||
+                    !ScaleComponentIsFinite(overlayScale.y) ||
+                    !ScaleComponentIsFinite(overlayScale.z) ||
+                    overlayScale.x < MinimumResultFillScale ||
+                    overlayScale.x > MaximumResultFillScale ||
+                    Mathf.Abs(overlayScale.y - overlayScale.x) > 0.0001f ||
+                    Mathf.Abs(overlayScale.z - overlayScale.x) > 0.0001f)
+                    return false;
+
+                for (int i = 0; i < GestureTraceDotCapacity; i++)
+                    if (_traceDots[i] == null ||
+                        _traceDots[i].GetSiblingIndex() <= ResultOverlaySiblingIndex)
+                        return false;
+                for (int i = 0; i < GestureGuideDotCapacity; i++)
+                    if (_guideDots[i] == null ||
+                        _guideDots[i].GetSiblingIndex() <= ResultOverlaySiblingIndex)
+                        return false;
+                return true;
+            }
+        }
+
+        static bool ScaleComponentIsFinite(float value) =>
+            !float.IsNaN(value) && !float.IsInfinity(value);
+
         public Vector2 TouchSurfaceSize => _rect != null ? _rect.rect.size : Vector2.zero;
         public string CoordinateQAMarker =>
             ValidateCoordinateNormalization(TouchSurfaceSize, out _)
@@ -114,6 +184,7 @@ namespace MoonlightMagicHouse
             _baseScale = transform.localScale;
             BuildTracePool();
             BuildGuidePool();
+            BuildResultOverlay();
         }
 
         void Update()
@@ -121,19 +192,13 @@ namespace MoonlightMagicHouse
             UpdateGuideAnimation();
             if (_pointerId != int.MinValue) return;
 
-            if (_surface != null)
-            {
-                float remaining = Mathf.Clamp01(
-                    (_feedbackUntil - Time.unscaledTime) / ResultFeedbackSeconds);
-                _surface.color = remaining > 0f
-                    ? Color.Lerp(_baseColor, _feedbackColor, remaining * 0.55f)
-                    : _baseColor;
-            }
-            Vector3 targetScale = Time.unscaledTime < _feedbackUntil
-                ? _baseScale * _feedbackScale
-                : _baseScale;
-            transform.localScale = Vector3.Lerp(transform.localScale, targetScale,
-                Time.unscaledDeltaTime * 18f);
+            float remaining = Mathf.Clamp01(
+                (_feedbackUntil - Time.unscaledTime) / ResultFeedbackSeconds);
+            if (remaining > 0f)
+                SetResultOverlayStrength(remaining);
+            else
+                ClearResultFeedback();
+            transform.localScale = _baseScale * ResultParentScaleMultiplier;
             UpdateTraceFade();
         }
 
@@ -195,7 +260,7 @@ namespace MoonlightMagicHouse
             LastScore = ScoreGesture(_gesture, _points, duration);
             Debug.Log($"[MoonlightActivityQA] gesture kind={_gesture} score={LastScore:0.00} points={_points.Count}");
             _ui?.ExecuteContextGesture(_gesture, LastScore);
-            SetResultVisual(startedZone.LastGesturePassed);
+            SetResultVisual(startedZone.LastGesturePassed, LastScore);
             _points.Clear();
         }
 
@@ -212,7 +277,7 @@ namespace MoonlightMagicHouse
             LastScore = Mathf.Clamp01(score);
             LastRejectionReason = "";
             _ui?.ExecuteContextGesture(gesture, LastScore);
-            SetResultVisual(zone.LastGesturePassed);
+            SetResultVisual(zone.LastGesturePassed, LastScore);
             return true;
         }
 
@@ -237,6 +302,7 @@ namespace MoonlightMagicHouse
             _startedZone = null;
             _points.Clear();
             ClearTrace();
+            ClearResultFeedback();
             RestoreTrackingVisual();
             RefreshGuideVisibility();
             if (wasTracking)
@@ -303,13 +369,13 @@ namespace MoonlightMagicHouse
         {
             LastScore = 0f;
             LastRejectionReason = string.IsNullOrEmpty(reason) ? "INPUT BLOCKED" : reason;
-            SetResultVisual(false);
+            SetResultVisual(false, LastScore);
             Debug.Log($"[MoonlightActivityQA] gesture-rejected reason=\"{LastRejectionReason}\"");
         }
 
         void SetTrackingVisual()
         {
-            _feedbackUntil = 0f;
+            ClearResultFeedback();
             transform.localScale = _baseScale * 1.035f;
             if (_surface != null)
                 _surface.color = Color.Lerp(_baseColor, Color.white, 0.18f);
@@ -322,18 +388,52 @@ namespace MoonlightMagicHouse
                 _surface.color = _baseColor;
         }
 
-        void SetResultVisual(bool passed)
+        void SetResultVisual(bool passed, float score)
         {
+            ResultFeedbackProfile profile = ResultFeedbackProfileFor(passed, score);
             _lastResultPassed = passed;
-            _feedbackColor = passed
-                ? new Color(0.42f, 1f, 0.72f, _baseColor.a)
-                : new Color(1f, 0.38f, 0.42f, _baseColor.a);
-            _feedbackScale = passed ? PassedResultScale : FailedResultScale;
+            _feedbackColor = profile.Color;
+            _feedbackFillScale = profile.FillScale;
             _feedbackUntil = Time.unscaledTime + ResultFeedbackSeconds;
-            transform.localScale = _baseScale * _feedbackScale;
-            if (_surface != null)
-                _surface.color = Color.Lerp(_baseColor, _feedbackColor, 0.55f);
-            BeginTraceFade(passed);
+            transform.localScale = _baseScale * ResultParentScaleMultiplier;
+            SetResultOverlayStrength(1f);
+            BeginTraceFade(profile);
+        }
+
+        void SetResultOverlayStrength(float strength)
+        {
+            if (_resultOverlay == null) return;
+            Color color = _feedbackColor;
+            color.a = Mathf.Clamp01(strength) * ResultOverlayPeakAlpha;
+            _resultOverlay.color = color;
+            _resultOverlayRect.localScale = Vector3.one * _feedbackFillScale;
+        }
+
+        void ClearResultFeedback()
+        {
+            _feedbackUntil = 0f;
+            _feedbackColor = Color.clear;
+            _feedbackFillScale = 1f;
+            if (_resultOverlay == null || _resultOverlayRect == null) return;
+            _resultOverlay.color = Color.clear;
+            _resultOverlayRect.localScale = Vector3.one;
+        }
+
+        static ResultFeedbackProfile ResultFeedbackProfileFor(bool passed, float score)
+        {
+            if (!passed)
+                return new ResultFeedbackProfile(
+                    new Color(1f, 0.38f, 0.42f, 1f), FailedResultFillScale);
+
+            return MoonlightActionFeedback.ActionQualityTierFor(score) switch
+            {
+                MoonlightActionQualityTier.Great => new ResultFeedbackProfile(
+                    new Color(0.34f, 0.78f, 1f, 1f), GreatResultFillScale),
+                MoonlightActionQualityTier.Perfect => new ResultFeedbackProfile(
+                    new Color(1f, 0.86f, 0.30f, 1f), PerfectResultFillScale),
+                _ => new ResultFeedbackProfile(
+                    new Color(0.42f, 1f, 0.72f, 1f), GoodResultFillScale)
+            };
         }
 
         public void SetGestureGuide(MoonlightGestureKind gesture, bool visible)
@@ -546,19 +646,118 @@ namespace MoonlightMagicHouse
 
         public static bool ValidateResultFeedbackContract(out string detail)
         {
-            Color passed = new Color(0.42f, 1f, 0.72f, 1f);
-            Color failed = new Color(1f, 0.38f, 0.42f, 1f);
-            float colorDistance = Mathf.Sqrt(
-                Mathf.Pow(passed.r - failed.r, 2f) +
-                Mathf.Pow(passed.g - failed.g, 2f) +
-                Mathf.Pow(passed.b - failed.b, 2f));
-            float passDelta = PassedResultScale - 1f;
-            float failDelta = 1f - FailedResultScale;
-            detail = $"duration={ResultFeedbackSeconds:0.00}s passScale={PassedResultScale:0.000} " +
-                     $"failScale={FailedResultScale:0.000} colorDistance={colorDistance:0.00}";
+            float greatThreshold = MoonlightActionFeedback.GreatActionQualityScore;
+            float perfectThreshold = MoonlightActionFeedback.PerfectActionQualityScore;
+            ResultFeedbackProfile failed = ResultFeedbackProfileFor(false, 1f);
+            ResultFeedbackProfile failedLowScore = ResultFeedbackProfileFor(false, 0f);
+            ResultFeedbackProfile good = ResultFeedbackProfileFor(true, 0f);
+            ResultFeedbackProfile goodBelowGreat = ResultFeedbackProfileFor(
+                true, greatThreshold - 0.0001f);
+            ResultFeedbackProfile great = ResultFeedbackProfileFor(true, greatThreshold);
+            ResultFeedbackProfile greatBelowPerfect = ResultFeedbackProfileFor(
+                true, perfectThreshold - 0.0001f);
+            ResultFeedbackProfile perfect = ResultFeedbackProfileFor(true, perfectThreshold);
+            ResultFeedbackProfile[] profiles = { failed, good, great, perfect };
+
+            bool exactThresholds = greatThreshold == 0.72f && perfectThreshold == 0.88f &&
+                ProfilesMatch(good, goodBelowGreat) &&
+                ProfilesMatch(great, greatBelowPerfect) &&
+                MoonlightActionFeedback.ActionQualityTierFor(greatThreshold - 0.0001f) ==
+                    MoonlightActionQualityTier.Good &&
+                MoonlightActionFeedback.ActionQualityTierFor(greatThreshold) ==
+                    MoonlightActionQualityTier.Great &&
+                MoonlightActionFeedback.ActionQualityTierFor(perfectThreshold - 0.0001f) ==
+                    MoonlightActionQualityTier.Great &&
+                MoonlightActionFeedback.ActionQualityTierFor(perfectThreshold) ==
+                    MoonlightActionQualityTier.Perfect;
+            bool failureOverridesScore = ProfilesMatch(failed, failedLowScore) &&
+                !ProfilesMatch(failed, perfect);
+            bool fourDistinctProfiles = ProfilesArePairwiseDistinct(profiles, true) &&
+                ProfilesArePairwiseDistinct(profiles, false);
+            bool monotonicScale = failed.FillScale < good.FillScale &&
+                good.FillScale < great.FillScale &&
+                great.FillScale < perfect.FillScale && perfect.FillScale <= 1f;
+            float minimumSuccessScaleDelta = Mathf.Min(
+                great.FillScale - good.FillScale, perfect.FillScale - great.FillScale);
+            bool materialScaleSeparation =
+                minimumSuccessScaleDelta >= MinimumSuccessScaleSeparation;
+            bool noParentLayoutExpansion = ResultParentScaleMultiplier == 1f &&
+                MaximumResultFillScale <= 1f;
+            bool overlayContract = ResultOverlayObjectName == "GestureResultOverlay" &&
+                ResultOverlaySiblingIndex == 0 &&
+                ResultOverlayAnchorMin == 0f && ResultOverlayAnchorMax == 1f &&
+                ResultOverlayPeakAlpha >= 0.35f && ResultOverlayPeakAlpha <= 0.60f &&
+                !ResultOverlayRaycastTarget;
+            bool bounded = true;
+            for (int i = 0; i < profiles.Length; i++)
+                bounded &= ProfileIsBounded(profiles[i]);
+
+            detail = $"profiles={profiles.Length} thresholds={greatThreshold:0.00}/{perfectThreshold:0.00} " +
+                     $"fillScales={failed.FillScale:0.000}/{good.FillScale:0.000}/" +
+                     $"{great.FillScale:0.000}/{perfect.FillScale:0.000} " +
+                     $"minSuccessDelta={minimumSuccessScaleDelta:0.000} " +
+                     $"parentScale={ResultParentScaleMultiplier:0.00} " +
+                     $"distinct={fourDistinctProfiles} bounded={bounded} " +
+                     $"overlay={overlayContract} override={failureOverridesScore}";
             return ResultFeedbackSeconds >= 0.32f &&
-                   passDelta >= 0.05f && failDelta >= 0.03f &&
-                   colorDistance >= 0.80f && GestureTraceFadeSeconds > ResultFeedbackSeconds;
+                   GestureTraceFadeSeconds > ResultFeedbackSeconds &&
+                   exactThresholds && failureOverridesScore && fourDistinctProfiles &&
+                   monotonicScale && materialScaleSeparation && noParentLayoutExpansion &&
+                   bounded && overlayContract;
+        }
+
+        static bool ProfilesMatch(ResultFeedbackProfile first, ResultFeedbackProfile second)
+        {
+            return Mathf.Abs(first.FillScale - second.FillScale) <= 0.0001f &&
+                   ColorDistance(first.Color, second.Color) <= 0.0001f;
+        }
+
+        static bool ProfilesArePairwiseDistinct(ResultFeedbackProfile[] profiles, bool compareColor)
+        {
+            for (int first = 0; first < profiles.Length - 1; first++)
+                for (int second = first + 1; second < profiles.Length; second++)
+                {
+                    float difference = compareColor
+                        ? ColorDistance(profiles[first].Color, profiles[second].Color)
+                        : Mathf.Abs(profiles[first].FillScale - profiles[second].FillScale);
+                    if (difference <= 0.0001f) return false;
+                }
+            return true;
+        }
+
+        static bool ProfileIsBounded(ResultFeedbackProfile profile)
+        {
+            Color color = profile.Color;
+            return profile.FillScale >= MinimumResultFillScale &&
+                   profile.FillScale <= MaximumResultFillScale &&
+                   color.r >= 0f && color.r <= 1f &&
+                   color.g >= 0f && color.g <= 1f &&
+                   color.b >= 0f && color.b <= 1f &&
+                   color.a >= 0f && color.a <= 1f;
+        }
+
+        static float ColorDistance(Color first, Color second)
+        {
+            return Mathf.Sqrt(
+                Mathf.Pow(first.r - second.r, 2f) +
+                Mathf.Pow(first.g - second.g, 2f) +
+                Mathf.Pow(first.b - second.b, 2f));
+        }
+
+        void BuildResultOverlay()
+        {
+            var overlay = new GameObject(ResultOverlayObjectName);
+            overlay.transform.SetParent(transform, false);
+            _resultOverlayRect = overlay.AddComponent<RectTransform>();
+            _resultOverlayRect.anchorMin = Vector2.one * ResultOverlayAnchorMin;
+            _resultOverlayRect.anchorMax = Vector2.one * ResultOverlayAnchorMax;
+            _resultOverlayRect.offsetMin = Vector2.zero;
+            _resultOverlayRect.offsetMax = Vector2.zero;
+            _resultOverlayRect.SetSiblingIndex(ResultOverlaySiblingIndex);
+            _resultOverlay = overlay.AddComponent<Image>();
+            _resultOverlay.color = Color.clear;
+            _resultOverlay.raycastTarget = ResultOverlayRaycastTarget;
+            _resultOverlayRect.localScale = Vector3.one;
         }
 
         void BuildTracePool()
@@ -593,21 +792,26 @@ namespace MoonlightMagicHouse
             var image = _traceImages[index];
             if (rect == null || image == null) return;
             rect.anchoredPosition = localPosition;
-            rect.localScale = Vector3.one * Mathf.Lerp(0.78f, 1.12f,
+            _traceDrawScales[index] = Mathf.Lerp(0.78f, 1.12f,
                 _traceDotCount / (float)GestureTraceDotCapacity);
+            rect.localScale = Vector3.one * _traceDrawScales[index];
             image.color = new Color(0.72f, 0.94f, 1f, 0.72f);
             rect.gameObject.SetActive(true);
         }
 
-        void BeginTraceFade(bool passed)
+        void BeginTraceFade(ResultFeedbackProfile profile)
         {
-            _traceResultColor = passed
-                ? new Color(0.42f, 1f, 0.72f, 0.88f)
-                : new Color(1f, 0.38f, 0.42f, 0.88f);
+            _traceResultColor = profile.Color;
+            _traceResultColor.a = 0.88f;
+            _traceResultFillScale = profile.FillScale;
             _traceFadeUntil = Time.unscaledTime + GestureTraceFadeSeconds;
             for (int i = 0; i < GestureTraceDotCapacity; i++)
                 if (_traceImages[i] != null && _traceDots[i].gameObject.activeSelf)
+                {
                     _traceImages[i].color = _traceResultColor;
+                    _traceDots[i].localScale = Vector3.one *
+                        (_traceDrawScales[i] * _traceResultFillScale);
+                }
         }
 
         void UpdateTraceFade()
@@ -635,6 +839,8 @@ namespace MoonlightMagicHouse
             _traceDotCursor = 0;
             _traceDotCount = 0;
             _traceFadeUntil = 0f;
+            _traceResultColor = Color.white;
+            _traceResultFillScale = 1f;
             for (int i = 0; i < GestureTraceDotCapacity; i++)
                 if (_traceDots[i] != null)
                     _traceDots[i].gameObject.SetActive(false);

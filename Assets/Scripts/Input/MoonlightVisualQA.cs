@@ -375,9 +375,9 @@ namespace MoonlightMagicHouse
                 : null;
             var audio = AudioManager.Instance;
             if (controller == null || rooms == null || moonlight == null || spatialInteractor == null ||
-                pad == null || audio == null)
+                audio == null)
             {
-                Debug.LogError("[MoonlightGameplayQA][FAIL] gameplay controller/rooms/character/pad/audio missing");
+                Debug.LogError("[MoonlightGameplayQA][FAIL] gameplay controller/rooms/character/audio missing");
                 Application.Quit(20);
                 yield break;
             }
@@ -482,8 +482,25 @@ namespace MoonlightMagicHouse
                 Application.Quit(69);
                 yield break;
             }
+            bool resultFeedbackPadComponentReady = pad != null && pad.enabled;
+            bool resultOverlayReady = resultFeedbackPadComponentReady && pad.ResultOverlayIsReady;
+            string resultFeedbackMarker = resultFeedbackPadComponentReady
+                ? pad.ResultFeedbackQAMarker
+                : "missing";
+            if (!resultFeedbackPadComponentReady || !resultOverlayReady ||
+                resultFeedbackMarker != "MOONLIGHT_IPAD_GESTURE_RESULT_FEEDBACK_READY")
+            {
+                Debug.LogError($"[MoonlightGameplayQA][FAIL] ipad-gesture-result-feedback-runtime " +
+                    $"padComponentReady={resultFeedbackPadComponentReady} " +
+                    $"overlayReady={resultOverlayReady} " +
+                    $"marker={resultFeedbackMarker}");
+                Application.Quit(91);
+                yield break;
+            }
             Debug.Log($"[MoonlightGameplayQA][PASS] ipad-gesture-result-feedback " +
-                $"{resultFeedbackDetail} marker=MOONLIGHT_IPAD_GESTURE_RESULT_FEEDBACK_VERIFIED");
+                $"{resultFeedbackDetail} overlayReady={resultOverlayReady} " +
+                $"runtimeMarker={resultFeedbackMarker} " +
+                "marker=MOONLIGHT_IPAD_GESTURE_RESULT_FEEDBACK_VERIFIED");
             if (!HapticFeedback.ValidateSemanticContract(out string hapticDetail))
             {
                 Debug.LogError($"[MoonlightGameplayQA][FAIL] activity-haptic-semantics {hapticDetail}");
