@@ -236,8 +236,19 @@ namespace MoonlightMagicHouse
         }
 
         static readonly string[] MoodLabels = { "ASLEEP", "GRUMPY", "BORED", "CALM", "HAPPY", "RADIANT" };
+        public const string RuntimeUIFontResourcePath =
+            "Fonts & Materials/LiberationSans SDF";
+        static readonly string[][] CareHUDLabelTextGroups =
+        {
+            new[] { "FUN", "WONDER" },
+            new[] { "LOVE", "WARMTH" },
+            new[] { "REST" },
+            new[] { "MAGIC" },
+            new[] { "FOOD", "HUNGER" }
+        };
         static TMP_FontAsset _runtimeUIFontAsset;
         static bool _runtimeUIFontResolved;
+        static string _runtimeUIFontSource = "";
         // The character's name is Moonlight. "Stage" is still tracked internally for evolution/achievements,
         // but the HUD shows her name + stage descriptor rather than the raw stage codename ("Moonbud").
         static readonly string[] StageNames       = { "Moonlight", "Moonlight", "Moonlight", "Moonlight", "Moonlight" };
@@ -246,8 +257,16 @@ namespace MoonlightMagicHouse
 
         // Runtime layout metrics used by iPad screenshot and touch-target QA.
         public const int RequiredVisibleTMPHUDLabelCount = 5;
+        public const int RequiredVisibleCareHUDLabelCount = 5;
+        public const int RequiredVisibleRuntimeHUDLabelCount =
+            RequiredVisibleTMPHUDLabelCount + RequiredVisibleCareHUDLabelCount;
+        public const string RuntimeHUDTypographyReadyMarker =
+            "MOONLIGHT_VISIBLE_TMP_HUD_READY";
+        public const string RuntimeHUDTypographyInvalidMarker =
+            "MOONLIGHT_VISIBLE_TMP_HUD_INVALID";
         public bool IsIPadHUDLayoutActive => _iPadLayoutActive;
         public string HUDLayoutQAMarker => _iPadLayoutActive ? "ipad-activity-focus-v4" : "desktop-hud";
+        public string RuntimeUIFontSourceForQA => _runtimeUIFontSource;
         public int VisibleTMPHUDLabelCount
         {
             get
@@ -258,8 +277,21 @@ namespace MoonlightMagicHouse
                 return count;
             }
         }
+        public int VisibleCareHUDLabelCount
+        {
+            get
+            {
+                int count = 0;
+                foreach (var label in CareHUDLabels())
+                    if (IsVisibleTMPHUDLabel(label)) count++;
+                return count;
+            }
+        }
+        public int VisibleRuntimeHUDLabelCount =>
+            VisibleTMPHUDLabelCount + VisibleCareHUDLabelCount;
         public bool VisibleTMPHUDLabelsActive =>
-            VisibleTMPHUDLabelCount == RequiredVisibleTMPHUDLabelCount;
+            VisibleTMPHUDLabelCount == RequiredVisibleTMPHUDLabelCount &&
+            VisibleCareHUDLabelCount == RequiredVisibleCareHUDLabelCount;
         public float LastContextResultDurationSecondsForQA { get; private set; }
         public int ContextResultDurationSelectionCountForQA { get; private set; }
         public string LastContextResultShownTextForQA { get; private set; } = "";
@@ -277,6 +309,10 @@ namespace MoonlightMagicHouse
                     if (!IsVisibleTMPHUDLabel(label) ||
                         !ContainsRect(Screen.safeArea, ScreenRect(label.transform as RectTransform)))
                         return false;
+                foreach (var label in CareHUDLabels())
+                    if (!IsVisibleTMPHUDLabel(label) ||
+                        !ContainsRect(Screen.safeArea, ScreenRect(label.transform as RectTransform)))
+                        return false;
                 return true;
             }
         }
@@ -284,7 +320,7 @@ namespace MoonlightMagicHouse
         {
             get
             {
-                var labels = PrimaryHUDLabels();
+                var labels = RuntimeHUDLabels();
                 for (int i = 0; i < labels.Length; i++)
                 {
                     if (!IsVisibleTMPHUDLabel(labels[i])) return false;
@@ -310,41 +346,78 @@ namespace MoonlightMagicHouse
             VisibleTMPHUDLabelsInsideSafeArea && VisibleTMPHUDLabelsDoNotOverlap &&
             VisibleHUDHasNoLegacyMirrorDependency;
         public string VisibleHUDTypographyQAMarker => VisibleHUDTypographyQAReady
-            ? "MOONLIGHT_VISIBLE_TMP_HUD_READY"
-            : "MOONLIGHT_VISIBLE_TMP_HUD_INVALID";
+            ? RuntimeHUDTypographyReadyMarker
+            : RuntimeHUDTypographyInvalidMarker;
 
         public static bool EnsureRuntimeFont(TMP_Text label)
         {
             if (label == null) return false;
-            if (label.font != null && label.fontSharedMaterial != null) return true;
 
             if (!_runtimeUIFontResolved)
             {
                 _runtimeUIFontResolved = true;
-                try
-                {
-                    _runtimeUIFontAsset = TMP_Settings.defaultFontAsset;
-                    if (_runtimeUIFontAsset == null)
-                    {
-                        Font source = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-                        if (source != null)
-                        {
-                            _runtimeUIFontAsset = TMP_FontAsset.CreateFontAsset(source);
-                            if (_runtimeUIFontAsset != null)
-                                _runtimeUIFontAsset.hideFlags = HideFlags.HideAndDontSave;
-                        }
-                    }
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogError($"[MoonlightHUDQA] Runtime TMP font creation failed: " +
-                        exception.Message);
-                }
+                _runtimeUIFontAsset = ResolveRuntimeUIFontAsset();
             }
 
             if (_runtimeUIFontAsset == null) return false;
             label.font = _runtimeUIFontAsset;
+            if (label is Graphic graphic) graphic.SetAllDirty();
             return label.fontSharedMaterial != null;
+        }
+
+        static TMP_FontAsset ResolveRuntimeUIFontAsset()
+        {
+            try
+            {
+                TMP_FontAsset asset =
+                    Resources.Load<TMP_FontAsset>(RuntimeUIFontResourcePath);
+                if (IsUsableRuntimeFontAsset(asset))
+                {
+                    _runtimeUIFontSource = $"resource:{RuntimeUIFontResourcePath}";
+                    Debug.Log($"[MoonlightHUDQA] runtime-font source={_runtimeUIFontSource} " +
+                        "marker=MOONLIGHT_RUNTIME_TMP_FONT_READY");
+                    return asset;
+                }
+            }
+            catch (Exception exception)
+            {
+                Debug.LogError($"[MoonlightHUDQA] Included runtime TMP font failed: " +
+                    exception.Message);
+            }
+
+            _runtimeUIFontSource = "unresolved";
+            Debug.LogError("[MoonlightHUDQA] Runtime TMP font unavailable " +
+                "marker=MOONLIGHT_RUNTIME_TMP_FONT_MISSING");
+            return null;
+        }
+
+        static bool IsUsableRuntimeFontAsset(TMP_FontAsset asset) =>
+            asset != null && asset.material != null && asset.atlasTexture != null;
+
+        public static bool ValidateRuntimeHUDTypographyContract(out string detail)
+        {
+            bool countsPass = RequiredVisibleTMPHUDLabelCount == 5 &&
+                RequiredVisibleCareHUDLabelCount == 5 &&
+                RequiredVisibleRuntimeHUDLabelCount == 10;
+            bool markerPass = RuntimeHUDTypographyReadyMarker ==
+                "MOONLIGHT_VISIBLE_TMP_HUD_READY" &&
+                RuntimeHUDTypographyInvalidMarker == "MOONLIGHT_VISIBLE_TMP_HUD_INVALID";
+            bool fontResourcePass =
+                RuntimeUIFontResourcePath ==
+                    "Fonts & Materials/LiberationSans SDF" &&
+                !RuntimeUIFontResourcePath.EndsWith("LegacyRuntime.ttf", StringComparison.Ordinal);
+            bool careLabelsPass = CareHUDLabelTextGroups.Length == RequiredVisibleCareHUDLabelCount &&
+                Array.IndexOf(CareHUDLabelTextGroups[0], "FUN") >= 0 &&
+                Array.IndexOf(CareHUDLabelTextGroups[1], "LOVE") >= 0 &&
+                Array.IndexOf(CareHUDLabelTextGroups[2], "REST") >= 0 &&
+                Array.IndexOf(CareHUDLabelTextGroups[3], "MAGIC") >= 0 &&
+                Array.IndexOf(CareHUDLabelTextGroups[4], "FOOD") >= 0;
+
+            detail = $"counts={RequiredVisibleRuntimeHUDLabelCount} " +
+                $"primary={RequiredVisibleTMPHUDLabelCount} care={RequiredVisibleCareHUDLabelCount} " +
+                $"fontResource={RuntimeUIFontResourcePath} careLabels={CareHUDLabelTextGroups.Length} " +
+                $"marker={RuntimeHUDTypographyReadyMarker}";
+            return countsPass && markerPass && fontResourcePass && careLabelsPass;
         }
         public bool IsRoomNavigationVisible => _roomNavigationRoot != null && _roomNavigationRoot.activeSelf;
         public bool IsRoomNavigationLocked => _roomNavigationLocked;
@@ -1975,7 +2048,10 @@ namespace MoonlightMagicHouse
             Rect touchRect = ActionTouchTargetScreenRect;
             Debug.Log($"[MoonlightHUDQA] marker={HUDLayoutQAMarker} screen={Screen.width}x{Screen.height} " +
                 $"typography={VisibleHUDTypographyQAMarker} tmpLabels={VisibleTMPHUDLabelCount}/" +
-                $"{RequiredVisibleTMPHUDLabelCount} typographySafe={VisibleTMPHUDLabelsInsideSafeArea} " +
+                $"{RequiredVisibleTMPHUDLabelCount} careLabels={VisibleCareHUDLabelCount}/" +
+                $"{RequiredVisibleCareHUDLabelCount} runtimeLabels={VisibleRuntimeHUDLabelCount}/" +
+                $"{RequiredVisibleRuntimeHUDLabelCount} font={RuntimeUIFontSourceForQA} " +
+                $"typographySafe={VisibleTMPHUDLabelsInsideSafeArea} " +
                 $"typographySeparated={VisibleTMPHUDLabelsDoNotOverlap} noMirror={VisibleHUDHasNoLegacyMirrorDependency} " +
                 $"safe={Screen.safeArea} touchPixels={touchRect.size} touchLayout={ActionTouchTargetLayoutSize} " +
                 $"touchMinimumPass={ActionTouchTargetMeetsIPadMinimum} insideSafeArea={ActionTouchTargetIsInsideSafeArea} " +
@@ -2001,6 +2077,9 @@ namespace MoonlightMagicHouse
             Canvas.ForceUpdateCanvases();
             Debug.Log($"[MoonlightHUDQA] typography={VisibleHUDTypographyQAMarker} " +
                 $"tmpLabels={VisibleTMPHUDLabelCount}/{RequiredVisibleTMPHUDLabelCount} " +
+                $"careLabels={VisibleCareHUDLabelCount}/{RequiredVisibleCareHUDLabelCount} " +
+                $"runtimeLabels={VisibleRuntimeHUDLabelCount}/{RequiredVisibleRuntimeHUDLabelCount} " +
+                $"font={RuntimeUIFontSourceForQA} " +
                 $"active={VisibleTMPHUDLabelsActive} safe={VisibleTMPHUDLabelsInsideSafeArea} " +
                 $"separated={VisibleTMPHUDLabelsDoNotOverlap} " +
                 $"noMirror={VisibleHUDHasNoLegacyMirrorDependency}");
@@ -2008,6 +2087,34 @@ namespace MoonlightMagicHouse
 
         TMP_Text[] PrimaryHUDLabels() =>
             new[] { stageLabel, moodEmoji, coinsLabel, xpLabel, daysLabel };
+
+        TMP_Text[] CareHUDLabels()
+        {
+            var labels = new List<TMP_Text>(CareHUDLabelTextGroups.Length);
+            var allLabels = GetComponentsInChildren<TextMeshProUGUI>(false);
+            foreach (var requiredTexts in CareHUDLabelTextGroups)
+            {
+                TMP_Text match = null;
+                foreach (var label in allLabels)
+                {
+                    if (label != null && Array.IndexOf(requiredTexts, label.text) >= 0)
+                    {
+                        match = label;
+                        break;
+                    }
+                }
+                labels.Add(match);
+            }
+            return labels.ToArray();
+        }
+
+        TMP_Text[] RuntimeHUDLabels()
+        {
+            var labels = new List<TMP_Text>(RequiredVisibleRuntimeHUDLabelCount);
+            labels.AddRange(PrimaryHUDLabels());
+            labels.AddRange(CareHUDLabels());
+            return labels.ToArray();
+        }
 
         static bool IsVisibleTMPHUDLabel(TMP_Text label)
         {
@@ -2024,8 +2131,10 @@ namespace MoonlightMagicHouse
                 hasVisibleGlyph = true;
                 break;
             }
+            bool materialReady = label.fontSharedMaterial != null &&
+                label.fontSharedMaterial.shader != null;
             Rect rect = ScreenRect(label.transform as RectTransform);
-            return hasVisibleGlyph && !label.isTextOverflowing &&
+            return hasVisibleGlyph && materialReady && !label.isTextOverflowing &&
                 rect.width > 0f && rect.height > 0f;
         }
 

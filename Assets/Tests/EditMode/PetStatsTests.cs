@@ -85,6 +85,17 @@ namespace MoonlightMagicHouse.Tests
             Object.DestroyImmediate(food);
         }
 
+        [Test]
+        public void RuntimeHUDTypographyContract_RequiresVisibleStandaloneLabels()
+        {
+            Assert.IsTrue(MoonlightUI.ValidateRuntimeHUDTypographyContract(out string detail), detail);
+            Assert.AreEqual("MOONLIGHT_VISIBLE_TMP_HUD_READY",
+                MoonlightUI.RuntimeHUDTypographyReadyMarker);
+            Assert.AreEqual(10, MoonlightUI.RequiredVisibleRuntimeHUDLabelCount);
+            Assert.AreEqual("Fonts & Materials/LiberationSans SDF",
+                MoonlightUI.RuntimeUIFontResourcePath);
+        }
+
         static MoonlightStats FullStats() =>
             new MoonlightStats { wonder=100, warmth=100, rest=100, magic=100, hunger=100 };
     }

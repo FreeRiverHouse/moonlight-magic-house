@@ -1779,6 +1779,9 @@ namespace MoonlightMagicHouse
                         $"active={ui.IsIPadHUDLayoutActive} marker={ui.HUDLayoutQAMarker} " +
                         $"typography={ui.VisibleHUDTypographyQAMarker} " +
                         $"tmpLabels={ui.VisibleTMPHUDLabelCount}/{MoonlightUI.RequiredVisibleTMPHUDLabelCount} " +
+                        $"careLabels={ui.VisibleCareHUDLabelCount}/{MoonlightUI.RequiredVisibleCareHUDLabelCount} " +
+                        $"runtimeLabels={ui.VisibleRuntimeHUDLabelCount}/{MoonlightUI.RequiredVisibleRuntimeHUDLabelCount} " +
+                        $"font={ui.RuntimeUIFontSourceForQA} " +
                         $"typographySafe={ui.VisibleTMPHUDLabelsInsideSafeArea} " +
                         $"typographySeparated={ui.VisibleTMPHUDLabelsDoNotOverlap} " +
                         $"noMirror={ui.VisibleHUDHasNoLegacyMirrorDependency} " +
@@ -1819,6 +1822,9 @@ namespace MoonlightMagicHouse
                     $"marker={ui.HUDLayoutQAMarker} touch={ui.ActionTouchTargetLayoutSize} " +
                     $"typography={ui.VisibleHUDTypographyQAMarker} " +
                     $"tmpLabels={ui.VisibleTMPHUDLabelCount}/{MoonlightUI.RequiredVisibleTMPHUDLabelCount} " +
+                    $"careLabels={ui.VisibleCareHUDLabelCount}/{MoonlightUI.RequiredVisibleCareHUDLabelCount} " +
+                    $"runtimeLabels={ui.VisibleRuntimeHUDLabelCount}/{MoonlightUI.RequiredVisibleRuntimeHUDLabelCount} " +
+                    $"font={ui.RuntimeUIFontSourceForQA} " +
                     $"typographySafe={ui.VisibleTMPHUDLabelsInsideSafeArea} " +
                     $"typographySeparated={ui.VisibleTMPHUDLabelsDoNotOverlap} " +
                     $"noMirror={ui.VisibleHUDHasNoLegacyMirrorDependency} " +
