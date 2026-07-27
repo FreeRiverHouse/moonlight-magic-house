@@ -5783,7 +5783,7 @@ namespace MoonlightMagicHouse
                 0f, 8f);
             float durationResponse = Mathf.InverseLerp(0.25f, 1.25f, duration);
             return ActivityLightBaseIntensity +
-                Mathf.Sin(t * Mathf.PI) * ActivityLightPulseIntensity +
+                Mathf.Max(0f, Mathf.Sin(t * Mathf.PI)) * ActivityLightPulseIntensity +
                 score * 0.26f + durationResponse * 0.18f;
         }
 
@@ -5914,6 +5914,7 @@ namespace MoonlightMagicHouse
                 minimumInput, maximumInput, maximumTap, malformedInput, default
             };
             bool finiteAndBounded = true;
+            string firstBoundsFailure = null;
             for (int i = 0; i <= 40; i++)
             {
                 float t = i / 40f;
@@ -5963,6 +5964,43 @@ namespace MoonlightMagicHouse
                             IsFinite(bubbleScale) && bubbleScale >= 0.015f &&
                             bubbleScale <= 0.080f;
                     }
+                    if (!finiteAndBounded && firstBoundsFailure == null)
+                    {
+                        bool posePass =
+                            CarePointIsFiniteAndBounded(EvaluateCareTowelPosition(t, sample)) &&
+                            CarePointIsFiniteAndBounded(EvaluateCareWashBrushPosition(t, sample)) &&
+                            CarePointIsFiniteAndBounded(EvaluateCareCombPosition(t, sample));
+                        bool auraPass =
+                            CareScaleIsFiniteAndBounded(EvaluateCareGlowAuraScale(t, sample));
+                        bool motionPass = IsFinite(EvaluateCareTowelEuler(t, sample)) &&
+                            IsFinite(EvaluateCareWashBrushEuler(t, sample)) &&
+                            IsFinite(EvaluateCareCombEuler(t, sample)) &&
+                            IsFinite(EvaluateCareWashDirection(sample)) &&
+                            IsFinite(EvaluateCareWashRadius(sample)) &&
+                            IsFinite(EvaluateCareGlowScaleMultiplier(sample)) &&
+                            IsFinite(EvaluateCareGlowLightIntensity(t, sample));
+                        bool motePass = true;
+                        for (int mote = 0; mote < 6; mote++)
+                            motePass &= CarePointIsFiniteAndBounded(
+                                EvaluateCareGlowMotePosition(mote, t, sample)) &&
+                                IsFinite(EvaluateCareGlowMoteScale(mote, t, sample));
+                        bool bubblePass = true;
+                        for (int bubble = 0; bubble < 5; bubble++)
+                            bubblePass &= CarePointIsFiniteAndBounded(
+                                EvaluateCareWashBubblePosition(bubble, t, sample)) &&
+                                IsFinite(EvaluateCareWashBubbleScale(bubble, t));
+                        firstBoundsFailure =
+                            $"t={t:0.000} initialized={sample.IsInitialized} " +
+                            $"score={sample.Score:0.000} duration={sample.Duration:0.000} " +
+                            $"towel={EvaluateCareTowelPosition(t, sample):F3} " +
+                            $"wash={EvaluateCareWashBrushPosition(t, sample):F3} " +
+                            $"comb={EvaluateCareCombPosition(t, sample):F3} " +
+                            $"aura={EvaluateCareGlowAuraScale(t, sample):F3} " +
+                            $"direction={EvaluateCareWashDirection(sample):0.000} " +
+                            $"radius={EvaluateCareWashRadius(sample):0.000} " +
+                            $"categories=pose:{posePass},aura:{auraPass}," +
+                            $"motion:{motionPass},motes:{motePass},bubbles:{bubblePass}";
+                    }
                 }
             }
             finiteAndBounded &= CarePointIsFiniteAndBounded(
@@ -6002,6 +6040,7 @@ namespace MoonlightMagicHouse
                 $"lightDelta={scoreLightDelta:0.000}/{durationLightDelta:0.000} " +
                 $"moteDelta={scoreMoteDelta}/{durationMoteDelta} " +
                 $"finiteBounds={finiteAndBounded} malformedGlow={malformedGlowScalePass} " +
+                $"firstBoundsFailure={firstBoundsFailure ?? "none"} " +
                 $"sequence={sequencePreserved} " +
                 $"linger={CareFinalPresentationSeconds:0.0}s " +
                 $"persistentIsolationPolicy={persistentIsolationPolicy}";

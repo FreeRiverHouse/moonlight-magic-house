@@ -4230,7 +4230,7 @@ namespace MoonlightMagicHouse
 
         static float HeroSmoothness(string materialName)
         {
-            string n = materialName ?? string.Empty;
+            string n = (materialName ?? string.Empty).ToLowerInvariant();
             if (n.Contains("highlight")) return 0.94f;
             if (n.Contains("eye")) return 0.88f;
             if (n.Contains("moon")) return 0.58f;
@@ -4247,7 +4247,7 @@ namespace MoonlightMagicHouse
 
         static float HeroMetallic(string materialName)
         {
-            string n = materialName ?? string.Empty;
+            string n = (materialName ?? string.Empty).ToLowerInvariant();
             if (n.Contains("eye") || n.Contains("highlight")) return 0.04f;
             if (n.Contains("moon") || n.Contains("pencil")) return 0.02f;
             return 0f;
@@ -4255,7 +4255,7 @@ namespace MoonlightMagicHouse
 
         static float HeroEmission(string materialName)
         {
-            string n = materialName ?? string.Empty;
+            string n = (materialName ?? string.Empty).ToLowerInvariant();
             if (n.Contains("highlight")) return 0.16f;
             if (n.Contains("moon")) return 0.13f;
             if (n.Contains("eye")) return 0.04f;
@@ -4264,7 +4264,7 @@ namespace MoonlightMagicHouse
 
         static string HeroSurfaceProfile(string materialName)
         {
-            string n = materialName ?? string.Empty;
+            string n = (materialName ?? string.Empty).ToLowerInvariant();
             if (n.Contains("highlight")) return "highlight-gloss";
             if (n.Contains("eye")) return "eye-glass";
             if (n.Contains("moon")) return "moon-glow";
@@ -4400,7 +4400,7 @@ namespace MoonlightMagicHouse
             new System.Collections.Generic.List<Renderer>();
         readonly System.Collections.Generic.List<Renderer> _highlightRenderers =
             new System.Collections.Generic.List<Renderer>();
-        readonly MaterialPropertyBlock _block = new MaterialPropertyBlock();
+        MaterialPropertyBlock _block;
         MoonlightActionFeedback _actionFeedback;
         EyeBlinker _blinker;
 
@@ -4467,6 +4467,7 @@ namespace MoonlightMagicHouse
 
         void ApplyCatchlight(Color color, float emission)
         {
+            _block ??= new MaterialPropertyBlock();
             CurrentCatchlightEmission = emission;
             CurrentCatchlightColor = color;
             Color catchlight = color * emission;

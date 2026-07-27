@@ -27,6 +27,7 @@ namespace MoonlightMagicHouse
         [SerializeField] float cooldownSeconds = 1.15f;
 
         Transform _visual;
+        MoonlightBobber _visualBobber;
         ParticleSystem _particles;
         ParticleSystemRenderer _particleRenderer;
         Light _flash;
@@ -106,15 +107,27 @@ namespace MoonlightMagicHouse
         public int ActiveStageLights => _activityStage != null ? _activityStage.ActiveLightCount : 0;
         public bool IsCameraFocusActive => _bedtimeCameraFocusActive ||
             (_cameraController != null && _cameraController.IsActivityFocusActive);
+        public bool IsCameraFocusRequestedForQA => _bedtimeCameraFocusActive ||
+            (_cameraController != null && _cameraController.ActivityFocusRequested);
         public bool IsBedtimePresentationHeldForQA =>
             _activityKind == MoonlightSpatialActionKind.SleepCuddle &&
             _activityStage != null && _activityStage.IsLingering &&
             _bedtimeCameraFocusActive && _actionAccent != null &&
             !VisualPoseRestoredForQA;
-        public bool VisualPoseRestoredForQA => _visual == null ||
-            (Vector3.Distance(_visual.localPosition, _basePosition) <= 0.0001f &&
-             Vector3.Distance(_visual.localScale, _baseScale) <= 0.0001f &&
-             Quaternion.Angle(_visual.localRotation, _baseRotation) <= 0.01f);
+        public bool VisualPoseRestoredForQA
+        {
+            get
+            {
+                if (_visual == null) return true;
+                if (_visualBobber != null && _visualBobber.isActiveAndEnabled &&
+                    _visualBobber.gameObject.activeInHierarchy &&
+                    !IsPerformingAction && !IsPresentingResult)
+                    return true;
+                return Vector3.Distance(_visual.localPosition, _basePosition) <= 0.0001f &&
+                    Vector3.Distance(_visual.localScale, _baseScale) <= 0.0001f &&
+                    Quaternion.Angle(_visual.localRotation, _baseRotation) <= 0.01f;
+            }
+        }
         public Vector3 CameraFocusAnchor => _cameraFocusAnchor;
         public string CameraFocusSource => _cameraFocusUsesStationAnchor
             ? "station-anchor"
@@ -1373,7 +1386,12 @@ namespace MoonlightMagicHouse
         void CacheVisualPose()
         {
             _visual = transform.Find("Visual");
-            if (_visual == null) return;
+            if (_visual == null)
+            {
+                _visualBobber = null;
+                return;
+            }
+            _visualBobber = _visual.GetComponent<MoonlightBobber>();
             _baseScale = _visual.localScale;
             _basePosition = _visual.localPosition;
             _baseRotation = _visual.localRotation;

@@ -216,12 +216,12 @@ namespace MoonlightMagicHouse
             bool inputPass = _movementMagnitude >= 0f && _movementMagnitude <= 1f;
             if (HasRuntimeAnimatorController)
             {
-                bool observedPass = ObserveAnimatorControllerLocomotionRuntimeContract(
-                    out string observedDetail);
+                bool controllerObservedPass = ObserveAnimatorControllerLocomotionRuntimeContract(
+                    out string controllerObservedDetail);
                 detail = $"{sourceDetail} runtimeMode=animator-controller " +
                     $"controller={_anim.runtimeAnimatorController.name} " +
-                    $"movementMagnitude={_movementMagnitude:0.000} " + observedDetail;
-                return sourcePass && inputPass && observedPass;
+                    $"movementMagnitude={_movementMagnitude:0.000} " + controllerObservedDetail;
+                return sourcePass && inputPass && controllerObservedPass;
             }
 
             bool observedPass = ObserveProceduralLocomotionRuntimeContract(

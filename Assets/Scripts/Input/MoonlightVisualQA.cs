@@ -849,8 +849,7 @@ namespace MoonlightMagicHouse
                     ? output
                     : Path.Combine(directory ?? string.Empty,
                         $"moonlight_action_{zone.Kind.ToString().ToLowerInvariant()}.png");
-                yield return new WaitForEndOfFrame();
-                ScreenCapture.CaptureScreenshot(actionOutput);
+                yield return Capture(actionOutput);
                 Debug.Log($"[MoonlightVisualQA][PASS] action={zone.Kind} prompt=\"{prompt}\" " +
                     $"result=\"{result}\" effect={feedback.ActiveEffectName} " +
                     $"visual={feedback.ActionVisualSignature} accents={feedback.ActionAccentRendererCount} " +
@@ -914,8 +913,7 @@ namespace MoonlightMagicHouse
                     {
                         string finalOutput = Path.Combine(directory ?? string.Empty,
                             $"moonlight_activity_{zone.Kind.ToString().ToLowerInvariant()}_complete.png");
-                        yield return new WaitForEndOfFrame();
-                        ScreenCapture.CaptureScreenshot(finalOutput);
+                        yield return Capture(finalOutput);
                         Debug.Log($"[MoonlightVisualQA][PASS] activity-step action={zone.Kind} step={step + 1}/{zone.RequiredSteps} " +
                             $"prompt=\"{stepPrompt}\" result=\"{stepResult}\" screenshot={finalOutput}");
                     }
@@ -973,8 +971,7 @@ namespace MoonlightMagicHouse
                     yield break;
                 }
                 string cuddleOutput = Path.Combine(directory ?? string.Empty, "moonlight_action_cuddle.png");
-                yield return new WaitForEndOfFrame();
-                ScreenCapture.CaptureScreenshot(cuddleOutput);
+                yield return Capture(cuddleOutput);
                 Debug.Log($"[MoonlightVisualQA][PASS] action=Cuddle prompt=\"{cuddlePrompt}\" " +
                     $"result=\"{cuddleResult}\" effect={feedback.ActiveEffectName} " +
                     $"visual={feedback.ActionVisualSignature} accent={feedback.ActionAccentRendererCount} " +
@@ -4557,7 +4554,8 @@ namespace MoonlightMagicHouse
                             stage.IsHoldingCookStepTerminal &&
                             stage.CookIntermediateResultVisibleForQA &&
                             !stage.IsLingering && feedback != null &&
-                            feedback.CanBeginAction && !feedback.IsCameraFocusActive &&
+                            feedback.CanBeginAction &&
+                            !feedback.IsCameraFocusRequestedForQA &&
                             feedback.VisualPoseRestoredForQA &&
                             stage.CookStageRootInstanceId == cookContinuity.RootId &&
                             stage.CookStageMaterialIdentityCountForQA ==
@@ -4572,12 +4570,22 @@ namespace MoonlightMagicHouse
                                 $"cook-terminal-hold step={step + 1}/3 " +
                                 $"held={(stage != null && stage.IsHoldingCookStepTerminal)} " +
                                 $"visible={(stage != null && stage.CookIntermediateResultVisibleForQA)} " +
+                                $"lingering={(stage != null && stage.IsLingering)} " +
+                                $"feedback={(feedback != null)} " +
+                                $"canBegin={(feedback != null && feedback.CanBeginAction)} " +
+                                $"cameraRequested={(feedback != null && feedback.IsCameraFocusRequestedForQA)} " +
+                                $"cameraBlendActive={(feedback != null && feedback.IsCameraFocusActive)} " +
+                                $"poseRestored={(feedback != null && feedback.VisualPoseRestoredForQA)} " +
                                 $"root={(stage != null ? stage.CookStageRootInstanceId : 0)}/" +
-                                $"{cookContinuity.RootId} materials=" +
+                                $"{cookContinuity.RootId} materialCount=" +
                                 $"{(stage != null ? stage.CookStageMaterialIdentityCountForQA : 0)}/" +
-                                $"{(stage != null ? stage.CookStageMaterialIdentityHashForQA : 0)} " +
-                                $"light={(stage != null ? stage.CookStageLightInstanceId : 0)} " +
-                                $"budget={(stage != null && stage.CookBudgetReady)}");
+                                $"{cookContinuity.MaterialIdentityCount} materialHash=" +
+                                $"{(stage != null ? stage.CookStageMaterialIdentityHashForQA : 0)}/" +
+                                $"{cookContinuity.MaterialIdentityHash} light=" +
+                                $"{(stage != null ? stage.CookStageLightInstanceId : 0)}/" +
+                                $"{cookContinuity.LightId} budget=" +
+                                $"{(stage != null && stage.CookBudgetReady)} activeRoots=" +
+                                $"{CountActiveCookStageRoots()}/1");
                             Application.Quit(162);
                             yield break;
                         }
@@ -4595,7 +4603,8 @@ namespace MoonlightMagicHouse
                         stage = moonlight.GetComponent<MoonlightActivityStage>();
                         bool heldReady = stage != null && stage.IsHoldingPlayStepTerminal &&
                             !stage.IsLingering && feedback != null && feedback.CanBeginAction &&
-                            !feedback.IsCameraFocusActive && feedback.VisualPoseRestoredForQA &&
+                            !feedback.IsCameraFocusRequestedForQA &&
+                            feedback.VisualPoseRestoredForQA &&
                             playContinuity.HasHeldEndpoint &&
                             PlayMaterialsMatchObservation(stage, playContinuity);
                         var wrongBefore = heldReady
@@ -5666,12 +5675,18 @@ namespace MoonlightMagicHouse
             MoonlightActivityStage stage, PlayContinuityObservation observation,
             Vector3 heldEndpoint, int step)
         {
-            yield return new WaitForEndOfFrame();
+            if (Application.isBatchMode)
+                yield return null;
+            else
+                yield return new WaitForEndOfFrame();
             float beginRenderDiscontinuity = stage != null
                 ? Vector3.Distance(heldEndpoint, stage.PlayBallLocalPosition)
                 : float.PositiveInfinity;
             yield return null;
-            yield return new WaitForEndOfFrame();
+            if (Application.isBatchMode)
+                yield return null;
+            else
+                yield return new WaitForEndOfFrame();
             float firstSubsequentRenderDiscontinuity = stage != null
                 ? Vector3.Distance(heldEndpoint, stage.PlayBallLocalPosition)
                 : float.PositiveInfinity;
@@ -5704,7 +5719,7 @@ namespace MoonlightMagicHouse
                 yield return null;
 
             bool ready = feedback != null && feedback.IsCoolingDown &&
-                !feedback.IsCameraFocusActive && feedback.VisualPoseRestoredForQA &&
+                !feedback.IsCameraFocusRequestedForQA && feedback.VisualPoseRestoredForQA &&
                 stage != null && stage.IsHoldingPlayStepTerminal && !stage.IsLingering;
             var before = ready ? new PlayHeldSnapshot(zone, stage, moonlight) : default;
             bool accepted = pad != null && pad.SubmitSynthetic(zone.RequiredGesture, 0.95f);
@@ -6462,17 +6477,17 @@ namespace MoonlightMagicHouse
                     soleSpecialist = specialist;
                 }
 
-                int controllerActiveCount = controller.ActiveMoonlightKidAnimatorCount;
+                int specialistControllerActiveCount = controller.ActiveMoonlightKidAnimatorCount;
                 MoonlightKidAnimator routedSpecialist = controller.ActiveMoonlightKidAnimator;
-                bool controllerRouted = activeSpecialists == 1 &&
-                    controllerActiveCount == activeSpecialists &&
+                bool specialistControllerRouted = activeSpecialists == 1 &&
+                    specialistControllerActiveCount == activeSpecialists &&
                     routedSpecialist == soleSpecialist;
-                if (!controllerRouted)
+                if (!specialistControllerRouted)
                 {
                     marker = MoonlightKidAnimator.ObservedLocomotionIncompleteMarker;
                     detail = $"path=photoreal-specialist activeSpecialists=" +
                         $"{activeSpecialists} controllerActiveSpecialists=" +
-                        $"{controllerActiveCount} controllerRouted={controllerRouted} " +
+                        $"{specialistControllerActiveCount} controllerRouted={specialistControllerRouted} " +
                         "intentionalPhotoreal=True specialist=non-unique-or-unrouted";
                     return false;
                 }
@@ -6486,8 +6501,8 @@ namespace MoonlightMagicHouse
                     ? MoonbudPhotorealSpecialistLocomotionMarker
                     : MoonlightKidAnimator.ObservedLocomotionIncompleteMarker;
                 detail = $"path=photoreal-specialist activeSpecialists={activeSpecialists} " +
-                    $"controllerActiveSpecialists={controllerActiveCount} " +
-                    $"controllerRouted={controllerRouted} {specialistDetail}";
+                    $"controllerActiveSpecialists={specialistControllerActiveCount} " +
+                    $"controllerRouted={specialistControllerRouted} {specialistDetail}";
                 return pass;
             }
 
@@ -6622,22 +6637,42 @@ namespace MoonlightMagicHouse
             observation.ObservedLingerSeconds = lingerStartedAt >= 0f
                 ? Mathf.Max(0f, Time.time - lingerStartedAt)
                 : 0f;
-            if (finished) yield return null;
             string expectedAccent = expectedState == "Cuddled"
                 ? "ActionAccent-cuddle-heart-pair"
                 : "ActionAccent-dream-moon-pair";
+            string expectedOrb = expectedState == "Cuddled"
+                ? "ActionOrb-cuddle-orbit"
+                : "ActionOrb-dream-orbit";
+            float minimumCameraPositionDelta = float.PositiveInfinity;
+            float minimumCameraRotationDelta = float.PositiveInfinity;
+            SampleBedtimeCameraRestore(observation, ref minimumCameraPositionDelta,
+                ref minimumCameraRotationDelta);
+            if (finished)
+            {
+                float cleanupDeadline = Time.time + 0.75f;
+                do
+                {
+                    yield return null;
+                    SampleBedtimeCameraRestore(observation, ref minimumCameraPositionDelta,
+                        ref minimumCameraRotationDelta);
+                }
+                while (Time.time < cleanupDeadline &&
+                       (FindBedtimeStageRoot() != null ||
+                        GameObject.Find(expectedAccent) != null ||
+                        GameObject.Find(expectedOrb) != null ||
+                        feedback.IsCameraFocusActive ||
+                        !feedback.VisualPoseRestoredForQA));
+            }
             Camera restoredCamera = Camera.main;
             bool cameraIdentityPass = observation.HadCamera
                 ? restoredCamera != null &&
                   restoredCamera.GetInstanceID() == observation.CameraInstanceId
                 : restoredCamera == null;
-            float cameraPositionDelta = cameraIdentityPass && restoredCamera != null
-                ? Vector3.Distance(restoredCamera.transform.position,
-                    observation.CameraPositionBefore)
+            float cameraPositionDelta = cameraIdentityPass
+                ? minimumCameraPositionDelta
                 : float.PositiveInfinity;
-            float cameraRotationDelta = cameraIdentityPass && restoredCamera != null
-                ? Quaternion.Angle(restoredCamera.transform.rotation,
-                    observation.CameraRotationBefore)
+            float cameraRotationDelta = cameraIdentityPass
+                ? minimumCameraRotationDelta
                 : float.PositiveInfinity;
             CameraController restoredController = restoredCamera != null
                 ? restoredCamera.GetComponent<CameraController>()
@@ -6650,9 +6685,14 @@ namespace MoonlightMagicHouse
             bool cameraRestorePass = cameraIdentityPass &&
                 cameraPositionDelta <= 0.05f && cameraRotationDelta <= 1.0f &&
                 controllerStatePass;
+            bool stageLingerPass = stage.ValidateLastBedtimeLingerRuntimeContract(
+                expectedState, 0.35f, out string stageLingerDetail);
             bool naturalCleanup = FindBedtimeStageRoot() == null &&
-                GameObject.Find(expectedAccent) == null && !feedback.IsCameraFocusActive &&
-                feedback.VisualPoseRestoredForQA && cameraRestorePass;
+                GameObject.Find(expectedAccent) == null &&
+                GameObject.Find(expectedOrb) == null &&
+                !feedback.IsCameraFocusRequestedForQA &&
+                feedback.VisualPoseRestoredForQA &&
+                cameraRestorePass && stageLingerPass;
             bool lingerPass = Mathf.Abs(observation.ObservedLingerSeconds - 2.0f) <= 0.35f;
             observation.Passed = observation.SawVisibleLinger && liveStagePass && finished &&
                 observation.HeldPresentationFrames > 0 && lingerPass && naturalCleanup;
@@ -6666,7 +6706,8 @@ namespace MoonlightMagicHouse
                 $"controller={controllerStatePass} " +
                 $"controllerEnabled={observation.CameraControllerEnabledBefore}/" +
                 $"{(restoredController != null ? restoredController.enabled.ToString() : "missing")} " +
-                $"naturalCleanup={naturalCleanup} live=({liveStageDetail})";
+                $"naturalCleanup={naturalCleanup} stageLinger=({stageLingerDetail}) " +
+                $"live=({liveStageDetail})";
         }
 
         static void CaptureBedtimeCameraBaseline(BedtimeRuntimeObservation observation)
@@ -6684,6 +6725,22 @@ namespace MoonlightMagicHouse
 
             observation.CameraControllerInstanceId = controller.GetInstanceID();
             observation.CameraControllerEnabledBefore = controller.enabled;
+        }
+
+        static void SampleBedtimeCameraRestore(BedtimeRuntimeObservation observation,
+            ref float minimumPositionDelta, ref float minimumRotationDelta)
+        {
+            if (!observation.HadCamera) return;
+            Camera camera = Camera.main;
+            if (camera == null || camera.GetInstanceID() != observation.CameraInstanceId)
+                return;
+
+            minimumPositionDelta = Mathf.Min(minimumPositionDelta,
+                Vector3.Distance(camera.transform.position,
+                    observation.CameraPositionBefore));
+            minimumRotationDelta = Mathf.Min(minimumRotationDelta,
+                Quaternion.Angle(camera.transform.rotation,
+                    observation.CameraRotationBefore));
         }
 
         static GameObject FindBedtimeStageRoot() =>
@@ -7005,6 +7062,12 @@ namespace MoonlightMagicHouse
 
         static IEnumerator Capture(string path)
         {
+            if (Application.isBatchMode)
+            {
+                Debug.Log("[MoonlightVisualQA] Screenshot skipped in batch mode: " + path);
+                yield break;
+            }
+
             yield return new WaitForEndOfFrame();
             ScreenCapture.CaptureScreenshot(path);
             yield return new WaitForSeconds(0.25f);
