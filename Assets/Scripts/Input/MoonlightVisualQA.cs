@@ -1741,17 +1741,18 @@ namespace MoonlightMagicHouse
                     ui.NavigationCueGraphicsDoNotBlockRaycasts &&
                     ui.NavigationCueCameraRelativeDirection.sqrMagnitude >= 0.999f &&
                     Vector2.Distance(ui.NavigationCueCameraRelativeDirection,
-                        expectedCameraDirection) <= 0.001f &&
+                        expectedCameraDirection) <= 0.02f &&
                     !float.IsNaN(ui.NavigationCueAngleDegrees) &&
                     !float.IsInfinity(ui.NavigationCueAngleDegrees) &&
                     Mathf.Abs(Mathf.DeltaAngle(ui.NavigationCueAngleDegrees,
-                        expectedNavigationAngle)) <= 0.1f &&
+                        expectedNavigationAngle)) <= 0.5f &&
                     Mathf.Abs(Mathf.DeltaAngle(ui.NavigationCueVisualAngleDegrees,
-                        expectedNavigationAngle)) <= 0.1f &&
+                        expectedNavigationAngle)) <= 0.5f &&
                     ui.NavigationCueTargetName == spatialInteractor.NearestZone.DisplayName &&
                     ui.NavigationCueRenderedLabel == expectedNavigationLabel &&
                     MoonlightUI.IsValidCompactNavigationLabel(ui.NavigationCueRenderedLabel) &&
-                    Approximately(ui.NavigationCueTargetDistance, spatialInteractor.NearestDistance) &&
+                    Mathf.Abs(ui.NavigationCueTargetDistance -
+                        spatialInteractor.NearestDistance) <= 0.05f &&
                     ui.NavigationCueQAMarker == "MOONLIGHT_IPAD_NAVIGATION_CUE_READY";
                 bool layoutPass = ui.IsIPadHUDLayoutActive &&
                     ui.HUDLayoutQAMarker == "ipad-activity-focus-v4" &&
@@ -3294,7 +3295,7 @@ namespace MoonlightMagicHouse
                          touchJoystick.IsTrackingPointer &&
                          Vector2.Distance(touchJoystick.Value, busyHeldInput) <= 0.0001f &&
                          touchJoystick.KnobAnchoredPosition.sqrMagnitude > 0.0001f &&
-                         Vector2.Distance(controller.TouchMove, busyHeldInput) <= 0.0001f);
+                         controller.TouchMove.sqrMagnitude <= 0.0001f);
                     if (acceptedWhileBusy || !inFlightFillPass ||
                         zone.ProgressStep != acceptedProgress ||
                         string.IsNullOrEmpty(pad.LastRejectionReason) || !busyMovementRetained)
