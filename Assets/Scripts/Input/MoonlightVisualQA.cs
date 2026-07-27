@@ -1044,6 +1044,7 @@ namespace MoonlightMagicHouse
                 Application.Quit(20);
                 yield break;
             }
+            moonlight.SuppressDecayForQA = true;
 
             if (!ValidateActivityResultTimingContract(out string resultTimingDetail))
             {

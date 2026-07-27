@@ -82,6 +82,7 @@ namespace MoonlightMagicHouse
         public UnityEvent<int>            onRoomUnlocked  = new UnityEvent<int>();
 
         MoonlightMood _lastMood;
+        public bool SuppressDecayForQA { get; set; }
 
         // ── Lifecycle ──────────────────────────────────────────────────────
         void Awake()
@@ -104,6 +105,7 @@ namespace MoonlightMagicHouse
             while (true)
             {
                 yield return new WaitForSeconds(TICK_SEC);
+                if (SuppressDecayForQA) continue;
                 Decay();
                 daysInHouse += 1f / 1440f;
                 CheckStageUp();
