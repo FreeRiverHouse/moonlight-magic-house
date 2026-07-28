@@ -17,7 +17,14 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_ANIMATOR_CONTROLLER_LOCOMOTION_UNOBSERVED";
         public const string AnimatorControllerIncompleteMarker =
             "MOONLIGHT_ANIMATOR_CONTROLLER_LOCOMOTION_INCOMPLETE";
+        public const string PlayArticulatedPoseReadyMarker =
+            "MOONLIGHT_PLAY_ARTICULATED_POSE_VERIFIED";
+        public const string PlayArticulatedPoseRestoredMarker =
+            "MOONLIGHT_PLAY_ARTICULATED_POSE_RESTORED";
+        public const string PlayArticulatedPoseInactiveMarker =
+            "MOONLIGHT_PLAY_ARTICULATED_POSE_INACTIVE";
         const float IdleScaleTolerance = 0.00001f;
+        const float PlayPoseDirectionDotThreshold = 0.20f;
 
         static readonly int MoodHash = Animator.StringToHash("Mood");
         static readonly int StageHash = Animator.StringToHash("Stage");
@@ -85,6 +92,7 @@ namespace MoonlightMagicHouse
         bool _idleMicroMotionSuppressed;
         bool _resumeIdleMicroMotion;
         bool _actionActive;
+        bool _playActionPoseApplied;
         bool _wasUsingProceduralLocomotion;
         bool _proceduralPoseApplied;
         float _movementMagnitude;
@@ -118,6 +126,14 @@ namespace MoonlightMagicHouse
         public bool LiveProceduralRigBindingValid => HasLiveUniqueProceduralRig();
         public float MovementMagnitude => _movementMagnitude;
         public bool IsSprinting => _sprinting;
+        public string PlayArticulatedPoseQAMarker { get; private set; } =
+            PlayArticulatedPoseInactiveMarker;
+        public int PlayArticulatedPoseStepForQA { get; private set; } = -1;
+        public int PlayArticulatedPoseMovedTransformCountForQA { get; private set; }
+        public bool PlayArticulatedPoseDirectionAlignedForQA { get; private set; }
+        public float PlayArticulatedPoseRestorePositionErrorForQA { get; private set; }
+        public float PlayArticulatedPoseRestoreRotationErrorForQA { get; private set; }
+        public float PlayArticulatedPoseRestoreScaleErrorForQA { get; private set; }
 
         void Awake() => _anim = GetComponent<Animator>();
 
@@ -147,6 +163,7 @@ namespace MoonlightMagicHouse
                 if (_wasUsingProceduralLocomotion)
                 {
                     RestoreCachedTransformsExact();
+                    MarkPlayActionPoseRestored();
                     ResumeIdleMicroMotion();
                     _wasUsingProceduralLocomotion = false;
                 }
@@ -162,6 +179,7 @@ namespace MoonlightMagicHouse
                 _gaitWeight = 0f;
                 SuppressIdleMicroMotion();
                 RestoreCachedTransformsExact();
+                ApplyPlayActionPoseIfActive(feedback);
                 return;
             }
 
@@ -194,7 +212,12 @@ namespace MoonlightMagicHouse
         public void SetActionActive(bool active)
         {
             _actionActive = active;
-            if (!active || !UsesProceduralLocomotion) return;
+            if (!active)
+            {
+                RestorePlayActionPoseIfNeeded();
+                return;
+            }
+            if (!UsesProceduralLocomotion) return;
 
             _movementMagnitude = 0f;
             _sprinting = false;
@@ -208,6 +231,21 @@ namespace MoonlightMagicHouse
             if (!UsesProceduralLocomotion) return;
             SuppressIdleMicroMotion();
             RestoreCachedTransformsExact();
+            MarkPlayActionPoseRestored();
+        }
+
+        public bool ValidatePlayArticulatedPoseRestoredForQA(out string detail)
+        {
+            float positionError = PlayArticulatedPoseRestorePositionErrorForQA;
+            float rotationError = PlayArticulatedPoseRestoreRotationErrorForQA;
+            float scaleError = PlayArticulatedPoseRestoreScaleErrorForQA;
+            bool restored = !_playActionPoseApplied &&
+                PlayArticulatedPoseQAMarker == PlayArticulatedPoseRestoredMarker &&
+                PoseErrorsWithinTolerance(positionError, rotationError, scaleError);
+            detail = $"marker={PlayArticulatedPoseQAMarker} " +
+                $"restoreMmDeg={positionError * 1000f:0.000}/{rotationError:0.000} " +
+                $"scale={scaleError:0.000000}";
+            return restored;
         }
 
         public bool ValidateProceduralLocomotionRuntimeContract(out string detail)
@@ -656,6 +694,199 @@ namespace MoonlightMagicHouse
             SetLocalRotation(TailTipIndex, Quaternion.Euler(0f, -tailSway * 1.35f, 0f));
         }
 
+        void ApplyPlayActionPoseIfActive(MoonlightActionFeedback feedback)
+        {
+            if (feedback == null || !feedback.IsPerformingAction ||
+                feedback.ActiveActivityKind != MoonlightSpatialActionKind.Play)
+            {
+                RestorePlayActionPoseIfNeeded();
+                return;
+            }
+
+            int step = Mathf.Clamp(feedback.ActivityStep, 0, 3);
+            float progress = Mathf.Clamp01(feedback.ActionProgress01);
+            float contactWeight = Mathf.Clamp01(feedback.ActionContactWeight);
+            float actionWeight = Mathf.Clamp01(Mathf.Max(contactWeight,
+                Mathf.Sin(progress * Mathf.PI) * 0.72f));
+            if (actionWeight <= 0.001f) actionWeight = 0.001f;
+
+            Vector3 direction = ContactDirectionFromRig(feedback);
+            bool leadRight = Vector3.Dot(transform.right, direction) >= 0f;
+            int leadArm = leadRight ? ArmRightIndex : ArmLeftIndex;
+            int leadPaw = leadRight ? PawRightIndex : PawLeftIndex;
+            int trailArm = leadRight ? ArmLeftIndex : ArmRightIndex;
+            int trailPaw = leadRight ? PawLeftIndex : PawRightIndex;
+            float side = leadRight ? 1f : -1f;
+            float pulse = Mathf.Sin(progress * Mathf.PI);
+            float fastPulse = Mathf.Sin(progress * Mathf.PI * 2f);
+
+            switch (step)
+            {
+                case 0:
+                    SetLocalRotation(leadArm, Quaternion.Euler(-42f * actionWeight,
+                        0f, side * 30f * actionWeight));
+                    SetLocalRotation(leadPaw, Quaternion.Euler(-30f * actionWeight,
+                        side * 8f * actionWeight, side * 18f * actionWeight));
+                    SetLocalRotation(trailArm, Quaternion.Euler(22f * actionWeight,
+                        0f, -side * 16f * actionWeight));
+                    SetLocalRotation(trailPaw, Quaternion.Euler(15f * actionWeight,
+                        0f, -side * 10f * actionWeight));
+                    SetLocalRotation(BodyIndex, Quaternion.Euler(-8f * actionWeight,
+                        side * 12f * actionWeight, side * 7f * actionWeight));
+                    SetLocalRotation(HeadIndex, Quaternion.Euler(-5f * actionWeight,
+                        side * 16f * actionWeight, 0f));
+                    SetLocalRotation(RingTailIndex, Quaternion.Euler(0f,
+                        -side * 20f * actionWeight, 10f * actionWeight));
+                    MoveTowardWorldDirection(leadPaw, direction, 0.045f * actionWeight);
+                    break;
+                case 1:
+                    SetLocalRotation(ArmLeftIndex, Quaternion.Euler(
+                        -18f * actionWeight + fastPulse * 18f, 0f, -14f * actionWeight));
+                    SetLocalRotation(ArmRightIndex, Quaternion.Euler(
+                        -18f * actionWeight - fastPulse * 18f, 0f, 14f * actionWeight));
+                    SetLocalRotation(PawLeftIndex, Quaternion.Euler(
+                        12f * actionWeight - fastPulse * 13f, 0f, -10f * actionWeight));
+                    SetLocalRotation(PawRightIndex, Quaternion.Euler(
+                        12f * actionWeight + fastPulse * 13f, 0f, 10f * actionWeight));
+                    SetLocalRotation(BodyIndex, Quaternion.Euler(10f * actionWeight,
+                        0f, fastPulse * 8f));
+                    SetLocalRotation(HeadIndex, Quaternion.Euler(-8f * actionWeight,
+                        fastPulse * 9f, -fastPulse * 4f));
+                    SetLocalRotation(RingTailIndex, Quaternion.Euler(0f,
+                        -fastPulse * 22f, -8f * actionWeight));
+                    SetLocalRotation(TailTipIndex, Quaternion.Euler(0f,
+                        fastPulse * 28f, 8f * actionWeight));
+                    break;
+                case 2:
+                    SetLocalRotation(ArmLeftIndex, Quaternion.Euler(-58f * actionWeight,
+                        -10f * actionWeight, -28f * actionWeight));
+                    SetLocalRotation(ArmRightIndex, Quaternion.Euler(-58f * actionWeight,
+                        10f * actionWeight, 28f * actionWeight));
+                    SetLocalRotation(PawLeftIndex, Quaternion.Euler(-34f * actionWeight,
+                        0f, -18f * actionWeight));
+                    SetLocalRotation(PawRightIndex, Quaternion.Euler(-34f * actionWeight,
+                        0f, 18f * actionWeight));
+                    SetLocalRotation(BodyIndex, Quaternion.Euler(-14f * actionWeight,
+                        0f, 0f));
+                    SetLocalRotation(HeadIndex, Quaternion.Euler(-18f * actionWeight,
+                        0f, 0f));
+                    SetLocalRotation(EarLeftIndex, Quaternion.Euler(
+                        -16f * actionWeight - pulse * 7f, 0f, -8f * actionWeight));
+                    SetLocalRotation(EarRightIndex, Quaternion.Euler(
+                        -16f * actionWeight - pulse * 7f, 0f, 8f * actionWeight));
+                    SetLocalRotation(RingTailIndex, Quaternion.Euler(20f * actionWeight,
+                        0f, 0f));
+                    MoveLocal(BodyIndex, new Vector3(0f, 0.025f * actionWeight, 0f));
+                    break;
+                default:
+                    SetLocalRotation(leadArm, Quaternion.Euler(-50f * actionWeight,
+                        0f, side * 34f * actionWeight));
+                    SetLocalRotation(leadPaw, Quaternion.Euler(-38f * actionWeight,
+                        side * 12f * actionWeight, side * 24f * actionWeight));
+                    SetLocalRotation(trailArm, Quaternion.Euler(-28f * actionWeight,
+                        0f, side * 16f * actionWeight));
+                    SetLocalRotation(trailPaw, Quaternion.Euler(-22f * actionWeight,
+                        side * 6f * actionWeight, side * 10f * actionWeight));
+                    SetLocalRotation(BodyIndex, Quaternion.Euler(-10f * actionWeight,
+                        side * 8f * actionWeight, -side * 6f * actionWeight));
+                    SetLocalRotation(HeadIndex, Quaternion.Euler(-12f * actionWeight,
+                        side * 15f * actionWeight, 0f));
+                    SetLocalRotation(EarLeftIndex, Quaternion.Euler(-7f * actionWeight,
+                        0f, -5f * actionWeight));
+                    SetLocalRotation(EarRightIndex, Quaternion.Euler(-7f * actionWeight,
+                        0f, 5f * actionWeight));
+                    MoveTowardWorldDirection(leadPaw, direction, 0.052f * actionWeight);
+                    MoveTowardWorldDirection(trailPaw, direction, 0.030f * actionWeight);
+                    break;
+            }
+
+            _playActionPoseApplied = true;
+            PlayArticulatedPoseStepForQA = step;
+            PlayArticulatedPoseMovedTransformCountForQA =
+                CountTransformsDisplacedFromCachedBases();
+            PlayArticulatedPoseDirectionAlignedForQA = step is 0 or 3
+                ? LeadingPawDirectionDot(leadPaw, direction) >=
+                  PlayPoseDirectionDotThreshold
+                : true;
+            PlayArticulatedPoseQAMarker =
+                PlayArticulatedPoseMovedTransformCountForQA >= 4 &&
+                PlayArticulatedPoseDirectionAlignedForQA
+                    ? PlayArticulatedPoseReadyMarker
+                    : "MOONLIGHT_PLAY_ARTICULATED_POSE_INCOMPLETE";
+        }
+
+        Vector3 ContactDirectionFromRig(MoonlightActionFeedback feedback)
+        {
+            Vector3 origin = _cachedAvatarRoot != null
+                ? _cachedAvatarRoot.position + Vector3.up * 0.45f
+                : transform.position + Vector3.up * 0.45f;
+            Vector3 delta = feedback.ActionContactPoint - origin;
+            if (!IsFinite(delta) || delta.sqrMagnitude <= 0.0001f)
+                delta = transform.forward + Vector3.up * 0.15f;
+            delta.y *= 0.45f;
+            if (delta.sqrMagnitude <= 0.0001f) delta = transform.forward;
+            return delta.normalized;
+        }
+
+        static bool IsFinite(Vector3 value) =>
+            !float.IsNaN(value.x) && !float.IsNaN(value.y) &&
+            !float.IsNaN(value.z) && !float.IsInfinity(value.x) &&
+            !float.IsInfinity(value.y) && !float.IsInfinity(value.z);
+
+        void MoveTowardWorldDirection(int index, Vector3 worldDirection, float distance)
+        {
+            LocalPose pose = _cachedPoses[index];
+            if (pose.transform == null) return;
+            Transform parent = pose.transform.parent;
+            Vector3 localDirection = parent != null
+                ? parent.InverseTransformDirection(worldDirection).normalized
+                : worldDirection.normalized;
+            pose.transform.localPosition = pose.position + localDirection * distance;
+        }
+
+        void MoveLocal(int index, Vector3 offset)
+        {
+            LocalPose pose = _cachedPoses[index];
+            if (pose.transform != null) pose.transform.localPosition = pose.position + offset;
+        }
+
+        float LeadingPawDirectionDot(int pawIndex, Vector3 worldDirection)
+        {
+            LocalPose pose = _cachedPoses[pawIndex];
+            if (pose.transform == null) return 0f;
+            Vector3 baseWorldPosition = pose.transform.parent != null
+                ? pose.transform.parent.TransformPoint(pose.position)
+                : pose.position;
+            Vector3 pawDelta = pose.transform.position - baseWorldPosition;
+            if (pawDelta.sqrMagnitude <= 0.000001f)
+                pawDelta = pose.transform.TransformDirection(Vector3.forward);
+            return Vector3.Dot(pawDelta.normalized, worldDirection.normalized);
+        }
+
+        void RestorePlayActionPoseIfNeeded()
+        {
+            if (!_playActionPoseApplied) return;
+            RestoreCachedTransformsExact();
+            MarkPlayActionPoseRestored();
+        }
+
+        void MarkPlayActionPoseRestored()
+        {
+            _playActionPoseApplied = false;
+            PlayArticulatedPoseStepForQA = -1;
+            PlayArticulatedPoseMovedTransformCountForQA = 0;
+            PlayArticulatedPoseDirectionAlignedForQA = false;
+            MeasureCachedBaseErrors(out float positionError, out float rotationError,
+                out float scaleError);
+            PlayArticulatedPoseRestorePositionErrorForQA = positionError;
+            PlayArticulatedPoseRestoreRotationErrorForQA = rotationError;
+            PlayArticulatedPoseRestoreScaleErrorForQA = scaleError;
+            PlayArticulatedPoseQAMarker = PoseErrorsWithinTolerance(positionError,
+                rotationError, scaleError)
+                    ? PlayArticulatedPoseRestoredMarker
+                    : "MOONLIGHT_PLAY_ARTICULATED_POSE_RESTORE_FAILED";
+        }
+
         void SetLocalRotation(int index, Quaternion offset)
         {
             LocalPose pose = _cachedPoses[index];
@@ -834,7 +1065,10 @@ namespace MoonlightMagicHouse
         {
             if (!_rigCached || _rigBindingFailedClosed) return;
             if (_wasUsingProceduralLocomotion || _proceduralPoseApplied)
+            {
                 RestoreCachedTransformsExact();
+                MarkPlayActionPoseRestored();
+            }
             if (_idleMicroMotionSuppressed) ResumeIdleMicroMotion();
             _wasUsingProceduralLocomotion = false;
         }

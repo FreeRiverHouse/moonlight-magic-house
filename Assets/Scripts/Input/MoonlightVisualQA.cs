@@ -63,6 +63,8 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_PLAY_CONTINUITY_ORDER_MODE";
         public const string PlayPhaseLandmarkTransactionMarker =
             "MOONLIGHT_PLAY_PHASE_LANDMARK_TRANSACTION_VERIFIED";
+        public const string PlayArticulatedPoseRuntimeMarker =
+            "MOONLIGHT_PLAY_ARTICULATED_POSE_TRANSACTION_VERIFIED";
         public const string CookContinuityRuntimeMarker =
             "MOONLIGHT_COOK_CONTINUITY_TRANSACTION_VERIFIED";
         public const string CookMooncakeRevealTrayRuntimeMarker =
@@ -336,6 +338,12 @@ namespace MoonlightMagicHouse
             public float CatchTapMaximumContactError;
             public float CatchTapMaximumHeldError;
             public float CatchTapCenterMaximumDelta;
+            public int ArticulatedPoseObservedMask;
+            public int ArticulatedPoseRestoreMask;
+            public readonly int[] ArticulatedPoseMovedCounts = new int[4];
+            public readonly bool[] ArticulatedPoseDirectionAligned = new bool[4];
+            public readonly string[] ArticulatedPoseMarkers = new string[4];
+            public string LastArticulatedPoseRestoreDetail = "";
         }
 
         sealed class CookContinuityObservation
@@ -3464,6 +3472,12 @@ namespace MoonlightMagicHouse
                         Vector3 peakContactPoint = Vector3.zero;
                         Vector3 peakContactViewport = Vector3.zero;
                         Camera contactCamera = Camera.main;
+                        MoonlightAnimator playAnimator = zone.Kind == MoonlightSpatialActionKind.Play
+                            ? FindRoutedMoonlightAnimatorForQA(controller)
+                            : null;
+                        int peakPlayPoseMoved = 0;
+                        bool peakPlayPoseAligned = false;
+                        string peakPlayPoseMarker = "";
 
                         while (feedback != null && feedback.IsPerformingAction && Time.time < contactDeadline)
                         {
@@ -3526,6 +3540,15 @@ namespace MoonlightMagicHouse
                                     peakCameraFacingAngle = sampledCameraFacingAngle;
                                     peakCameraReadableFacing = sampledCameraReadableFacing;
                                     peakContactPerforming = feedback.IsPerformingAction;
+                                    if (playAnimator != null)
+                                    {
+                                        peakPlayPoseMoved =
+                                            playAnimator.PlayArticulatedPoseMovedTransformCountForQA;
+                                        peakPlayPoseAligned =
+                                            playAnimator.PlayArticulatedPoseDirectionAlignedForQA;
+                                        peakPlayPoseMarker =
+                                            playAnimator.PlayArticulatedPoseQAMarker;
+                                    }
                                 }
                                 if (validContactSample)
                                     break;
@@ -3595,6 +3618,42 @@ namespace MoonlightMagicHouse
                             $"materials={feedback.ActionAccentMaterialCount} " +
                             $"bounds={feedback.ActionAccentBoundsSize:F3} " +
                             $"screenshot={contactShot} marker=MOONLIGHT_THREE_QUARTER_FACING_VERIFIED");
+
+                        if (zone.Kind == MoonlightSpatialActionKind.Play)
+                        {
+                            bool playPosePass = playAnimator != null &&
+                                peakPlayPoseMarker ==
+                                    MoonlightAnimator.PlayArticulatedPoseReadyMarker &&
+                                playAnimator.PlayArticulatedPoseStepForQA == step &&
+                                peakPlayPoseMoved >= 4 && peakPlayPoseAligned;
+                            if (playContinuity != null)
+                            {
+                                playContinuity.ArticulatedPoseMarkers[step] =
+                                    peakPlayPoseMarker;
+                                playContinuity.ArticulatedPoseMovedCounts[step] =
+                                    peakPlayPoseMoved;
+                                playContinuity.ArticulatedPoseDirectionAligned[step] =
+                                    peakPlayPoseAligned;
+                                if (playPosePass)
+                                    playContinuity.ArticulatedPoseObservedMask |= 1 << step;
+                            }
+                            if (!playPosePass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                    $"play-articulated-pose step={step + 1}/4 " +
+                                    $"animator={(playAnimator != null)} " +
+                                    $"marker={peakPlayPoseMarker} " +
+                                    $"animatorStep={(playAnimator != null ? playAnimator.PlayArticulatedPoseStepForQA : -1)}/" +
+                                    $"{step} moved={peakPlayPoseMoved}/>=4 " +
+                                    $"aligned={peakPlayPoseAligned}");
+                                Application.Quit(166);
+                                yield break;
+                            }
+                            Debug.Log("[MoonlightGameplayQA][PASS] " +
+                                $"play-articulated-pose step={step + 1}/4 " +
+                                $"moved={peakPlayPoseMoved} aligned={peakPlayPoseAligned} " +
+                                $"marker={MoonlightAnimator.PlayArticulatedPoseReadyMarker}");
+                        }
 
                         float followThroughDeadline = Time.time + 2.40f;
                         while (feedback.IsPerformingAction && feedback.ActionContactPhase != "follow-through" &&
@@ -4561,6 +4620,30 @@ namespace MoonlightMagicHouse
                     Debug.Log($"[MoonlightGameplayQA][PASS] activity-camera-state action={zone.Kind} " +
                         $"step={step + 1} state={(finalPresentationStep ? "held-for-presentation" : "released")} " +
                         $"blend={releasedCamera.ActivityFocusBlend:0.00}");
+                    if (playContinuity != null)
+                    {
+                        MoonlightAnimator playAnimator =
+                            FindRoutedMoonlightAnimatorForQA(controller);
+                        string restoreDetail = "";
+                        bool restored = playAnimator != null &&
+                            playAnimator.ValidatePlayArticulatedPoseRestoredForQA(
+                                out restoreDetail);
+                        if (!restored)
+                        {
+                            if (playAnimator == null)
+                                restoreDetail = "animator=False";
+                            Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                $"play-articulated-pose-restore step={step + 1}/4 " +
+                                restoreDetail);
+                            Application.Quit(167);
+                            yield break;
+                        }
+                        playContinuity.ArticulatedPoseRestoreMask |= 1 << step;
+                        playContinuity.LastArticulatedPoseRestoreDetail = restoreDetail;
+                        Debug.Log("[MoonlightGameplayQA][PASS] " +
+                            $"play-articulated-pose-restore step={step + 1}/4 " +
+                            $"{restoreDetail}");
+                    }
                     if (cookContinuity != null && !finalPresentationStep)
                     {
                         stage = moonlight.GetComponent<MoonlightActivityStage>();
@@ -5200,6 +5283,13 @@ namespace MoonlightMagicHouse
                                 count == playContinuity.PhaseLandmarkMaterialCounts[0]) &&
                             playContinuity.PhaseLandmarkLightCounts.All(count =>
                                 count == MoonlightActivityStage.PlayLightBudget);
+                        bool articulatedPoseTransactionPass =
+                            playContinuity.ArticulatedPoseObservedMask == 0xF &&
+                            playContinuity.ArticulatedPoseRestoreMask == 0xF &&
+                            playContinuity.ArticulatedPoseMovedCounts.All(count =>
+                                count >= 4) &&
+                            playContinuity.ArticulatedPoseDirectionAligned.All(aligned =>
+                                aligned);
                         bool transactionPass = progressionPass &&
                             playContinuity.IdentityPreserved &&
                             playContinuity.MaximumImmediateDiscontinuity <= 0.001f &&
@@ -5222,7 +5312,8 @@ namespace MoonlightMagicHouse
                             zone.LastCompletedPerfectSteps == 4 &&
                             zone.LastMasteryBonusCoins == 3 &&
                             completionDelta == 1 && continuationDelta == 3 &&
-                            phaseLandmarkTransactionPass && cleanupPass;
+                            phaseLandmarkTransactionPass &&
+                            articulatedPoseTransactionPass && cleanupPass;
                         if (!transactionPass)
                         {
                             Debug.LogError("[MoonlightGameplayQA][FAIL] " +
@@ -5265,6 +5356,11 @@ namespace MoonlightMagicHouse
                                 $"phaseLights=" +
                                 $"{string.Join(",", playContinuity.PhaseLandmarkLightCounts)} " +
                                 $"landmarkTransaction={phaseLandmarkTransactionPass} " +
+                                $"articulatedPose={playContinuity.ArticulatedPoseObservedMask:X}/F " +
+                                $"restore={playContinuity.ArticulatedPoseRestoreMask:X}/F " +
+                                $"poseMoved={string.Join(",", playContinuity.ArticulatedPoseMovedCounts)} " +
+                                $"poseAligned={string.Join(",", playContinuity.ArticulatedPoseDirectionAligned)} " +
+                                $"poseMarkers={string.Join(",", playContinuity.ArticulatedPoseMarkers)} " +
                                 $"rejections={playContinuity.RejectedPreservationCount}/9 " +
                                 $"firstThreeRewards={firstThreeRewardsUnchanged} " +
                                 $"finalRewards={finalRewardPass} mastery=" +
@@ -5304,10 +5400,14 @@ namespace MoonlightMagicHouse
                             $"{string.Join(",", playContinuity.PhaseLandmarkMaterialCounts)} " +
                             $"phaseLights=" +
                             $"{string.Join(",", playContinuity.PhaseLandmarkLightCounts)} " +
+                            $"articulatedPose={playContinuity.ArticulatedPoseObservedMask:X}/F " +
+                            $"restore={playContinuity.ArticulatedPoseRestoreMask:X}/F " +
+                            $"poseMoved={string.Join(",", playContinuity.ArticulatedPoseMovedCounts)} " +
                             "runtimePauseExecuted=False " +
                             $"rejections={playContinuity.RejectedPreservationCount} " +
                             "rewards=+25W/+13M/+32XP/+5C completion=1 cleanup=True " +
                             $"marker={PlayContinuityRuntimeMarker} " +
+                            $"marker={PlayArticulatedPoseRuntimeMarker} " +
                             $"marker={PlayPhaseLandmarkTransactionMarker} " +
                             $"marker={PlayContinuityOrderModeMarker}_" +
                             $"{playContinuity.OrderMode.ToUpperInvariant()}");
@@ -6614,6 +6714,31 @@ namespace MoonlightMagicHouse
                 $"bindingFailClosed={soleAnimator.ProceduralRigBindingFailedClosed} " +
                 animatorDetail;
             return proceduralPass;
+        }
+
+        static MoonlightAnimator FindRoutedMoonlightAnimatorForQA(
+            MoonlightPlayerController controller)
+        {
+            if (controller == null) return null;
+            MoonlightAnimator routed = controller.ActiveMoonlightAnimator;
+            if (routed != null && routed.isActiveAndEnabled &&
+                routed.gameObject.activeInHierarchy)
+                return routed;
+
+            MoonlightAnimatorQACandidates.Clear();
+            controller.GetComponentsInChildren(true, MoonlightAnimatorQACandidates);
+            MoonlightAnimator soleAnimator = null;
+            int activeAnimators = 0;
+            for (int i = 0; i < MoonlightAnimatorQACandidates.Count; i++)
+            {
+                MoonlightAnimator candidate = MoonlightAnimatorQACandidates[i];
+                if (candidate == null || !candidate.isActiveAndEnabled ||
+                    !candidate.gameObject.activeInHierarchy)
+                    continue;
+                activeAnimators++;
+                soleAnimator = candidate;
+            }
+            return activeAnimators == 1 ? soleAnimator : null;
         }
 
         static bool ValidateActionAccent(MoonlightActionFeedback feedback,
