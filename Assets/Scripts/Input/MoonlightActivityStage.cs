@@ -213,6 +213,10 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_COOK_GESTURE_RESULT_PERSONALIZED";
         public const string CookGestureIncompleteResultMarker =
             "MOONLIGHT_COOK_GESTURE_RESULT_INCOMPLETE";
+        public const string CookMooncakeRevealTrayReadyMarker =
+            "MOONLIGHT_COOK_MOONCAKE_REVEAL_TRAY_READY";
+        public const string CookMooncakeRevealTrayIncompleteMarker =
+            "MOONLIGHT_COOK_MOONCAKE_REVEAL_TRAY_INCOMPLETE";
 
         enum ActivitySurfaceProfile
         {
@@ -309,6 +313,7 @@ namespace MoonlightMagicHouse
         Transform[] _ovenProps;
         Transform[] _decorateProps;
         Transform[] _servingProps;
+        Transform[] _mooncakeRevealTray;
         Transform _authoredCookWorkbench;
         Transform[] _cookFallbackBase;
         Transform _ball;
@@ -733,6 +738,18 @@ namespace MoonlightMagicHouse
             return materialIds.Count;
         }
 
+        static int CountActiveTransformRenderers(Transform[] transforms)
+        {
+            int count = 0;
+            if (transforms == null) return count;
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                if (!IsActive(transforms[i])) continue;
+                count += transforms[i].GetComponents<Renderer>().Length;
+            }
+            return count;
+        }
+
         void AddTransformMaterialIds(Transform[] transforms, HashSet<int> materialIds)
         {
             if (transforms == null) return;
@@ -911,6 +928,30 @@ namespace MoonlightMagicHouse
             AllActive(_cookieDetails)
                 ? CookGesturePersonalizedResultMarker
                 : CookGestureIncompleteResultMarker;
+        public int CookMooncakeRevealTrayRendererCountForQA =>
+            CountTransformComponents<Renderer>(_mooncakeRevealTray, false);
+        public int CookMooncakeRevealTrayVisibleRendererCountForQA =>
+            CountActiveTransformRenderers(_mooncakeRevealTray);
+        public bool CookMooncakeRevealTrayExistsForQA =>
+            CurrentKind == MoonlightSpatialActionKind.Cook &&
+            AllAssigned(_mooncakeRevealTray, 4);
+        public bool CookMooncakeRevealTrayVisibleForQA =>
+            CurrentKind == MoonlightSpatialActionKind.Cook && CurrentStep == 3 &&
+            CookMooncakeRevealTrayExistsForQA && AllActive(_mooncakeRevealTray) &&
+            CookMooncakeRevealTrayTransformsMatch(1f) && CookBudgetReady;
+        public bool CookMooncakeRevealTrayPersistsDuringLingerForQA =>
+            IsLingering && CookMooncakeRevealTrayVisibleForQA &&
+            Mathf.Abs(CookCurrentPhaseProgress - 1f) <= 0.0001f;
+        public string CookMooncakeRevealTrayQAMarker =>
+            CookMooncakeRevealTrayVisibleForQA
+                ? CookMooncakeRevealTrayReadyMarker
+                : CookMooncakeRevealTrayIncompleteMarker;
+        public string CookMooncakeRevealTrayEvidence =>
+            $"exists={CookMooncakeRevealTrayExistsForQA} " +
+            $"visibleRenderers={CookMooncakeRevealTrayVisibleRendererCountForQA}/" +
+            $"{CookMooncakeRevealTrayRendererCountForQA} " +
+            $"persistLinger={CookMooncakeRevealTrayPersistsDuringLingerForQA} " +
+            $"budget=({CookBudgetEvidence}) marker={CookMooncakeRevealTrayQAMarker}";
         public string CookBudgetEvidence =>
             $"renderers={ActiveRendererCount}/{CookRendererBudget} " +
             $"materials={ActiveUniqueMaterialCount}/{CookMaterialBudget} " +
@@ -1949,6 +1990,7 @@ namespace MoonlightMagicHouse
             _ovenProps = null;
             _decorateProps = null;
             _servingProps = null;
+            _mooncakeRevealTray = null;
             _authoredCookWorkbench = null;
             _cookFallbackBase = null;
             AuthoredCookWorkbenchRendererCount = 0;
@@ -2267,6 +2309,25 @@ namespace MoonlightMagicHouse
                     new Vector3(0.40f, 0.035f, 0.30f), new Color(0.82f, 0.80f, 0.76f), 0.10f),
             };
             SetActive(_servingProps, false);
+            _mooncakeRevealTray = new[]
+            {
+                Primitive(PrimitiveType.Cylinder, "MooncakeRevealTrayBase",
+                    new Vector3(0.16f, 0.59f, 0.12f),
+                    new Vector3(0.98f, 0.025f, 0.62f),
+                    new Color(0.62f, 0.63f, 0.66f), 0.08f),
+                Primitive(PrimitiveType.Cube, "MooncakeRevealTrayBackPlate",
+                    new Vector3(0.16f, 0.71f, 0.39f),
+                    new Vector3(0.70f, 0.18f, 0.035f),
+                    new Color(0.93f, 0.79f, 0.58f), 0.04f),
+                Primitive(PrimitiveType.Sphere, "MooncakeRevealTrayMoonCrest",
+                    new Vector3(-0.23f, 0.76f, 0.37f),
+                    Vector3.one * 0.075f, new Color(1f, 0.93f, 0.72f), 0.18f),
+                Primitive(PrimitiveType.Cube, "MooncakeRevealTrayRibbonSeal",
+                    new Vector3(0.16f, 0.615f, -0.18f),
+                    new Vector3(0.54f, 0.018f, 0.050f),
+                    new Color(0.96f, 0.52f, 0.68f), 0.10f),
+            };
+            SetActive(_mooncakeRevealTray, false);
 
             _bowl = Primitive(PrimitiveType.Sphere, "MooncakeBowl", new Vector3(0f, 0.50f, 0f),
                 new Vector3(0.62f, 0.20f, 0.62f), new Color(0.34f, 0.72f, 0.70f), 0.08f);
@@ -2457,6 +2518,7 @@ namespace MoonlightMagicHouse
             SetActive(_ovenProps, step == 2);
             SetActive(_decorateProps, step == 3);
             SetActive(_servingProps, step >= 2);
+            SetActive(_mooncakeRevealTray, step == 3 && CookPresentProgress(t) >= 1f);
             if (_bowl != null) _bowl.gameObject.SetActive(step <= 1);
             if (_bowlRim != null) _bowlRim.gameObject.SetActive(step <= 1);
             if (_cookProps != null && _cookProps.Length >= 4)
@@ -2698,6 +2760,7 @@ namespace MoonlightMagicHouse
                     * Mathf.Lerp(0.25f, 1f, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t * 2.4f)))
                     * (1f + Mathf.Sin(t * Mathf.PI * 5f) * 0.06f * working);
             }
+            UpdateCookMooncakeRevealTray(t, step);
 
             if (_cookHandoffActive)
             {
@@ -2787,8 +2850,70 @@ namespace MoonlightMagicHouse
                 _cookProps != null && _cookProps.Length >= 1 && _cookProps[0] != null)
                 CookChoreographyReadyMask |= 1 << 2;
             if (AllAssigned(_servingProps, 4) && AllAssigned(_decorateProps, 4) &&
-                AllAssigned(_cookies, 3) && AllAssigned(_cookieDetails, 9))
+                AllAssigned(_cookies, 3) && AllAssigned(_cookieDetails, 9) &&
+                AllAssigned(_mooncakeRevealTray, 4))
                 CookChoreographyReadyMask |= 1 << 3;
+        }
+
+        void UpdateCookMooncakeRevealTray(float t, int step)
+        {
+            if (_mooncakeRevealTray == null || _mooncakeRevealTray.Length < 4) return;
+            float reveal = step == 3 ? CookPresentProgress(t) : 0f;
+            bool visible = reveal >= 1f;
+            for (int i = 0; i < _mooncakeRevealTray.Length; i++)
+                if (_mooncakeRevealTray[i] != null)
+                    _mooncakeRevealTray[i].gameObject.SetActive(visible);
+
+            Vector3 settle = new Vector3(0f, Mathf.Sin(reveal * Mathf.PI) * 0.035f, 0f);
+            _mooncakeRevealTray[0].localPosition =
+                Vector3.Lerp(new Vector3(0.16f, 0.56f, 0.12f),
+                    new Vector3(0.16f, 0.59f, 0.12f), reveal) + settle;
+            _mooncakeRevealTray[0].localScale =
+                Vector3.Lerp(new Vector3(0.72f, 0.018f, 0.44f),
+                    new Vector3(0.98f, 0.025f, 0.62f), reveal);
+            _mooncakeRevealTray[0].localRotation =
+                Quaternion.Euler(0f, Mathf.Lerp(-8f, 0f, reveal), 0f);
+            _mooncakeRevealTray[1].localPosition =
+                Vector3.Lerp(new Vector3(0.16f, 0.64f, 0.35f),
+                    new Vector3(0.16f, 0.71f, 0.39f), reveal);
+            _mooncakeRevealTray[1].localScale =
+                Vector3.Lerp(new Vector3(0.52f, 0.08f, 0.020f),
+                    new Vector3(0.70f, 0.18f, 0.035f), reveal);
+            _mooncakeRevealTray[1].localRotation = Quaternion.Euler(
+                Mathf.Lerp(-10f, -4f, reveal), 0f, 0f);
+            _mooncakeRevealTray[2].localPosition =
+                Vector3.Lerp(new Vector3(-0.18f, 0.68f, 0.35f),
+                    new Vector3(-0.23f, 0.76f, 0.37f), reveal);
+            _mooncakeRevealTray[2].localScale = Vector3.one *
+                Mathf.Lerp(0.035f, 0.075f, reveal);
+            _mooncakeRevealTray[2].localRotation =
+                Quaternion.Euler(0f, 0f, reveal * 32f);
+            _mooncakeRevealTray[3].localPosition =
+                Vector3.Lerp(new Vector3(0.16f, 0.595f, -0.10f),
+                    new Vector3(0.16f, 0.615f, -0.18f), reveal);
+            _mooncakeRevealTray[3].localScale =
+                Vector3.Lerp(new Vector3(0.36f, 0.012f, 0.030f),
+                    new Vector3(0.54f, 0.018f, 0.050f), reveal);
+            _mooncakeRevealTray[3].localRotation = Quaternion.Euler(0f, 0f, 0f);
+        }
+
+        bool CookMooncakeRevealTrayTransformsMatch(float t)
+        {
+            if (!AllAssigned(_mooncakeRevealTray, 4)) return false;
+            float reveal = CookPresentProgress(t);
+            bool visible = reveal >= 1f;
+            return TransformMatches(_mooncakeRevealTray[0], visible,
+                    new Vector3(0.16f, 0.59f, 0.12f), Quaternion.identity,
+                    new Vector3(0.98f, 0.025f, 0.62f)) &&
+                TransformMatches(_mooncakeRevealTray[1], visible,
+                    new Vector3(0.16f, 0.71f, 0.39f), Quaternion.Euler(-4f, 0f, 0f),
+                    new Vector3(0.70f, 0.18f, 0.035f)) &&
+                TransformMatches(_mooncakeRevealTray[2], visible,
+                    new Vector3(-0.23f, 0.76f, 0.37f), Quaternion.Euler(0f, 0f, 32f),
+                    Vector3.one * 0.075f) &&
+                TransformMatches(_mooncakeRevealTray[3], visible,
+                    new Vector3(0.16f, 0.615f, -0.18f), Quaternion.identity,
+                    new Vector3(0.54f, 0.018f, 0.050f));
         }
 
         int CountCookPhaseMotionMatches(int step, float t) => step switch
@@ -3043,7 +3168,8 @@ namespace MoonlightMagicHouse
             bool basePrepHidden = !AnyActive(_ingredients) && !AnyActive(_pourStreams);
             bool bakeHidden = !AnyActive(_ovenProps) && !AnyActive(_steam) &&
                 !AnyActive(_cookies) && !AnyActive(_servingProps);
-            bool decorateHidden = !AnyActive(_decorateProps) && !AnyActive(_cookieDetails);
+            bool decorateHidden = !AnyActive(_decorateProps) &&
+                !AnyActive(_cookieDetails) && !AnyActive(_mooncakeRevealTray);
             if (step == 0)
             {
                 bool streamStatesReady = true;
@@ -3085,7 +3211,8 @@ namespace MoonlightMagicHouse
                     !IsActive(_cookProps[1]) && !IsActive(_cookProps[2]) &&
                     !IsActive(_cookProps[3]) &&
                     steamStatesReady && cookieStatesReady && !AnyActive(_cookieDetails) &&
-                    !AnyActive(_decorateProps) && (!trayCrossingDoor || actualDoorFullyOpen);
+                    !AnyActive(_decorateProps) && !AnyActive(_mooncakeRevealTray) &&
+                    (!trayCrossingDoor || actualDoorFullyOpen);
             }
             if (step == 3)
             {
@@ -3093,11 +3220,16 @@ namespace MoonlightMagicHouse
                 for (int i = 0; i < 9; i++)
                     detailStatesReady &= IsActive(_cookieDetails[i]) ==
                         (CookDetailReveal(t, i) > 0.65f);
+                bool revealVisible = CookPresentProgress(t) >= 1f;
+                bool revealStateReady = revealVisible
+                    ? AllActive(_mooncakeRevealTray) &&
+                      CookMooncakeRevealTrayTransformsMatch(t)
+                    : !AnyActive(_mooncakeRevealTray);
                 return !IsActive(_bowl) && !IsActive(_bowlRim) && !IsActive(_batter) &&
                     !IsActive(_whisk) && basePrepHidden && !AnyActive(_ovenProps) &&
                     !AnyActive(_steam) && !AnyActive(_cookProps) &&
                     AllActive(_decorateProps) && AllActive(_cookies) &&
-                    AllActive(_servingProps) && detailStatesReady;
+                    AllActive(_servingProps) && revealStateReady && detailStatesReady;
             }
             return false;
         }

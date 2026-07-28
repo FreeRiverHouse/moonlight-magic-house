@@ -65,6 +65,10 @@ namespace MoonlightMagicHouse
             "MOONLIGHT_PLAY_PHASE_LANDMARK_TRANSACTION_VERIFIED";
         public const string CookContinuityRuntimeMarker =
             "MOONLIGHT_COOK_CONTINUITY_TRANSACTION_VERIFIED";
+        public const string CookMooncakeRevealTrayRuntimeMarker =
+            "MOONLIGHT_COOK_MOONCAKE_REVEAL_TRAY_RUNTIME_VERIFIED";
+        public const string CookMooncakeRevealTrayLingerMarker =
+            "MOONLIGHT_COOK_MOONCAKE_REVEAL_TRAY_LINGER_VERIFIED";
 
         static readonly string[] IntermediateActivityResults =
         {
@@ -355,6 +359,8 @@ namespace MoonlightMagicHouse
             public bool SourceContractPassed = true;
             public bool BudgetContractPassed = true;
             public bool FinalLingerObserved;
+            public bool RevealTrayCompletionObserved;
+            public bool RevealTrayLingerObserved;
             public float MaximumSharedPropDiscontinuity;
         }
 
@@ -4697,6 +4703,29 @@ namespace MoonlightMagicHouse
                         }
                         if (zone.Kind == MoonlightSpatialActionKind.Cook)
                         {
+                            bool revealTrayPass =
+                                stage.CookMooncakeRevealTrayExistsForQA &&
+                                stage.CookMooncakeRevealTrayVisibleForQA &&
+                                stage.CookMooncakeRevealTrayRendererCountForQA == 4 &&
+                                stage.CookMooncakeRevealTrayVisibleRendererCountForQA == 4 &&
+                                stage.CookMooncakeRevealTrayQAMarker ==
+                                    MoonlightActivityStage.CookMooncakeRevealTrayReadyMarker &&
+                                stage.CookBudgetReady;
+                            if (cookContinuity != null)
+                                cookContinuity.RevealTrayCompletionObserved =
+                                    revealTrayPass;
+                            if (!revealTrayPass)
+                            {
+                                Debug.LogError("[MoonlightGameplayQA][FAIL] " +
+                                    "cook-mooncake-reveal-tray-runtime " +
+                                    stage.CookMooncakeRevealTrayEvidence);
+                                Application.Quit(163);
+                                yield break;
+                            }
+                            Debug.Log("[MoonlightGameplayQA][PASS] " +
+                                "cook-mooncake-reveal-tray-runtime " +
+                                stage.CookMooncakeRevealTrayEvidence +
+                                $" marker={CookMooncakeRevealTrayRuntimeMarker}");
                             bool lingeringCookImprintPass =
                                 stage.ActiveGestureSample.ContentEquals(
                                     zone.LastGestureSample) &&
@@ -4709,7 +4738,8 @@ namespace MoonlightMagicHouse
                                 MoonlightActivityStage.CookRendererBudget == 36 &&
                                 MoonlightActivityStage.CookMaterialBudget == 24 &&
                                 MoonlightActivityStage.CookLightBudget == 1 &&
-                                stage.CookBudgetReady;
+                                stage.CookBudgetReady &&
+                                stage.CookMooncakeRevealTrayPersistsDuringLingerForQA;
                             if (!lingeringCookImprintPass)
                             {
                                 Debug.LogError("[MoonlightGameplayQA][FAIL] " +
@@ -4720,19 +4750,29 @@ namespace MoonlightMagicHouse
                                     $"{stage.CookDistinctGestureImprintCount}/9 " +
                                     $"marks={stage.CookCookieMarksRetainGestureImprint} " +
                                     $"resultMarker={stage.CookGestureResultQAMarker} " +
+                                    $"revealTray=({stage.CookMooncakeRevealTrayEvidence}) " +
                                     $"budget=({stage.CookBudgetEvidence})");
                                 Application.Quit(118);
                                 yield break;
                             }
                             if (cookContinuity != null)
+                            {
                                 cookContinuity.FinalLingerObserved = stage.IsLingering &&
                                     stage.CurrentStep == 3 &&
                                     stage.LingerSecondsRemaining > 0f;
+                                cookContinuity.RevealTrayLingerObserved =
+                                    stage.CookMooncakeRevealTrayPersistsDuringLingerForQA;
+                            }
                             Debug.Log("[MoonlightGameplayQA][PASS] gesture-cook-linger " +
                                 $"marks={stage.CookCookieMarksRetainGestureImprint} " +
                                 $"resultMarker={stage.CookGestureResultQAMarker} " +
+                                $"revealTray=({stage.CookMooncakeRevealTrayEvidence}) " +
                                 $"budget=({stage.CookBudgetEvidence}) " +
                                 "marker=MOONLIGHT_COOK_GESTURE_LINGER_VERIFIED");
+                            Debug.Log("[MoonlightGameplayQA][PASS] " +
+                                "cook-mooncake-reveal-tray-linger " +
+                                stage.CookMooncakeRevealTrayEvidence +
+                                $" marker={CookMooncakeRevealTrayLingerMarker}");
                         }
                         if (zone.Kind == MoonlightSpatialActionKind.Garden)
                         {
@@ -5056,6 +5096,8 @@ namespace MoonlightMagicHouse
                             (cookContinuity.Source == "authored" ||
                              cookContinuity.Source == "fallback") &&
                             cookContinuity.BudgetContractPassed &&
+                            cookContinuity.RevealTrayCompletionObserved &&
+                            cookContinuity.RevealTrayLingerObserved &&
                             Mathf.Approximately(
                                 MoonlightActivityStage.CookFinalPresentationSeconds, 5.2f) &&
                             cookContinuity.FinalLingerObserved && cleanupPass;
@@ -5078,7 +5120,9 @@ namespace MoonlightMagicHouse
                                 $"source={cookContinuity.Source}/" +
                                 $"0x{cookContinuity.SourceObservedMask:X}/" +
                                 $"{cookContinuity.SourceContractPassed} budget=" +
-                                $"{cookContinuity.BudgetContractPassed} linger=" +
+                                $"{cookContinuity.BudgetContractPassed} reveal=" +
+                                $"{cookContinuity.RevealTrayCompletionObserved}/" +
+                                $"{cookContinuity.RevealTrayLingerObserved} linger=" +
                                 $"{cookContinuity.FinalLingerObserved} cleanup={cleanupPass}");
                             Application.Quit(162);
                             yield break;
@@ -5098,6 +5142,8 @@ namespace MoonlightMagicHouse
                             $"discontinuity=" +
                             $"{cookContinuity.MaximumSharedPropDiscontinuity:0.000000}m " +
                             $"source={cookContinuity.Source} budget=36r/24m/1l " +
+                            $"revealTray={cookContinuity.RevealTrayCompletionObserved}/" +
+                            $"{cookContinuity.RevealTrayLingerObserved} " +
                             $"linger={MoonlightActivityStage.CookFinalPresentationSeconds:0.0}s " +
                             "cleanup=True " +
                             $"marker={CookContinuityRuntimeMarker}");
