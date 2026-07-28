@@ -786,7 +786,7 @@ namespace MoonlightMagicHouse
             }
 
             axisScale = Vector3.Lerp(Vector3.one, axisScale, envelope);
-            ApplyFacingPose(axisScale, motion, localEuler, _actionContactPoint);
+            ApplyFacingPose(axisScale, motion, localEuler, _actionContactPoint, 0f, true, 20f, 38f);
         }
 
         void ApplyFacingPose(Vector3 axisScale, Vector3 motion, Vector3 localEuler, Vector3 targetWorld,
@@ -804,10 +804,11 @@ namespace MoonlightMagicHouse
             Vector3 presentationDirection = targetDirection;
             UsesCameraReadableFacing = false;
             ActionCameraFacingAngle = 180f;
+            Vector3 cameraDirection = Vector3.zero;
             var mainCamera = cameraReadableFacing ? Camera.main : null;
             if (mainCamera != null)
             {
-                Vector3 cameraDirection = mainCamera.transform.position - frame.position;
+                cameraDirection = mainCamera.transform.position - frame.position;
                 cameraDirection.y = 0f;
                 if (cameraDirection.sqrMagnitude > 0.0001f)
                 {
@@ -820,7 +821,6 @@ namespace MoonlightMagicHouse
                         cameraDirection;
                     presentationDirection.Normalize();
                     UsesCameraReadableFacing = true;
-                    ActionCameraFacingAngle = Vector3.Angle(cameraDirection, presentationDirection);
                 }
             }
 
@@ -832,7 +832,17 @@ namespace MoonlightMagicHouse
             presentationLocalForward.y = 0f;
             presentationLocalForward.Normalize();
             Vector3 localRight = Vector3.Cross(Vector3.up, presentationLocalForward);
-            float faceYaw = Mathf.Atan2(presentationLocalForward.x, presentationLocalForward.z) * Mathf.Rad2Deg;
+            Quaternion posedLocalRotation = _baseRotation * Quaternion.Euler(localEuler);
+            Vector3 facingBasisLocalForward = (cameraReadableFacing
+                ? posedLocalRotation
+                : _baseRotation) * Vector3.forward;
+            facingBasisLocalForward.y = 0f;
+            if (facingBasisLocalForward.sqrMagnitude < 0.0001f)
+                facingBasisLocalForward = Vector3.forward;
+            else
+                facingBasisLocalForward.Normalize();
+            float faceYawDelta = Vector3.SignedAngle(facingBasisLocalForward,
+                presentationLocalForward, Vector3.up);
             float approachDistance = maxApproachDistance > 0f
                 ? Mathf.Clamp(targetPlanarDistance - 0.72f, 0f, maxApproachDistance) *
                   Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(ActionContactWeight * 4f))
@@ -841,7 +851,18 @@ namespace MoonlightMagicHouse
             _visual.localScale = Vector3.Scale(_baseScale, axisScale);
             _visual.localPosition = _basePosition + localRight * motion.x + Vector3.up * motion.y +
                 targetLocalForward * (motion.z + approachDistance);
-            _visual.localRotation = Quaternion.Euler(0f, faceYaw, 0f) * _baseRotation * Quaternion.Euler(localEuler);
+            _visual.localRotation = Quaternion.AngleAxis(faceYawDelta, Vector3.up) *
+                posedLocalRotation;
+            if (UsesCameraReadableFacing)
+            {
+                Vector3 renderedFaceForward = _visual.forward;
+                renderedFaceForward.y = 0f;
+                if (renderedFaceForward.sqrMagnitude > 0.0001f)
+                {
+                    renderedFaceForward.Normalize();
+                    ActionCameraFacingAngle = Vector3.Angle(renderedFaceForward, cameraDirection);
+                }
+            }
         }
 
         void ApplyGardenStepPose(float t, float envelope, float pulse)

@@ -3437,8 +3437,9 @@ namespace MoonlightMagicHouse
                         };
 
                         const float contactWeightThreshold = 0.20f;
-                        bool requiresCameraReadableFacing = zone.Kind is MoonlightSpatialActionKind.Garden or
-                            MoonlightSpatialActionKind.Read or MoonlightSpatialActionKind.Care;
+                        bool requiresCameraReadableFacing = zone.Kind is MoonlightSpatialActionKind.Play or
+                            MoonlightSpatialActionKind.Garden or MoonlightSpatialActionKind.Read or
+                            MoonlightSpatialActionKind.Care;
                         const float cameraFacingMinAngle = 20f;
                         const float cameraFacingMaxAngle = 38f;
                         float contactMaxDistance = zone.Kind is MoonlightSpatialActionKind.Garden or
